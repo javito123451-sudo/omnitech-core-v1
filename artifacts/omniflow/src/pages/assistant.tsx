@@ -18,19 +18,15 @@ export default function Assistant() {
     setShowChat(true);
   };
 
-  const handleBack = () => {
-    setShowChat(false);
-  };
-
   return (
     <div className="h-[calc(100dvh-7rem)] md:h-[calc(100dvh-4rem)] animate-in fade-in duration-500 flex flex-col">
       <div className="mb-3 md:mb-4 shrink-0">
-        <h1 className="text-xl md:text-3xl font-bold tracking-tight text-white">WhatsApp Assistant</h1>
-        <p className="text-muted-foreground text-xs md:text-sm mt-0.5">AI-powered conversations with your clients.</p>
+        <h1 className="text-xl md:text-3xl font-bold tracking-tight text-white">Asistente IA</h1>
+        <p className="text-muted-foreground text-xs md:text-sm mt-0.5">Conversaciones impulsadas por inteligencia artificial.</p>
       </div>
 
       <div className="flex gap-4 flex-1 overflow-hidden">
-        {/* Conversation List */}
+        {/* Conversation list */}
         <Card className={cn(
           "bg-card border-border flex flex-col overflow-hidden transition-all duration-200",
           "w-full md:w-72 md:shrink-0",
@@ -39,15 +35,13 @@ export default function Assistant() {
           <div className="p-3 border-b border-border shrink-0">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Search messages..." className="pl-9 bg-background/50 border-border text-sm h-9" />
+              <Input placeholder="Buscar mensajes..." className="pl-9 bg-background/50 border-border text-sm h-9" />
             </div>
           </div>
           <ScrollArea className="flex-1">
             {loadingConversations ? (
               <div className="p-3 space-y-2">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-16 bg-border/50 animate-pulse rounded-lg" />
-                ))}
+                {[1, 2, 3, 4].map((i) => <div key={i} className="h-16 bg-border/50 animate-pulse rounded-lg" />)}
               </div>
             ) : (
               <div className="p-2 space-y-0.5">
@@ -71,7 +65,7 @@ export default function Assistant() {
                       <div className="flex justify-between items-baseline mb-0.5">
                         <span className="font-medium text-white text-sm truncate">{conv.clientName}</span>
                         <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
-                          {new Date(conv.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {new Date(conv.lastMessageAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{conv.lastMessage}</p>
@@ -84,14 +78,14 @@ export default function Assistant() {
                   </div>
                 ))}
                 {!conversations?.length && (
-                  <div className="py-8 text-center text-xs text-muted-foreground">No conversations yet</div>
+                  <div className="py-8 text-center text-xs text-muted-foreground">Sin conversaciones aún</div>
                 )}
               </div>
             )}
           </ScrollArea>
         </Card>
 
-        {/* Chat Thread */}
+        {/* Chat thread */}
         <Card className={cn(
           "bg-card border-border flex-col overflow-hidden flex-1",
           showChat ? "flex" : "hidden md:flex"
@@ -100,12 +94,12 @@ export default function Assistant() {
             <ChatThread
               clientId={selectedClientId}
               clientName={conversations?.find((c) => c.clientId === selectedClientId)?.clientName}
-              onBack={handleBack}
+              onBack={() => setShowChat(false)}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
               <MessageSquare className="w-10 h-10 mb-3 opacity-20" />
-              <p className="text-sm">Select a conversation to start messaging</p>
+              <p className="text-sm">Selecciona una conversación</p>
             </div>
           )}
         </Card>
@@ -122,9 +116,7 @@ function ChatThread({ clientId, clientName, onBack }: { clientId: number; client
 
   const handleSend = () => {
     if (!input.trim()) return;
-    sendMessage.mutate({ data: { clientId, content: input, isAi: false } }, {
-      onSuccess: () => setInput(""),
-    });
+    sendMessage.mutate({ data: { clientId, content: input, isAi: false } }, { onSuccess: () => setInput("") });
   };
 
   const handleAiReply = () => {
@@ -138,10 +130,7 @@ function ChatThread({ clientId, clientName, onBack }: { clientId: number; client
     <>
       <div className="p-3 border-b border-border bg-background/50 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2">
-          <button
-            onClick={onBack}
-            className="md:hidden p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
-          >
+          <button onClick={onBack} className="md:hidden p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <Avatar className="h-8 w-8 shrink-0">
@@ -150,22 +139,18 @@ function ChatThread({ clientId, clientName, onBack }: { clientId: number; client
             </AvatarFallback>
           </Avatar>
           <div>
-            <h3 className="font-bold text-white text-sm">{clientName ?? "Client"}</h3>
+            <h3 className="font-bold text-white text-sm">{clientName ?? "Cliente"}</h3>
             <p className="text-[10px] text-green-400 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse" /> Online
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse" /> En línea
             </p>
           </div>
         </div>
         <Button
-          variant="outline"
-          size="sm"
-          onClick={handleAiReply}
-          disabled={generateReply.isPending}
+          variant="outline" size="sm" onClick={handleAiReply} disabled={generateReply.isPending}
           className="border-primary/50 text-primary hover:bg-primary/10 text-xs h-8 px-2 md:px-3"
         >
           <Sparkles className="w-3 h-3 mr-1" />
-          <span className="hidden sm:inline">{generateReply.isPending ? "Generating..." : "AI Reply"}</span>
-          <span className="sm:hidden">AI</span>
+          <span>{generateReply.isPending ? "Generando..." : "Respuesta IA"}</span>
         </Button>
       </div>
 
@@ -181,27 +166,21 @@ function ChatThread({ clientId, clientName, onBack }: { clientId: number; client
               const isInbound = msg.direction === "inbound";
               return (
                 <div key={msg.id} className={cn("flex w-full", isInbound ? "justify-start" : "justify-end")}>
-                  <div
-                    className={cn(
-                      "max-w-[80%] md:max-w-[70%] rounded-2xl px-3 py-2 relative",
-                      isInbound
-                        ? "bg-secondary text-secondary-foreground rounded-tl-sm"
-                        : "bg-primary text-primary-foreground rounded-tr-sm"
-                    )}
-                  >
-                    {msg.isAi && !isInbound && (
-                      <Sparkles className="w-2.5 h-2.5 absolute -top-1 -right-1 text-yellow-400" />
-                    )}
+                  <div className={cn(
+                    "max-w-[80%] md:max-w-[70%] rounded-2xl px-3 py-2 relative",
+                    isInbound ? "bg-secondary text-secondary-foreground rounded-tl-sm" : "bg-primary text-primary-foreground rounded-tr-sm"
+                  )}>
+                    {msg.isAi && !isInbound && <Sparkles className="w-2.5 h-2.5 absolute -top-1 -right-1 text-yellow-400" />}
                     <p className="text-sm leading-relaxed">{msg.content}</p>
                     <span className="text-[10px] opacity-50 mt-1 block text-right">
-                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(msg.createdAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
                 </div>
               );
             })}
             {!messages?.length && (
-              <div className="text-center text-xs text-muted-foreground py-8">No messages yet. Start the conversation.</div>
+              <div className="text-center text-xs text-muted-foreground py-8">Inicia la conversación.</div>
             )}
           </div>
         )}
@@ -210,10 +189,8 @@ function ChatThread({ clientId, clientName, onBack }: { clientId: number; client
       <div className="p-3 border-t border-border bg-background/50 shrink-0">
         <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex gap-2">
           <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 bg-background border-border text-sm h-9"
+            value={input} onChange={(e) => setInput(e.target.value)}
+            placeholder="Escribe un mensaje..." className="flex-1 bg-background border-border text-sm h-9"
           />
           <Button type="submit" size="sm" disabled={!input.trim() || sendMessage.isPending} className="bg-primary hover:bg-primary/90 h-9 w-9 p-0">
             <Send className="w-4 h-4" />

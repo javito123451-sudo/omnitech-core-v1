@@ -4,11 +4,11 @@ import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut,
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: Users, label: "Clients", href: "/clients" },
-  { icon: MessageSquare, label: "Assistant", href: "/assistant" },
-  { icon: CalendarDays, label: "Calendar", href: "/calendar" },
-  { icon: BarChart3, label: "Statistics", href: "/statistics" },
+  { icon: LayoutDashboard, label: "Panel", href: "/dashboard" },
+  { icon: Users, label: "Clientes", href: "/clients" },
+  { icon: MessageSquare, label: "Asistente", href: "/assistant" },
+  { icon: CalendarDays, label: "Calendario", href: "/calendar" },
+  { icon: BarChart3, label: "Estadísticas", href: "/statistics" },
 ];
 
 export default function MainLayout({ children }: { children: ReactNode }) {
@@ -32,14 +32,12 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             const isActive = location.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href}>
-                <div
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all cursor-pointer group",
-                    isActive
-                      ? "bg-primary/10 text-primary border border-primary/20"
-                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                  )}
-                >
+                <div className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all cursor-pointer group",
+                  isActive
+                    ? "bg-primary/10 text-primary border border-primary/20"
+                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                )}>
                   <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
                   <span className="font-medium text-sm">{item.label}</span>
                 </div>
@@ -54,7 +52,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             onClick={() => setLocation("/")}
           >
             <LogOut className="w-4 h-4 shrink-0" />
-            <span className="font-medium text-sm">Sign Out</span>
+            <span className="font-medium text-sm">Cerrar sesión</span>
           </div>
         </div>
       </aside>
@@ -82,7 +80,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Mobile Bottom Nav */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border flex items-center justify-around px-1 py-1 safe-area-bottom">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border flex items-center justify-around px-1 py-1">
           {navItems.map((item) => {
             const isActive = location.startsWith(item.href);
             return (
