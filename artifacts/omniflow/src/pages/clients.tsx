@@ -413,7 +413,7 @@ export default function Clients() {
         </div>
         <Button size="sm" onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0 shadow-[0_0_15px_rgba(59,130,246,0.3)]">
           <Plus className="w-4 h-4 mr-1.5" />
-          <span className="hidden sm:inline">Agregar </span>Cliente
+          Nuevo Cliente
         </Button>
       </div>
 
