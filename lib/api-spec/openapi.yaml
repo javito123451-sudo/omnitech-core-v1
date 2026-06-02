@@ -1,22 +1,29 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Omniflow CRM API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: clients
+    description: CRM client management
+  - name: appointments
+    description: Appointment calendar
+  - name: messages
+    description: WhatsApp AI assistant
+  - name: stats
+    description: Dashboard statistics
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +31,330 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Clients ──────────────────────────────────────────────────────────────
+  /clients:
+    get:
+      operationId: listClients
+      tags: [clients]
+      summary: List all clients
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Client"
+    post:
+      operationId: createClient
+      tags: [clients]
+      summary: Create a new client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+
+  /clients/{id}:
+    get:
+      operationId: getClient
+      tags: [clients]
+      summary: Get a client by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateClient
+      tags: [clients]
+      summary: Update a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientUpdate"
+      responses:
+        "200":
+          description: Updated client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+    delete:
+      operationId: deleteClient
+      tags: [clients]
+      summary: Delete a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Appointments ──────────────────────────────────────────────────────────
+  /appointments:
+    get:
+      operationId: listAppointments
+      tags: [appointments]
+      summary: List appointments
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+    post:
+      operationId: createAppointment
+      tags: [appointments]
+      summary: Create an appointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+
+  /appointments/{id}:
+    patch:
+      operationId: updateAppointment
+      tags: [appointments]
+      summary: Update an appointment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+    delete:
+      operationId: deleteAppointment
+      tags: [appointments]
+      summary: Delete an appointment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── WhatsApp Messages ──────────────────────────────────────────────────────
+  /messages:
+    get:
+      operationId: listMessages
+      tags: [messages]
+      summary: List messages for a client conversation
+      parameters:
+        - name: clientId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message (AI-assisted)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /messages/ai-reply:
+    post:
+      operationId: generateAiReply
+      tags: [messages]
+      summary: Generate an AI reply suggestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiReplyRequest"
+      responses:
+        "200":
+          description: AI reply suggestion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiReplyResponse"
+
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [messages]
+      summary: List all client conversations
+      responses:
+        "200":
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+
+  # ── Statistics ────────────────────────────────────────────────────────────
+  /stats/dashboard:
+    get:
+      operationId: getDashboardStats
+      tags: [stats]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /stats/revenue:
+    get:
+      operationId: getRevenueStats
+      tags: [stats]
+      summary: Get monthly revenue chart data
+      responses:
+        "200":
+          description: Revenue data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RevenuePoint"
+
+  /stats/clients:
+    get:
+      operationId: getClientStats
+      tags: [stats]
+      summary: Get client acquisition stats
+      responses:
+        "200":
+          description: Client stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClientStatPoint"
+
+  /stats/activity:
+    get:
+      operationId: getRecentActivity
+      tags: [stats]
+      summary: Get recent activity feed
+      responses:
+        "200":
+          description: Activity feed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +362,263 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    # ── Client ──────────────────────────────────────────────────────────────
+    Client:
+      type: object
+      required: [id, name, email, status, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [lead, active, inactive, churned]
+        tags:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        value:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+
+    ClientInput:
+      type: object
+      required: [name, email, status]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        company:
+          type: string
+        status:
+          type: string
+          enum: [lead, active, inactive, churned]
+        tags:
+          type: string
+        notes:
+          type: string
+        value:
+          type: number
+
+    ClientUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        company:
+          type: string
+        status:
+          type: string
+          enum: [lead, active, inactive, churned]
+        tags:
+          type: string
+        notes:
+          type: string
+        value:
+          type: number
+
+    # ── Appointment ──────────────────────────────────────────────────────────
+    Appointment:
+      type: object
+      required: [id, title, startTime, endTime, clientId, status]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        startTime:
+          type: string
+        endTime:
+          type: string
+        clientId:
+          type: integer
+        clientName:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [scheduled, completed, cancelled, no_show]
+        type:
+          type: ["string", "null"]
+
+    AppointmentInput:
+      type: object
+      required: [title, startTime, endTime, clientId]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+        clientId:
+          type: integer
+        status:
+          type: string
+          enum: [scheduled, completed, cancelled, no_show]
+        type:
+          type: string
+
+    AppointmentUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+        status:
+          type: string
+          enum: [scheduled, completed, cancelled, no_show]
+        type:
+          type: string
+
+    # ── Message ──────────────────────────────────────────────────────────────
+    Message:
+      type: object
+      required: [id, clientId, content, direction, createdAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        content:
+          type: string
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        isAi:
+          type: boolean
+        status:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    MessageInput:
+      type: object
+      required: [clientId, content]
+      properties:
+        clientId:
+          type: integer
+        content:
+          type: string
+        isAi:
+          type: boolean
+
+    AiReplyRequest:
+      type: object
+      required: [clientId, lastMessage]
+      properties:
+        clientId:
+          type: integer
+        lastMessage:
+          type: string
+        context:
+          type: string
+
+    AiReplyResponse:
+      type: object
+      required: [reply]
+      properties:
+        reply:
+          type: string
+
+    Conversation:
+      type: object
+      required: [clientId, clientName, lastMessage, lastMessageAt, unreadCount]
+      properties:
+        clientId:
+          type: integer
+        clientName:
+          type: string
+        clientPhone:
+          type: ["string", "null"]
+        lastMessage:
+          type: string
+        lastMessageAt:
+          type: string
+        unreadCount:
+          type: integer
+
+    # ── Stats ────────────────────────────────────────────────────────────────
+    DashboardStats:
+      type: object
+      required: [totalClients, activeClients, totalRevenue, appointmentsToday, leadsThisMonth, conversionRate]
+      properties:
+        totalClients:
+          type: integer
+        activeClients:
+          type: integer
+        totalRevenue:
+          type: number
+        appointmentsToday:
+          type: integer
+        leadsThisMonth:
+          type: integer
+        conversionRate:
+          type: number
+        revenueGrowth:
+          type: number
+        clientGrowth:
+          type: number
+
+    RevenuePoint:
+      type: object
+      required: [month, revenue]
+      properties:
+        month:
+          type: string
+        revenue:
+          type: number
+        target:
+          type: ["number", "null"]
+
+    ClientStatPoint:
+      type: object
+      required: [month, leads, converted]
+      properties:
+        month:
+          type: string
+        leads:
+          type: integer
+        converted:
+          type: integer
+
+    ActivityItem:
+      type: object
+      required: [id, type, description, createdAt]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [client_added, appointment_scheduled, message_sent, client_updated, appointment_completed]
+        description:
+          type: string
+        clientName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
