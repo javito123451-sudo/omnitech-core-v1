@@ -8,7 +8,7 @@ import {
   ChevronLeft, Copy, Check, Trash2, AlertCircle,
   UserRound, X, Building2, ChevronDown, ChevronUp,
   Tag, DollarSign, Clock, MessageSquare, ExternalLink,
-  Phone, Mail, StickyNote,
+  Phone, Mail, StickyNote, Menu,
 } from "lucide-react";
 import { Input }  from "@/components/ui/input";
 import { Badge }  from "@/components/ui/badge";
@@ -793,24 +793,53 @@ export default function Assistant() {
   );
 
   return (
-    <div className="h-[calc(100dvh-7rem)] md:h-[calc(100dvh-3rem)] flex gap-0 md:gap-4 animate-in fade-in duration-300">
+    <div className="h-[calc(100dvh-8.5rem)] md:h-[calc(100dvh-3rem)] flex gap-0 md:gap-4 animate-in fade-in duration-300 relative">
+
+      {/* ── Mobile sidebar backdrop ── */}
+      <AnimatePresence>
+        {showList && (
+          <motion.div
+            key="sidebar-backdrop"
+            className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[45]"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setShowList(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── Sidebar ── */}
       <div className={cn(
-        "flex-col bg-card border border-border rounded-xl overflow-hidden",
-        "w-full md:w-64 md:flex md:shrink-0",
-        showList ? "flex" : "hidden md:flex"
-      )}>
+        "flex flex-col bg-card border border-border overflow-hidden",
+        "transition-transform duration-300 ease-in-out will-animate",
+        // Desktop: static sidebar in flex row
+        "md:relative md:translate-x-0 md:w-64 md:shrink-0 md:rounded-xl md:z-auto md:shadow-none",
+        // Mobile: fixed slide-over panel
+        "fixed inset-y-0 left-0 w-[82vw] max-w-xs z-50 shadow-2xl rounded-r-2xl rounded-l-none border-r border-t-0 border-b-0",
+        showList ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+      )}
+      style={{
+        paddingTop: "env(safe-area-inset-top, 0px)",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}>
         <div className="p-3 border-b border-border space-y-2 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Hexagon className="w-4 h-4 text-primary fill-primary/15"/>
               <span className="text-sm font-bold text-white">Conversaciones</span>
             </div>
-            <button onClick={startNewChat}
-              className="p-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors">
-              <Plus className="w-4 h-4"/>
-            </button>
+            <div className="flex items-center gap-1">
+              <button onClick={startNewChat}
+                className="p-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors touch-manipulation"
+                title="Nueva conversación">
+                <Plus className="w-4 h-4"/>
+              </button>
+              <button onClick={() => setShowList(false)}
+                className="md:hidden p-1.5 rounded-lg text-muted-foreground hover:text-white hover:bg-white/5 transition-colors touch-manipulation"
+                title="Cerrar">
+                <X className="w-4 h-4"/>
+              </button>
+            </div>
           </div>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground"/>
@@ -858,17 +887,15 @@ export default function Assistant() {
         </div>
       </div>
 
-      {/* ── Chat area ── */}
-      <div className={cn(
-        "flex-1 flex flex-col bg-card border border-border rounded-xl overflow-hidden min-w-0",
-        showList ? "hidden md:flex" : "flex"
-      )}>
+      {/* ── Chat area ── always visible; sidebar overlays it on mobile */}
+      <div className="flex-1 flex flex-col bg-card border border-border rounded-xl overflow-hidden min-w-0">
 
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0 bg-background/30">
           <button onClick={() => setShowList(true)}
-            className="md:hidden p-1.5 rounded-lg text-muted-foreground hover:text-white hover:bg-white/5 transition-colors">
-            <ChevronLeft className="w-4 h-4"/>
+            className="md:hidden p-2 rounded-lg text-muted-foreground hover:text-white hover:bg-white/5 transition-colors touch-manipulation"
+            aria-label="Abrir conversaciones">
+            <Menu className="w-4 h-4"/>
           </button>
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/25 to-violet-600/25 border border-primary/20 flex items-center justify-center shrink-0">
             <Hexagon className="w-4 h-4 text-primary fill-primary/10"/>

@@ -507,7 +507,7 @@ function ClientCard({ client, onView }: { client: ClientRow; onView: () => void 
   return (
     <Card
       onClick={onView}
-      className="bg-card border-border hover:border-primary/40 cursor-pointer transition-all duration-150 hover:shadow-[0_0_15px_rgba(59,130,246,0.08)] group"
+      className="bg-card border-border hover:border-primary/40 active:bg-white/[0.03] cursor-pointer transition-all duration-150 hover:shadow-[0_0_15px_rgba(59,130,246,0.08)] group touch-manipulation"
     >
       <CardContent className="p-3.5">
         <div className="flex items-start gap-3">
