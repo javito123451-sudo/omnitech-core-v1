@@ -298,138 +298,199 @@ function WelcomeScreen({ onSuggest }: { onSuggest: (text:string)=>void }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────
 export default function Assistant() {
-  const [sessions, setSessions]       = useState<Session[]>([]);
-  const [activeId, setActiveId]       = useState<string | null>(null);
-  const [showList, setShowList]       = useState(false);
-  const [input, setInput]             = useState("");
-  const [isThinking, setIsThinking]   = useState(false);
-  const [search, setSearch]           = useState("");
+  const [sessions, setSessions]           = useState<Session[]>([]);
+  const [activeId, setActiveId]           = useState<string | null>(null);
+  const [showList, setShowList]           = useState(false);
+  const [input, setInput]                 = useState("");
+  const [isThinking, setIsThinking]       = useState(false);
+  const [search, setSearch]               = useState("");
   const [contextClient, setContextClient] = useState<ClientCtx | null>(null);
-  const [showPicker, setShowPicker]   = useState(false);
-  const bottomRef  = useRef<HTMLDivElement>(null);
-  const abortRef   = useRef<AbortController | null>(null);
-  const inputAreaRef = useRef<HTMLDivElement>(null);
+  const [showPicker, setShowPicker]       = useState(false);
 
-  const activeSession = sessions.find(s=>s.id===activeId) ?? null;
+  const bottomRef      = useRef<HTMLDivElement>(null);
+  const abortRef       = useRef<AbortController | null>(null);
+  const inputAreaRef   = useRef<HTMLDivElement>(null);
+  // Always-fresh refs so async callbacks never read stale closure values
+  const sessionsRef    = useRef(sessions);
+  const activeIdRef    = useRef(activeId);
+  const contextRef     = useRef(contextClient);
+  useEffect(() => { sessionsRef.current    = sessions;      }, [sessions]);
+  useEffect(() => { activeIdRef.current    = activeId;      }, [activeId]);
+  useEffect(() => { contextRef.current     = contextClient; }, [contextClient]);
+
+  const activeSession = sessions.find(s => s.id === activeId) ?? null;
   const suggestions   = getSuggestions(contextClient);
 
-  const scrollToBottom = () =>
-    setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:"smooth"}),50);
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
 
   // Close picker when clicking outside
-  useEffect(()=>{
+  useEffect(() => {
     if (!showPicker) return;
     const handler = (e: MouseEvent) => {
-      if (inputAreaRef.current && !inputAreaRef.current.contains(e.target as Node)) {
+      if (inputAreaRef.current && !inputAreaRef.current.contains(e.target as Node))
         setShowPicker(false);
-      }
     };
     document.addEventListener("mousedown", handler);
-    return ()=>document.removeEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, [showPicker]);
 
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || isThinking) return;
+    if (!trimmed) return;
+
     setInput("");
     setShowPicker(false);
 
-    const now    = new Date();
-    const userMsg: Msg = {id:crypto.randomUUID(),role:"user",content:trimmed,ts:now};
+    // Read latest values from refs (never stale)
+    const currentActiveId = activeIdRef.current;
+    const currentContext  = contextRef.current;
+    const currentSessions = sessionsRef.current;
 
-    let targetId  = activeId;
-    let history: {role:"user"|"assistant";content:string}[] = [];
+    const now     = new Date();
+    const userMsg: Msg = { id: crypto.randomUUID(), role: "user", content: trimmed, ts: now };
 
-    if (!targetId) {
+    // ── Determine session + build history ────────────────────────────────
+    let targetId: string;
+    let history: { role: "user" | "assistant"; content: string }[];
+
+    if (!currentActiveId) {
+      // Brand-new session
       const newSession: Session = {
-        id: crypto.randomUUID(),
-        title: trimmed.slice(0,45),
-        preview: trimmed.slice(0,70),
-        ts: now, msgs: [userMsg],
+        id:      crypto.randomUUID(),
+        title:   trimmed.slice(0, 45),
+        preview: trimmed.slice(0, 70),
+        ts:      now,
+        msgs:    [userMsg],
       };
-      setSessions(prev=>[newSession,...prev]);
+      setSessions(prev => [newSession, ...prev]);
       setActiveId(newSession.id);
       setShowList(false);
       targetId = newSession.id;
-      history  = [{role:"user",content:trimmed}];
+      history  = [{ role: "user", content: trimmed }];
     } else {
-      const existing = sessions.find(s=>s.id===targetId);
+      // Existing session — build history from the freshest snapshot
+      const existing = currentSessions.find(s => s.id === currentActiveId);
       history = [
-        ...(existing?.msgs??[]).map(m=>({
-          role:(m.role==="user"?"user":"assistant") as "user"|"assistant",
+        ...(existing?.msgs ?? []).map(m => ({
+          role:    (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
           content: m.content,
         })),
-        {role:"user" as const,content:trimmed},
+        { role: "user" as const, content: trimmed },
       ];
-      setSessions(prev=>prev.map(s=>s.id===targetId
-        ? {...s,msgs:[...s.msgs,userMsg],preview:trimmed.slice(0,70),ts:now} : s));
+      targetId = currentActiveId;
+      setSessions(prev =>
+        prev.map(s =>
+          s.id === targetId
+            ? { ...s, msgs: [...s.msgs, userMsg], preview: trimmed.slice(0, 70), ts: now }
+            : s
+        )
+      );
     }
 
-    scrollToBottom();
+    // ── Typing indicator ─────────────────────────────────────────────────
     setIsThinking(true);
-    await new Promise(r=>setTimeout(r,700));
+    setTimeout(scrollToBottom, 60);
+
+    await new Promise(r => setTimeout(r, 650));
 
     const aiId  = crypto.randomUUID();
-    const aiMsg: Msg = {id:aiId,role:"ai",content:"",ts:new Date(),streaming:true};
-    setSessions(prev=>prev.map(s=>s.id===targetId?{...s,msgs:[...s.msgs,aiMsg]}:s));
+    const aiMsg: Msg = { id: aiId, role: "ai", content: "", ts: new Date(), streaming: true };
+    setSessions(prev =>
+      prev.map(s => s.id === targetId ? { ...s, msgs: [...s.msgs, aiMsg] } : s)
+    );
     setIsThinking(false);
-    scrollToBottom();
+    setTimeout(scrollToBottom, 60);
 
+    // ── Fetch + stream ───────────────────────────────────────────────────
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
+    const markError = (msg: string) =>
+      setSessions(prev =>
+        prev.map(s =>
+          s.id === targetId
+            ? { ...s, msgs: s.msgs.map(m => m.id === aiId ? { ...m, content: msg, streaming: false, error: true } : m) }
+            : s
+        )
+      );
+
     try {
-      const res = await fetch(`${API_BASE}/api/chat`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          messages: history,
-          clientContext: contextClient ?? undefined,
-        }),
-        signal: ctrl.signal,
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history, clientContext: currentContext ?? undefined }),
+        signal:  ctrl.signal,
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(()=>({error:"Error de conexión"}));
-        setSessions(prev=>prev.map(s=>s.id===targetId
-          ? {...s,msgs:s.msgs.map(m=>m.id===aiId?{...m,content:err.error??"Error inesperado",streaming:false,error:true}:m)}:s));
+        const errBody = await res.json().catch(() => ({ error: "Error de conexión" }));
+        markError(errBody.error ?? "Error inesperado del servidor");
         return;
       }
 
+      // ── SSE parsing with a line buffer ─────────────────────────────────
+      // Chunks can be split mid-line; we accumulate until we see a full line.
       const reader  = res.body!.getReader();
       const decoder = new TextDecoder();
-      let   acc     = "";
+      let lineBuffer = "";
+      let acc        = "";
+      let done       = false;
 
-      while (true) {
-        const {done,value} = await reader.read();
-        if (done) break;
-        for (const line of decoder.decode(value,{stream:true}).split("\n")) {
+      while (!done) {
+        const chunk = await reader.read();
+        done = chunk.done;
+        if (chunk.value) lineBuffer += decoder.decode(chunk.value, { stream: !done });
+
+        // Process every complete line in the buffer
+        let nl: number;
+        while ((nl = lineBuffer.indexOf("\n")) !== -1) {
+          const line = lineBuffer.slice(0, nl).trimEnd();
+          lineBuffer  = lineBuffer.slice(nl + 1);
+
           if (!line.startsWith("data: ")) continue;
           const payload = line.slice(6).trim();
-          if (payload==="[DONE]") break;
-          try {
-            const parsed = JSON.parse(payload) as {token?:string;error?:string};
-            if (parsed.error) throw new Error(parsed.error);
-            if (parsed.token) {
-              acc += parsed.token;
-              const snap = acc;
-              setSessions(prev=>prev.map(s=>s.id===targetId
-                ?{...s,msgs:s.msgs.map(m=>m.id===aiId?{...m,content:snap}:m)}:s));
-              scrollToBottom();
-            }
-          } catch { /* partial chunk */ }
+          if (payload === "[DONE]") { done = true; break; }
+
+          let parsed: { token?: string; error?: string };
+          try { parsed = JSON.parse(payload); }
+          catch { continue; }                          // incomplete JSON fragment — skip
+
+          if (parsed.error) {
+            markError(parsed.error);                   // surface backend error in bubble
+            return;
+          }
+          if (parsed.token) {
+            acc += parsed.token;
+            const snap = acc;
+            setSessions(prev =>
+              prev.map(s =>
+                s.id === targetId
+                  ? { ...s, msgs: s.msgs.map(m => m.id === aiId ? { ...m, content: snap } : m) }
+                  : s
+              )
+            );
+            setTimeout(scrollToBottom, 30);
+          }
         }
       }
 
-      setSessions(prev=>prev.map(s=>s.id===targetId
-        ?{...s,preview:acc.slice(0,70),msgs:s.msgs.map(m=>m.id===aiId?{...m,streaming:false}:m)}:s));
-    } catch(err) {
-      if ((err as Error).name==="AbortError") return;
-      setSessions(prev=>prev.map(s=>s.id===targetId
-        ?{...s,msgs:s.msgs.map(m=>m.id===aiId
-          ?{...m,content:"No se pudo conectar con Omniflow AI. Verifica tu API key.",streaming:false,error:true}:m)}:s));
+      // ── Finalise message ───────────────────────────────────────────────
+      setSessions(prev =>
+        prev.map(s =>
+          s.id === targetId
+            ? { ...s, preview: acc.slice(0, 70), msgs: s.msgs.map(m => m.id === aiId ? { ...m, streaming: false } : m) }
+            : s
+        )
+      );
+
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
+      markError("No se pudo conectar con Omniflow AI. Verifica tu conexión.");
     }
-  }, [activeId,isThinking,sessions,contextClient]);
+  // No sessions/activeId/contextClient in deps — we read them from refs
+  }, [scrollToBottom]);
 
   const startNewChat = () => {
     abortRef.current?.abort();
