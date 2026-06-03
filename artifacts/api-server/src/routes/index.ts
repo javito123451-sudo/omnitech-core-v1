@@ -5,6 +5,7 @@ import { appointmentsRouter } from "./appointments";
 import { messagesRouter, conversationsHandler } from "./messages";
 import { statsRouter } from "./stats";
 import { chatRouter } from "./chat";
+import { calendarAiRouter } from "./calendar-ai";
 
 const router: IRouter = Router();
 
@@ -15,5 +16,6 @@ router.use("/messages", messagesRouter);
 router.get("/conversations", conversationsHandler);
 router.use("/stats", statsRouter);
 router.use("/chat", chatRouter);
+router.use("/calendar-ai", calendarAiRouter);
 
 export default router;

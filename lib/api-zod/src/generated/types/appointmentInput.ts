@@ -15,4 +15,7 @@ export interface AppointmentInput {
   clientId: number;
   status?: AppointmentInputStatus;
   type?: string;
+  reminder?: boolean;
+  tags?: string;
+  location?: string;
 }

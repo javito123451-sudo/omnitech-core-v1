@@ -134,8 +134,13 @@ export const ListAppointmentsResponseItem = zod.object({
   "endTime": zod.string(),
   "clientId": zod.number(),
   "clientName": zod.string().nullish(),
-  "status": zod.enum(['scheduled', 'completed', 'cancelled', 'no_show']),
-  "type": zod.string().nullish()
+  "clientCompany": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'scheduled', 'no_show']),
+  "type": zod.string().nullish(),
+  "reminder": zod.boolean().optional(),
+  "tags": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "createdAt": zod.string().optional()
 })
 export const ListAppointmentsResponse = zod.array(ListAppointmentsResponseItem)
 
@@ -149,8 +154,11 @@ export const CreateAppointmentBody = zod.object({
   "startTime": zod.string(),
   "endTime": zod.string(),
   "clientId": zod.number(),
-  "status": zod.enum(['scheduled', 'completed', 'cancelled', 'no_show']).optional(),
-  "type": zod.string().optional()
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'scheduled', 'no_show']).optional(),
+  "type": zod.string().optional(),
+  "reminder": zod.boolean().optional(),
+  "tags": zod.string().optional(),
+  "location": zod.string().optional()
 })
 
 
@@ -166,8 +174,11 @@ export const UpdateAppointmentBody = zod.object({
   "description": zod.string().optional(),
   "startTime": zod.string().optional(),
   "endTime": zod.string().optional(),
-  "status": zod.enum(['scheduled', 'completed', 'cancelled', 'no_show']).optional(),
-  "type": zod.string().optional()
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'scheduled', 'no_show']).optional(),
+  "type": zod.string().optional(),
+  "reminder": zod.boolean().optional(),
+  "tags": zod.string().optional(),
+  "location": zod.string().optional()
 })
 
 export const UpdateAppointmentResponse = zod.object({
@@ -178,8 +189,13 @@ export const UpdateAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "clientId": zod.number(),
   "clientName": zod.string().nullish(),
-  "status": zod.enum(['scheduled', 'completed', 'cancelled', 'no_show']),
-  "type": zod.string().nullish()
+  "clientCompany": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'scheduled', 'no_show']),
+  "type": zod.string().nullish(),
+  "reminder": zod.boolean().optional(),
+  "tags": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "createdAt": zod.string().optional()
 })
 
 

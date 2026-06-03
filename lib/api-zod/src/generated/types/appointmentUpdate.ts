@@ -14,4 +14,7 @@ export interface AppointmentUpdate {
   endTime?: string;
   status?: AppointmentUpdateStatus;
   type?: string;
+  reminder?: boolean;
+  tags?: string;
+  location?: string;
 }

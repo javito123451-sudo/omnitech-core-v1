@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, appointmentsTable, clientsTable, activityTable } from "@workspace/db";
-import { eq, gte, lte, and, desc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   ListAppointmentsQueryParams,
   CreateAppointmentBody,
@@ -28,13 +28,15 @@ appointmentsRouter.get("/", async (req, res) => {
       rows = rows.filter((r) => r.clientId === Number(query.clientId));
     }
 
-    // Join client names
-    const clients = await db.select({ id: clientsTable.id, name: clientsTable.name }).from(clientsTable);
-    const clientMap = new Map(clients.map((c) => [c.id, c.name]));
+    const clients = await db
+      .select({ id: clientsTable.id, name: clientsTable.name, company: clientsTable.company })
+      .from(clientsTable);
+    const clientMap = new Map(clients.map((c) => [c.id, { name: c.name, company: c.company }]));
 
     const mapped = rows.map((r) => ({
       ...r,
-      clientName: clientMap.get(r.clientId) ?? null,
+      clientName: clientMap.get(r.clientId)?.name ?? null,
+      clientCompany: clientMap.get(r.clientId)?.company ?? null,
       startTime: r.startTime.toISOString(),
       endTime: r.endTime.toISOString(),
       createdAt: r.createdAt.toISOString(),
@@ -56,12 +58,18 @@ appointmentsRouter.post("/", async (req, res) => {
         startTime: new Date(body.startTime),
         endTime: new Date(body.endTime),
         clientId: body.clientId,
-        status: body.status ?? "scheduled",
+        status: body.status ?? "pending",
         type: body.type ?? null,
+        reminder: body.reminder ?? false,
+        tags: body.tags ?? null,
+        location: body.location ?? null,
       })
       .returning();
 
-    const [client] = await db.select({ name: clientsTable.name }).from(clientsTable).where(eq(clientsTable.id, body.clientId));
+    const [client] = await db
+      .select({ name: clientsTable.name, company: clientsTable.company })
+      .from(clientsTable)
+      .where(eq(clientsTable.id, body.clientId));
 
     await db.insert(activityTable).values({
       type: "appointment_scheduled",
@@ -72,6 +80,7 @@ appointmentsRouter.post("/", async (req, res) => {
     res.status(201).json({
       ...appt,
       clientName: client?.name ?? null,
+      clientCompany: client?.company ?? null,
       startTime: appt.startTime.toISOString(),
       endTime: appt.endTime.toISOString(),
       createdAt: appt.createdAt.toISOString(),
@@ -87,12 +96,15 @@ appointmentsRouter.patch("/:id", async (req, res) => {
     const body = UpdateAppointmentBody.parse(req.body);
 
     const updates: Record<string, unknown> = {};
-    if (body.title !== undefined) updates.title = body.title;
+    if (body.title !== undefined)       updates.title = body.title;
     if (body.description !== undefined) updates.description = body.description;
-    if (body.startTime !== undefined) updates.startTime = new Date(body.startTime);
-    if (body.endTime !== undefined) updates.endTime = new Date(body.endTime);
-    if (body.status !== undefined) updates.status = body.status;
-    if (body.type !== undefined) updates.type = body.type;
+    if (body.startTime !== undefined)   updates.startTime = new Date(body.startTime);
+    if (body.endTime !== undefined)     updates.endTime = new Date(body.endTime);
+    if (body.status !== undefined)      updates.status = body.status;
+    if (body.type !== undefined)        updates.type = body.type;
+    if (body.reminder !== undefined)    updates.reminder = body.reminder;
+    if (body.tags !== undefined)        updates.tags = body.tags;
+    if (body.location !== undefined)    updates.location = body.location;
 
     const [appt] = await db
       .update(appointmentsTable)
@@ -102,7 +114,10 @@ appointmentsRouter.patch("/:id", async (req, res) => {
 
     if (!appt) return res.status(404).json({ error: "Not found" });
 
-    const [client] = await db.select({ name: clientsTable.name }).from(clientsTable).where(eq(clientsTable.id, appt.clientId));
+    const [client] = await db
+      .select({ name: clientsTable.name, company: clientsTable.company })
+      .from(clientsTable)
+      .where(eq(clientsTable.id, appt.clientId));
 
     if (body.status === "completed") {
       await db.insert(activityTable).values({
@@ -115,6 +130,7 @@ appointmentsRouter.patch("/:id", async (req, res) => {
     res.json({
       ...appt,
       clientName: client?.name ?? null,
+      clientCompany: client?.company ?? null,
       startTime: appt.startTime.toISOString(),
       endTime: appt.endTime.toISOString(),
       createdAt: appt.createdAt.toISOString(),

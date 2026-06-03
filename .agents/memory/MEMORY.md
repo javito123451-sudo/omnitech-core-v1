@@ -1,0 +1,2 @@
+- [Calendar premium upgrade](calendar-upgrade.md) — Calendar has 3 views (week/month/day), new statuses (pending/confirmed/completed/cancelled), new DB columns (reminder/tags/location), AI panel at /api/calendar-ai, drag-and-drop on week grid.
+- [API codegen workflow](codegen-workflow.md) — Orval codegen via `pnpm --filter @workspace/api-spec run codegen`; DB migration via `pnpm --filter @workspace/db exec drizzle-kit push --force`; pg available at `node_modules/.pnpm/pg@8.20.0/node_modules/pg` for direct SQL.

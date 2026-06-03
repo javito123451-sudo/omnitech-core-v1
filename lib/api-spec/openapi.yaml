@@ -453,11 +453,21 @@ components:
           type: integer
         clientName:
           type: ["string", "null"]
+        clientCompany:
+          type: ["string", "null"]
         status:
           type: string
-          enum: [scheduled, completed, cancelled, no_show]
+          enum: [pending, confirmed, completed, cancelled, scheduled, no_show]
         type:
           type: ["string", "null"]
+        reminder:
+          type: boolean
+        tags:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        createdAt:
+          type: string
 
     AppointmentInput:
       type: object
@@ -475,8 +485,14 @@ components:
           type: integer
         status:
           type: string
-          enum: [scheduled, completed, cancelled, no_show]
+          enum: [pending, confirmed, completed, cancelled, scheduled, no_show]
         type:
+          type: string
+        reminder:
+          type: boolean
+        tags:
+          type: string
+        location:
           type: string
 
     AppointmentUpdate:
@@ -492,8 +508,14 @@ components:
           type: string
         status:
           type: string
-          enum: [scheduled, completed, cancelled, no_show]
+          enum: [pending, confirmed, completed, cancelled, scheduled, no_show]
         type:
+          type: string
+        reminder:
+          type: boolean
+        tags:
+          type: string
+        location:
           type: string
 
     # ── Message ──────────────────────────────────────────────────────────────

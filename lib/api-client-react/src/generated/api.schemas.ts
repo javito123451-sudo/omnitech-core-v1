@@ -83,9 +83,11 @@ export type AppointmentStatus = typeof AppointmentStatus[keyof typeof Appointmen
 
 
 export const AppointmentStatus = {
-  scheduled: 'scheduled',
+  pending: 'pending',
+  confirmed: 'confirmed',
   completed: 'completed',
   cancelled: 'cancelled',
+  scheduled: 'scheduled',
   no_show: 'no_show',
 } as const;
 
@@ -99,18 +101,28 @@ export interface Appointment {
   clientId: number;
   /** @nullable */
   clientName?: string | null;
+  /** @nullable */
+  clientCompany?: string | null;
   status: AppointmentStatus;
   /** @nullable */
   type?: string | null;
+  reminder?: boolean;
+  /** @nullable */
+  tags?: string | null;
+  /** @nullable */
+  location?: string | null;
+  createdAt?: string;
 }
 
 export type AppointmentInputStatus = typeof AppointmentInputStatus[keyof typeof AppointmentInputStatus];
 
 
 export const AppointmentInputStatus = {
-  scheduled: 'scheduled',
+  pending: 'pending',
+  confirmed: 'confirmed',
   completed: 'completed',
   cancelled: 'cancelled',
+  scheduled: 'scheduled',
   no_show: 'no_show',
 } as const;
 
@@ -122,15 +134,20 @@ export interface AppointmentInput {
   clientId: number;
   status?: AppointmentInputStatus;
   type?: string;
+  reminder?: boolean;
+  tags?: string;
+  location?: string;
 }
 
 export type AppointmentUpdateStatus = typeof AppointmentUpdateStatus[keyof typeof AppointmentUpdateStatus];
 
 
 export const AppointmentUpdateStatus = {
-  scheduled: 'scheduled',
+  pending: 'pending',
+  confirmed: 'confirmed',
   completed: 'completed',
   cancelled: 'cancelled',
+  scheduled: 'scheduled',
   no_show: 'no_show',
 } as const;
 
@@ -141,6 +158,9 @@ export interface AppointmentUpdate {
   endTime?: string;
   status?: AppointmentUpdateStatus;
   type?: string;
+  reminder?: boolean;
+  tags?: string;
+  location?: string;
 }
 
 export type MessageDirection = typeof MessageDirection[keyof typeof MessageDirection];

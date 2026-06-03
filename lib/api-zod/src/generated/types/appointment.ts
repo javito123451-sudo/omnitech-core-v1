@@ -17,7 +17,15 @@ export interface Appointment {
   clientId: number;
   /** @nullable */
   clientName?: string | null;
+  /** @nullable */
+  clientCompany?: string | null;
   status: AppointmentStatus;
   /** @nullable */
   type?: string | null;
+  reminder?: boolean;
+  /** @nullable */
+  tags?: string | null;
+  /** @nullable */
+  location?: string | null;
+  createdAt?: string;
 }

@@ -1,20 +1,23 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, TrendingUp, Calendar, Zap, Activity, Clock, ChevronRight } from "lucide-react";
+import { Users, TrendingUp, Calendar, Zap, Activity, Clock, ChevronRight, Bell, MapPin, CheckCircle2, Timer } from "lucide-react";
 import {
   useGetDashboardStats,
   useGetRevenueStats,
   useGetRecentActivity,
   useListAppointments,
 } from "@workspace/api-client-react";
+import type { Appointment } from "@workspace/api-client-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
 } from "recharts";
-import { format, parseISO, isToday, isTomorrow, formatDistanceToNow } from "date-fns";
+import { format, parseISO, isToday, isTomorrow, formatDistanceToNow, differenceInMinutes } from "date-fns";
 import { es } from "date-fns/locale";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+
+type ApptEx = Appointment & { reminder?: boolean; location?: string | null; clientCompany?: string | null };
 
 const ACTIVITY_LABELS: Record<string, (clientName?: string | null) => string> = {
   client_added:          (n) => `Nuevo cliente${n ? `: ${n}` : " agregado"}`,
@@ -28,9 +31,11 @@ function activityLabel(type: string, clientName?: string | null) {
 }
 
 const STATUS_META: Record<string, { label: string; color: string; dot: string }> = {
-  scheduled: { label: "Programada", color: "bg-blue-500/15 text-blue-400 border-blue-500/20",    dot: "bg-blue-400" },
+  pending:   { label: "Pendiente",  color: "bg-blue-500/15 text-blue-400 border-blue-500/20",     dot: "bg-blue-400" },
+  confirmed: { label: "Confirmada", color: "bg-violet-500/15 text-violet-400 border-violet-500/20", dot: "bg-violet-400" },
   completed: { label: "Completada", color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20", dot: "bg-emerald-400" },
-  cancelled: { label: "Cancelada",  color: "bg-red-500/15 text-red-400 border-red-500/20",        dot: "bg-red-400" },
+  cancelled: { label: "Cancelada",  color: "bg-red-500/15 text-red-400 border-red-500/20",         dot: "bg-red-400" },
+  scheduled: { label: "Pendiente",  color: "bg-blue-500/15 text-blue-400 border-blue-500/20",     dot: "bg-blue-400" },
   no_show:   { label: "No asistió", color: "bg-amber-500/15 text-amber-400 border-amber-500/20",  dot: "bg-amber-400" },
 };
 
@@ -41,6 +46,11 @@ function apptDayLabel(iso: string) {
   return format(d, "EEE d MMM", { locale: es });
 }
 
+function isUpcoming(a: Appointment) {
+  return (a.status === "pending" || a.status === "scheduled" || a.status === "confirmed") &&
+    new Date(a.startTime) >= new Date();
+}
+
 export default function Dashboard() {
   const { data: stats,        isLoading: statsLoading } = useGetDashboardStats();
   const { data: revenueData }   = useGetRevenueStats();
@@ -48,10 +58,20 @@ export default function Dashboard() {
   const { data: allAppts = [] } = useListAppointments();
   const [, setLocation] = useLocation();
 
-  const upcoming = allAppts
-    .filter(a => a.status === "scheduled" && new Date(a.startTime) >= new Date())
+  const now = new Date();
+  const todayStr = format(now, "yyyy-MM-dd");
+
+  const todayAppts = (allAppts as ApptEx[])
+    .filter(a => format(parseISO(a.startTime), "yyyy-MM-dd") === todayStr)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  const upcoming = (allAppts as ApptEx[])
+    .filter(isUpcoming)
     .sort((a, b) => a.startTime.localeCompare(b.startTime))
     .slice(0, 5);
+
+  const nextAppt = todayAppts.find(a => new Date(a.startTime) >= now);
+  const minsToNext = nextAppt ? differenceInMinutes(parseISO(nextAppt.startTime), now) : null;
 
   return (
     <div className="space-y-4 md:space-y-6 animate-in fade-in zoom-in duration-500">
@@ -90,6 +110,14 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* ── Today's appointments widget ── */}
+      <TodayWidget
+        todayAppts={todayAppts}
+        nextAppt={nextAppt as ApptEx | undefined}
+        minsToNext={minsToNext}
+        onNavigate={() => setLocation("/calendar")}
+      />
+
       {/* ── Charts row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-7 gap-3 md:gap-4">
         <Card className="lg:col-span-5 bg-card border-border">
@@ -97,7 +125,6 @@ export default function Dashboard() {
             <CardTitle className="text-sm md:text-base">Resumen de Ingresos</CardTitle>
           </CardHeader>
           <CardContent className="px-1 pb-3">
-            {/* Smaller chart on mobile to avoid feeling cramped */}
             <div className="h-[155px] md:h-[260px] w-full">
               {revenueData && (
                 <ResponsiveContainer width="100%" height="100%">
@@ -183,15 +210,13 @@ export default function Dashboard() {
           ) : (
             <div className="divide-y divide-border/50">
               {upcoming.map((appt) => {
-                const sm       = STATUS_META[appt.status] ?? STATUS_META.scheduled;
+                const sm       = STATUS_META[appt.status] ?? STATUS_META.pending;
                 const dayLabel = apptDayLabel(appt.startTime);
                 const isHoy    = dayLabel === "Hoy";
                 return (
                   <div key={appt.id}
                     onClick={() => setLocation("/calendar")}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] active:bg-white/[0.05] cursor-pointer transition-colors group touch-manipulation">
-
-                    {/* Date badge */}
                     <div className={cn(
                       "flex flex-col items-center justify-center w-10 h-10 rounded-xl border shrink-0",
                       isHoy ? "bg-primary/15 border-primary/30" : "bg-white/[0.03] border-white/[0.07]"
@@ -205,8 +230,6 @@ export default function Dashboard() {
                         {format(parseISO(appt.startTime), "d")}
                       </span>
                     </div>
-
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white truncate">{appt.title}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -221,8 +244,6 @@ export default function Dashboard() {
                         )}
                       </div>
                     </div>
-
-                    {/* Status badge + time */}
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <Badge variant="outline" className={cn("text-[9px] h-5 px-1.5 border", sm.color)}>
                         {sm.label}
@@ -242,6 +263,135 @@ export default function Dashboard() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ── Today Widget ─────────────────────────────────────────────────────────────
+
+function TodayWidget({ todayAppts, nextAppt, minsToNext, onNavigate }: {
+  todayAppts: ApptEx[];
+  nextAppt?: ApptEx;
+  minsToNext: number | null;
+  onNavigate: () => void;
+}) {
+  if (todayAppts.length === 0) return null;
+
+  const completed  = todayAppts.filter(a => a.status === "completed").length;
+  const remaining  = todayAppts.filter(a => a.status !== "completed" && a.status !== "cancelled").length;
+  const confirmed  = todayAppts.filter(a => a.status === "confirmed").length;
+  const pct        = todayAppts.length > 0 ? Math.round((completed / todayAppts.length) * 100) : 0;
+
+  return (
+    <Card className="bg-card border-border overflow-hidden">
+      <CardHeader className="pb-3 pt-3 px-4 border-b border-border">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm md:text-base flex items-center gap-2">
+            <div className="w-5 h-5 rounded-md bg-primary/20 border border-primary/30 flex items-center justify-center">
+              <Calendar className="w-3 h-3 text-primary"/>
+            </div>
+            Citas de Hoy
+            <span className="text-[10px] bg-white/[0.06] border border-white/[0.08] px-1.5 py-0.5 rounded-full font-semibold text-slate-300">
+              {todayAppts.length}
+            </span>
+          </CardTitle>
+          <button onClick={onNavigate}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors touch-manipulation py-1">
+            Ver calendario <ChevronRight className="w-3.5 h-3.5"/>
+          </button>
+        </div>
+      </CardHeader>
+
+      <CardContent className="px-4 pt-3 pb-4">
+        {/* Progress + stats row */}
+        <div className="flex items-center gap-4 mb-3">
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] text-slate-500">{completed} de {todayAppts.length} completadas</span>
+              <span className="text-[11px] font-semibold text-white">{pct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500 transition-all duration-700"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 text-center shrink-0">
+            <div>
+              <p className="text-sm font-bold text-emerald-400">{completed}</p>
+              <p className="text-[9px] text-slate-500 uppercase tracking-wide">Hecho</p>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-blue-400">{remaining}</p>
+              <p className="text-[9px] text-slate-500 uppercase tracking-wide">Quedan</p>
+            </div>
+            {confirmed > 0 && (
+              <div>
+                <p className="text-sm font-bold text-violet-400">{confirmed}</p>
+                <p className="text-[9px] text-slate-500 uppercase tracking-wide">Confirm.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Next appointment banner */}
+        {nextAppt && minsToNext !== null && minsToNext <= 120 && (
+          <div className="flex items-center gap-3 p-2.5 rounded-xl bg-primary/[0.08] border border-primary/20 mb-3">
+            <div className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+              <Timer className="w-4 h-4 text-primary"/>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate">{nextAppt.title}</p>
+              <p className="text-[10px] text-primary mt-0.5">
+                En {minsToNext < 60 ? `${minsToNext} min` : `${Math.floor(minsToNext / 60)}h ${minsToNext % 60}m`}
+                {nextAppt.clientName && ` · ${nextAppt.clientName}`}
+              </p>
+            </div>
+            {nextAppt.reminder && <Bell className="w-3.5 h-3.5 text-amber-400 shrink-0"/>}
+          </div>
+        )}
+
+        {/* Appointment list (compact) */}
+        <div className="space-y-1.5">
+          {todayAppts.slice(0, 4).map(appt => {
+            const sm  = STATUS_META[appt.status] ?? STATUS_META.pending;
+            const isPast = new Date(appt.endTime) < new Date();
+            return (
+              <button key={appt.id} onClick={onNavigate}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border transition-all text-left",
+                  appt.status === "completed"
+                    ? "bg-emerald-500/[0.05] border-emerald-500/15 opacity-70"
+                    : appt.status === "cancelled"
+                    ? "bg-red-500/[0.04] border-red-500/10 opacity-50"
+                    : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.10]"
+                )}>
+                <div className={cn("w-2 h-2 rounded-full shrink-0", sm.dot)}/>
+                <div className="flex-1 min-w-0">
+                  <p className={cn("text-xs font-medium truncate", appt.status === "completed" ? "text-slate-400 line-through" : "text-white")}>
+                    {appt.title}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {appt.clientName && (
+                    <span className="text-[10px] text-slate-500 truncate hidden sm:block max-w-[80px]">{appt.clientName}</span>
+                  )}
+                  {appt.reminder && <Bell className="w-2.5 h-2.5 text-amber-400/70"/>}
+                  <span className="text-[10px] text-slate-500">{format(parseISO(appt.startTime), "HH:mm")}</span>
+                  {appt.status === "completed" && <CheckCircle2 className="w-3 h-3 text-emerald-500"/>}
+                </div>
+              </button>
+            );
+          })}
+          {todayAppts.length > 4 && (
+            <button onClick={onNavigate}
+              className="w-full text-center text-[11px] text-slate-500 hover:text-primary py-1 transition-colors">
+              +{todayAppts.length - 4} más citas hoy
+            </button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
