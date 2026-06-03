@@ -15,50 +15,60 @@ Instrucciones:
 - Usa formato Markdown cuando sea útil (negritas, listas, tablas)
 - Sé conciso pero completo — respuestas de máximo 400 palabras salvo que pidan algo detallado
 - Cuando generes presupuestos, usa formato de tabla Markdown
-- Cuando sugiereas mensajes para clientes, ponlos entre comillas en bloque con >
+- Cuando sugieras mensajes para clientes, ponlos entre comillas en bloque con >
 - Propón siempre un siguiente paso accionable al final de tu respuesta
 - No menciones que eres GPT o que eres de OpenAI — eres Omniflow AI`;
 
 interface ClientContext {
+  id?: number;
   name: string;
   email?: string;
-  phone?: string;
-  company?: string;
+  phone?: string | null;
+  company?: string | null;
   status?: string;
-  tags?: string;
-  notes?: string;
-  value?: number;
+  tags?: string | null;
+  notes?: string | null;
+  value?: number | null;
+  lastInteraction?: string | null;
 }
 
 const STATUS_ES: Record<string, string> = {
-  lead: "Prospecto",
-  active: "Activo",
-  inactive: "Inactivo",
-  churned: "Perdido",
+  lead:     "Prospecto (en etapa de evaluación)",
+  active:   "Cliente activo (relación vigente)",
+  inactive: "Cliente inactivo (sin actividad reciente)",
+  churned:  "Cliente perdido (canceló o dejó de comprar)",
 };
 
 function buildSystemPrompt(clientContext?: ClientContext): string {
   if (!clientContext) return BASE_SYSTEM_PROMPT;
 
   const lines = [
-    `Nombre: ${clientContext.name}`,
-    clientContext.company  ? `Empresa: ${clientContext.company}` : null,
-    clientContext.status   ? `Estado: ${STATUS_ES[clientContext.status] ?? clientContext.status}` : null,
-    clientContext.email    ? `Correo: ${clientContext.email}` : null,
-    clientContext.phone    ? `Teléfono: ${clientContext.phone}` : null,
-    clientContext.value    ? `Valor del trato: €${clientContext.value.toLocaleString("es-ES")}` : null,
-    clientContext.tags     ? `Etiquetas: ${clientContext.tags}` : null,
-    clientContext.notes    ? `Notas del CRM: ${clientContext.notes}` : null,
+    `Nombre completo: ${clientContext.name}`,
+    clientContext.company       ? `Empresa: ${clientContext.company}` : null,
+    clientContext.status        ? `Estado en CRM: ${STATUS_ES[clientContext.status] ?? clientContext.status}` : null,
+    clientContext.email         ? `Email: ${clientContext.email}` : null,
+    clientContext.phone         ? `Teléfono: ${clientContext.phone}` : null,
+    clientContext.value         ? `Valor del trato: €${clientContext.value.toLocaleString("es-ES")}` : null,
+    clientContext.tags          ? `Etiquetas: ${clientContext.tags}` : null,
+    clientContext.lastInteraction ? `Última interacción registrada: ${clientContext.lastInteraction}` : null,
+    clientContext.notes         ? `Notas del CRM:\n${clientContext.notes}` : null,
   ].filter(Boolean).join("\n");
 
   return `${BASE_SYSTEM_PROMPT}
 
----
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 CLIENTE EN FOCO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${lines}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-El usuario está trabajando con este cliente en concreto. Usa su nombre, empresa y situación real para personalizar TODAS tus respuestas. Cuando redactes mensajes, dirígete al cliente por su nombre. Cuando hagas presupuestos, menciona su empresa. Haz que cada respuesta sea 100% específica a este cliente.
----`;
+INSTRUCCIONES ESPECIALES PARA ESTE CLIENTE:
+- Usa su nombre (${clientContext.name.split(" ")[0]}) de forma natural en tu respuesta
+- Cuando redactes mensajes, diríjete al cliente directamente por su nombre
+- Cuando hagas propuestas o presupuestos, menciona su empresa (${clientContext.company ?? clientContext.name})
+- Ten en cuenta su estado actual (${clientContext.status ?? "desconocido"}) para adaptar el tono y la estrategia
+- Si hay notas del CRM, úsalas para personalizar tu respuesta
+- Si hay información de última interacción, menciónala si es relevante para dar contexto`;
 }
 
 router.post("/", async (req, res) => {
@@ -74,7 +84,7 @@ router.post("/", async (req, res) => {
 
   const apiKey = process.env["OPENAI_API_KEY"];
   if (!apiKey) {
-    res.status(503).json({ error: "OPENAI_API_KEY not configured" });
+    res.status(503).json({ error: "OPENAI_API_KEY no configurada" });
     return;
   }
 
@@ -93,22 +103,20 @@ router.post("/", async (req, res) => {
         { role: "system", content: buildSystemPrompt(clientContext) },
         ...messages,
       ],
-      stream: true,
+      stream:     true,
       max_tokens: 700,
       temperature: 0.7,
     });
 
     for await (const chunk of stream) {
       const token = chunk.choices[0]?.delta?.content ?? "";
-      if (token) {
-        res.write(`data: ${JSON.stringify({ token })}\n\n`);
-      }
+      if (token) res.write(`data: ${JSON.stringify({ token })}\n\n`);
     }
 
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : "Error desconocido";
     res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
     res.end();
   }
