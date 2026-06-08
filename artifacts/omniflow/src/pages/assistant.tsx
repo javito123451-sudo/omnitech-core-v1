@@ -486,7 +486,7 @@ function WelcomeScreen({
       </div>
 
       <div className="space-y-2">
-        <h2 className="text-2xl md:text-3xl font-bold text-white">Omniflow <span className="text-primary">AI</span></h2>
+        <h2 className="text-2xl md:text-3xl font-bold text-white">OmniTech <span className="text-primary">AI</span></h2>
         {selectedClient ? (
           <p className="text-muted-foreground text-sm max-w-xs">
             Asistente configurado para{" "}
@@ -769,7 +769,7 @@ export default function Assistant() {
 
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
-      markError("No se pudo conectar con Omniflow AI. Verifica tu conexión.");
+      markError("No se pudo conectar con OmniTech AI. Verifica tu conexión.");
     }
   }, [scrollToBottom]);
 
@@ -881,7 +881,7 @@ export default function Assistant() {
           <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/5 border border-primary/10">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"/>
             <span className="text-xs text-muted-foreground">
-              Omniflow AI <span className="text-primary font-medium">GPT-4o mini</span>
+              OmniTech AI <span className="text-primary font-medium">GPT-4o mini</span>
             </span>
           </div>
         </div>
@@ -902,7 +902,7 @@ export default function Assistant() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-white truncate">
-              {activeSession ? activeSession.title : "Omniflow AI"}
+              {activeSession ? activeSession.title : "OmniTech AI"}
             </p>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
@@ -1039,7 +1039,7 @@ export default function Assistant() {
           </div>
 
           <p className="text-center text-[10px] text-muted-foreground/40 mt-1.5">
-            GPT-4o mini · Omniflow AI puede cometer errores. Verifica información importante.
+            GPT-4o mini · OmniTech AI puede cometer errores. Verifica información importante.
           </p>
         </div>
       </div>

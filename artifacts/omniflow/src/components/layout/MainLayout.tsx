@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut, Hexagon } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut, Hexagon, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useClerk, useUser } from "@clerk/react";
@@ -72,6 +72,21 @@ export default function MainLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="p-3 border-t border-border space-y-1">
+          <Link href="/settings">
+            <div className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all cursor-pointer group",
+              location.startsWith("/settings")
+                ? "bg-primary/10 text-primary border border-primary/20"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent"
+            )}>
+              <Settings className={cn(
+                "w-4 h-4 shrink-0",
+                location.startsWith("/settings") ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+              )} />
+              <span className="font-medium text-sm">Configuración</span>
+            </div>
+          </Link>
+
           {clerkUser && (
             <div className="px-3 py-2 rounded-md flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
@@ -112,14 +127,21 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             <Hexagon className="w-5 h-5 text-primary fill-primary/20" />
             <span className="font-bold text-sm tracking-tight">OMNITECH</span>
           </Link>
-          <button
-            type="button"
-            className="flex items-center justify-center w-10 h-10 text-muted-foreground hover:text-foreground transition-colors rounded-lg touch-manipulation"
-            onClick={handleSignOut}
-            aria-label="Cerrar sesión"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <Link href="/settings">
+              <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg transition-colors", location.startsWith("/settings") ? "text-primary" : "text-muted-foreground hover:text-foreground")}>
+                <Settings className="w-4 h-4" />
+              </div>
+            </Link>
+            <button
+              type="button"
+              className="flex items-center justify-center w-10 h-10 text-muted-foreground hover:text-foreground transition-colors rounded-lg touch-manipulation"
+              onClick={handleSignOut}
+              aria-label="Cerrar sesión"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </header>
 
         {/* Ambient gradient */}

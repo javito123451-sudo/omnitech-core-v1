@@ -16,6 +16,8 @@ import Assistant from "@/pages/assistant";
 import Calendar from "@/pages/calendar";
 import Statistics from "@/pages/statistics";
 import Setup from "@/pages/setup";
+import Settings from "@/pages/settings";
+import InvitePage from "@/pages/invite";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -197,6 +199,14 @@ function AppRoutes() {
           </MainLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/settings">
+        <ProtectedRoute>
+          <MainLayout>
+            <Settings />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/invite/:token" component={InvitePage} />
       <Route component={NotFound} />
     </Switch>
   );

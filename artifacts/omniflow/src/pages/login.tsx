@@ -51,7 +51,7 @@ export default function Login() {
         </div>
 
         <div className="relative z-10 text-xs text-muted-foreground hidden md:block">
-          &copy; {new Date().getFullYear()} Omniflow CRM. Todos los derechos reservados.
+          &copy; {new Date().getFullYear()} OmniTech Core. Todos los derechos reservados.
         </div>
       </div>
 
@@ -114,7 +114,7 @@ export default function Login() {
           </form>
 
           <p className="text-center text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} Omniflow CRM
+            &copy; {new Date().getFullYear()} OmniTech Core
           </p>
         </div>
       </div>

@@ -51,3 +51,21 @@ export const orgMembersTable = pgTable(
 );
 
 export type OrgMember = typeof orgMembersTable.$inferSelect;
+
+export const orgInvitationsTable = pgTable("org_invitations", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id")
+    .notNull()
+    .references(() => organizationsTable.id, { onDelete: "cascade" }),
+  invitedBy: integer("invited_by")
+    .notNull()
+    .references(() => usersTable.id),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("member"),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type OrgInvitation = typeof orgInvitationsTable.$inferSelect;

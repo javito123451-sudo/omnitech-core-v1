@@ -1,13 +1,27 @@
 import { Router } from "express";
 import { db, clientsTable, appointmentsTable, activityTable } from "@workspace/db";
-import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export const statsRouter = Router();
+
+function calcGrowth(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
 
 statsRouter.get("/dashboard", async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const allClients = await db.select().from(clientsTable).where(eq(clientsTable.orgId, orgId));
+    const now = new Date();
+    const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    const allClients = await db
+      .select({ value: clientsTable.value, status: clientsTable.status, createdAt: clientsTable.createdAt })
+      .from(clientsTable)
+      .where(eq(clientsTable.orgId, orgId));
+
     const totalClients = allClients.length;
     const activeClients = allClients.filter((c) => c.status === "active").length;
     const totalRevenue = allClients.reduce((sum, c) => sum + (c.value ?? 0), 0);
@@ -21,12 +35,33 @@ statsRouter.get("/dashboard", async (req, res) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const allAppts = await db
-      .select()
+      .select({ startTime: appointmentsTable.startTime })
       .from(appointmentsTable)
       .where(eq(appointmentsTable.orgId, orgId));
+
     const appointmentsToday = allAppts.filter(
       (a) => a.startTime >= today && a.startTime < tomorrow
     ).length;
+
+    const revenueThisMonth = allClients
+      .filter((c) => new Date(c.createdAt) >= firstDayThisMonth)
+      .reduce((sum, c) => sum + (c.value ?? 0), 0);
+
+    const revenueLastMonth = allClients
+      .filter((c) => {
+        const d = new Date(c.createdAt);
+        return d >= firstDayLastMonth && d <= lastDayLastMonth;
+      })
+      .reduce((sum, c) => sum + (c.value ?? 0), 0);
+
+    const clientsThisMonth = allClients.filter(
+      (c) => new Date(c.createdAt) >= firstDayThisMonth
+    ).length;
+
+    const clientsLastMonth = allClients.filter((c) => {
+      const d = new Date(c.createdAt);
+      return d >= firstDayLastMonth && d <= lastDayLastMonth;
+    }).length;
 
     res.json({
       totalClients,
@@ -35,8 +70,8 @@ statsRouter.get("/dashboard", async (req, res) => {
       appointmentsToday,
       leadsThisMonth,
       conversionRate,
-      revenueGrowth: 12.5,
-      clientGrowth: 8.3,
+      revenueGrowth: calcGrowth(revenueThisMonth, revenueLastMonth),
+      clientGrowth: calcGrowth(clientsThisMonth, clientsLastMonth),
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -46,7 +81,7 @@ statsRouter.get("/dashboard", async (req, res) => {
 statsRouter.get("/revenue", async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
 
@@ -63,8 +98,7 @@ statsRouter.get("/revenue", async (req, res) => {
         })
         .reduce((sum, c) => sum + (c.value ?? 0), 0);
 
-      const target = 12000 + i * 500;
-      return { month, revenue: monthRevenue, target };
+      return { month, revenue: monthRevenue };
     });
 
     res.json(data);
@@ -76,7 +110,7 @@ statsRouter.get("/revenue", async (req, res) => {
 statsRouter.get("/clients", async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
 
