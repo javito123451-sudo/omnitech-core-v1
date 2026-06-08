@@ -3,17 +3,28 @@ import { Link, useLocation } from "wouter";
 import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut, Hexagon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useClerk, useUser } from "@clerk/react";
+import { useOrg } from "@/lib/orgContext";
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Panel",       href: "/dashboard" },
-  { icon: Users,           label: "Clientes",    href: "/clients" },
-  { icon: MessageSquare,   label: "Asistente",   href: "/assistant" },
-  { icon: CalendarDays,    label: "Calendario",  href: "/calendar" },
+  { icon: LayoutDashboard, label: "Panel",        href: "/dashboard" },
+  { icon: Users,           label: "Clientes",     href: "/clients" },
+  { icon: MessageSquare,   label: "Asistente",    href: "/assistant" },
+  { icon: CalendarDays,    label: "Calendario",   href: "/calendar" },
   { icon: BarChart3,       label: "Estadísticas", href: "/statistics" },
 ];
 
 export default function MainLayout({ children }: { children: ReactNode }) {
-  const [location, setLocation] = useLocation();
+  const [location] = useLocation();
+  const { signOut } = useClerk();
+  const { user: clerkUser } = useUser();
+  const { org } = useOrg();
+
+  const handleSignOut = () => {
+    signOut({ redirectUrl: `${basePath}/` });
+  };
 
   return (
     <div className="flex h-dvh w-full max-w-full bg-background overflow-hidden text-foreground">
@@ -25,9 +36,18 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             <div className="text-primary group-hover:drop-shadow-[0_0_8px_rgba(59,130,246,0.8)] transition-all">
               <Hexagon className="w-5 h-5 fill-primary/20" />
             </div>
-            <span className="font-bold text-base tracking-tight">OMNIFLOW</span>
+            <span className="font-bold text-base tracking-tight">OMNITECH</span>
           </Link>
         </div>
+
+        {org && (
+          <div className="px-4 py-2.5 border-b border-border">
+            <div className="text-xs font-semibold text-primary/80 uppercase tracking-wider truncate">
+              {org.name}
+            </div>
+            <div className="text-[10px] text-muted-foreground capitalize">{org.plan}</div>
+          </div>
+        )}
 
         <nav className="flex-1 px-3 py-5 space-y-0.5 overflow-y-auto scrollbar-thin">
           {navItems.map((item) => {
@@ -51,14 +71,32 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <div className="p-3 border-t border-border">
-          <div
-            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground cursor-pointer transition-all"
-            onClick={() => setLocation("/")}
+        <div className="p-3 border-t border-border space-y-1">
+          {clerkUser && (
+            <div className="px-3 py-2 rounded-md flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+                <span className="text-xs font-bold text-primary">
+                  {(clerkUser.firstName ?? clerkUser.emailAddresses[0]?.emailAddress ?? "U")[0].toUpperCase()}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-foreground truncate">
+                  {clerkUser.firstName ?? clerkUser.emailAddresses[0]?.emailAddress}
+                </div>
+                <div className="text-[10px] text-muted-foreground truncate">
+                  {clerkUser.emailAddresses[0]?.emailAddress}
+                </div>
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground cursor-pointer transition-all"
           >
             <LogOut className="w-4 h-4 shrink-0" />
             <span className="font-medium text-sm">Cerrar sesión</span>
-          </div>
+          </button>
         </div>
       </aside>
 
@@ -72,11 +110,12 @@ export default function MainLayout({ children }: { children: ReactNode }) {
         >
           <Link href="/dashboard" className="flex items-center gap-2">
             <Hexagon className="w-5 h-5 text-primary fill-primary/20" />
-            <span className="font-bold text-sm tracking-tight">OMNIFLOW</span>
+            <span className="font-bold text-sm tracking-tight">OMNITECH</span>
           </Link>
           <button
+            type="button"
             className="flex items-center justify-center w-10 h-10 text-muted-foreground hover:text-foreground transition-colors rounded-lg touch-manipulation"
-            onClick={() => setLocation("/")}
+            onClick={handleSignOut}
             aria-label="Cerrar sesión"
           >
             <LogOut className="w-4 h-4" />
@@ -86,7 +125,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
         {/* Ambient gradient */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-background to-background pointer-events-none" />
 
-        {/* Scrollable content — pb-nav on mobile accounts for bottom nav + safe area */}
+        {/* Scrollable content */}
         <div className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-nav md:pb-6 scrollbar-thin">
           {children}
         </div>
@@ -100,10 +139,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             const isActive = location.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href} className="flex-1">
-                <div
-                  className="relative flex flex-col items-center justify-center gap-0.5 py-2 h-14 cursor-pointer touch-manipulation select-none"
-                >
-                  {/* Active pill indicator */}
+                <div className="relative flex flex-col items-center justify-center gap-0.5 py-2 h-14 cursor-pointer touch-manipulation select-none">
                   <AnimatePresence>
                     {isActive && (
                       <motion.div
@@ -116,7 +152,6 @@ export default function MainLayout({ children }: { children: ReactNode }) {
                       />
                     )}
                   </AnimatePresence>
-
                   <item.icon className={cn(
                     "w-5 h-5 relative z-10 transition-all duration-200",
                     isActive ? "text-primary scale-110" : "text-muted-foreground"

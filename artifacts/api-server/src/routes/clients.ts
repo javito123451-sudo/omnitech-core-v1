@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, clientsTable, activityTable } from "@workspace/db";
-import { eq, ilike, or, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import {
   ListClientsQueryParams,
   CreateClientBody,
@@ -14,27 +14,28 @@ export const clientsRouter = Router();
 
 clientsRouter.get("/", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const query = ListClientsQueryParams.parse(req.query);
-    let rows = await db.select().from(clientsTable).orderBy(desc(clientsTable.createdAt));
+    let rows = await db
+      .select()
+      .from(clientsTable)
+      .where(eq(clientsTable.orgId, orgId))
+      .orderBy(desc(clientsTable.createdAt));
 
     if (query.search) {
-      const s = `%${query.search}%`;
+      const s = query.search.toLowerCase();
       rows = rows.filter(
         (r) =>
-          r.name.toLowerCase().includes(query.search!.toLowerCase()) ||
-          r.email.toLowerCase().includes(query.search!.toLowerCase()) ||
-          (r.company ?? "").toLowerCase().includes(query.search!.toLowerCase())
+          r.name.toLowerCase().includes(s) ||
+          r.email.toLowerCase().includes(s) ||
+          (r.company ?? "").toLowerCase().includes(s)
       );
     }
     if (query.status) {
       rows = rows.filter((r) => r.status === query.status);
     }
 
-    const mapped = rows.map((r) => ({
-      ...r,
-      createdAt: r.createdAt.toISOString(),
-    }));
-    res.json(mapped);
+    res.json(rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })));
   } catch (err) {
     res.status(400).json({ error: String(err) });
   }
@@ -42,10 +43,12 @@ clientsRouter.get("/", async (req, res) => {
 
 clientsRouter.post("/", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const body = CreateClientBody.parse(req.body);
     const [client] = await db
       .insert(clientsTable)
       .values({
+        orgId,
         name: body.name,
         email: body.email,
         phone: body.phone ?? null,
@@ -58,9 +61,11 @@ clientsRouter.post("/", async (req, res) => {
       .returning();
 
     await db.insert(activityTable).values({
+      orgId,
       type: "client_added",
       description: `New client ${client.name} was added`,
       clientName: client.name,
+      userId: req.userId,
     });
 
     res.status(201).json({ ...client, createdAt: client.createdAt.toISOString() });
@@ -71,8 +76,12 @@ clientsRouter.post("/", async (req, res) => {
 
 clientsRouter.get("/:id", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const { id } = GetClientParams.parse({ id: Number(req.params.id) });
-    const [client] = await db.select().from(clientsTable).where(eq(clientsTable.id, id));
+    const [client] = await db
+      .select()
+      .from(clientsTable)
+      .where(and(eq(clientsTable.id, id), eq(clientsTable.orgId, orgId)));
     if (!client) return res.status(404).json({ error: "Not found" });
     res.json({ ...client, createdAt: client.createdAt.toISOString() });
   } catch (err) {
@@ -82,6 +91,7 @@ clientsRouter.get("/:id", async (req, res) => {
 
 clientsRouter.patch("/:id", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const { id } = UpdateClientParams.parse({ id: Number(req.params.id) });
     const body = UpdateClientBody.parse(req.body);
     const [client] = await db
@@ -96,15 +106,17 @@ clientsRouter.patch("/:id", async (req, res) => {
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.value !== undefined && { value: body.value }),
       })
-      .where(eq(clientsTable.id, id))
+      .where(and(eq(clientsTable.id, id), eq(clientsTable.orgId, orgId)))
       .returning();
 
     if (!client) return res.status(404).json({ error: "Not found" });
 
     await db.insert(activityTable).values({
+      orgId,
       type: "client_updated",
       description: `Client ${client.name} was updated`,
       clientName: client.name,
+      userId: req.userId,
     });
 
     res.json({ ...client, createdAt: client.createdAt.toISOString() });
@@ -115,8 +127,11 @@ clientsRouter.patch("/:id", async (req, res) => {
 
 clientsRouter.delete("/:id", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const { id } = DeleteClientParams.parse({ id: Number(req.params.id) });
-    await db.delete(clientsTable).where(eq(clientsTable.id, id));
+    await db
+      .delete(clientsTable)
+      .where(and(eq(clientsTable.id, id), eq(clientsTable.orgId, orgId)));
     res.status(204).send();
   } catch (err) {
     res.status(400).json({ error: String(err) });

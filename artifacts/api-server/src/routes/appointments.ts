@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, appointmentsTable, clientsTable, activityTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   ListAppointmentsQueryParams,
   CreateAppointmentBody,
@@ -13,8 +13,13 @@ export const appointmentsRouter = Router();
 
 appointmentsRouter.get("/", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const query = ListAppointmentsQueryParams.parse(req.query);
-    let rows = await db.select().from(appointmentsTable).orderBy(appointmentsTable.startTime);
+    let rows = await db
+      .select()
+      .from(appointmentsTable)
+      .where(eq(appointmentsTable.orgId, orgId))
+      .orderBy(appointmentsTable.startTime);
 
     if (query.from) {
       const from = new Date(query.from);
@@ -30,7 +35,8 @@ appointmentsRouter.get("/", async (req, res) => {
 
     const clients = await db
       .select({ id: clientsTable.id, name: clientsTable.name, company: clientsTable.company })
-      .from(clientsTable);
+      .from(clientsTable)
+      .where(eq(clientsTable.orgId, orgId));
     const clientMap = new Map(clients.map((c) => [c.id, { name: c.name, company: c.company }]));
 
     const mapped = rows.map((r) => ({
@@ -49,10 +55,12 @@ appointmentsRouter.get("/", async (req, res) => {
 
 appointmentsRouter.post("/", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const body = CreateAppointmentBody.parse(req.body);
     const [appt] = await db
       .insert(appointmentsTable)
       .values({
+        orgId,
         title: body.title,
         description: body.description ?? null,
         startTime: new Date(body.startTime),
@@ -69,12 +77,14 @@ appointmentsRouter.post("/", async (req, res) => {
     const [client] = await db
       .select({ name: clientsTable.name, company: clientsTable.company })
       .from(clientsTable)
-      .where(eq(clientsTable.id, body.clientId));
+      .where(and(eq(clientsTable.id, body.clientId), eq(clientsTable.orgId, orgId)));
 
     await db.insert(activityTable).values({
+      orgId,
       type: "appointment_scheduled",
       description: `Appointment "${appt.title}" scheduled`,
       clientName: client?.name ?? null,
+      userId: req.userId,
     });
 
     res.status(201).json({
@@ -92,6 +102,7 @@ appointmentsRouter.post("/", async (req, res) => {
 
 appointmentsRouter.patch("/:id", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const { id } = UpdateAppointmentParams.parse({ id: Number(req.params.id) });
     const body = UpdateAppointmentBody.parse(req.body);
 
@@ -109,7 +120,7 @@ appointmentsRouter.patch("/:id", async (req, res) => {
     const [appt] = await db
       .update(appointmentsTable)
       .set(updates)
-      .where(eq(appointmentsTable.id, id))
+      .where(and(eq(appointmentsTable.id, id), eq(appointmentsTable.orgId, orgId)))
       .returning();
 
     if (!appt) return res.status(404).json({ error: "Not found" });
@@ -117,13 +128,15 @@ appointmentsRouter.patch("/:id", async (req, res) => {
     const [client] = await db
       .select({ name: clientsTable.name, company: clientsTable.company })
       .from(clientsTable)
-      .where(eq(clientsTable.id, appt.clientId));
+      .where(and(eq(clientsTable.id, appt.clientId), eq(clientsTable.orgId, orgId)));
 
     if (body.status === "completed") {
       await db.insert(activityTable).values({
+        orgId,
         type: "appointment_completed",
         description: `Appointment "${appt.title}" completed`,
         clientName: client?.name ?? null,
+        userId: req.userId,
       });
     }
 
@@ -142,8 +155,11 @@ appointmentsRouter.patch("/:id", async (req, res) => {
 
 appointmentsRouter.delete("/:id", async (req, res) => {
   try {
+    const orgId = req.orgId!;
     const { id } = DeleteAppointmentParams.parse({ id: Number(req.params.id) });
-    await db.delete(appointmentsTable).where(eq(appointmentsTable.id, id));
+    await db
+      .delete(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, id), eq(appointmentsTable.orgId, orgId)));
     res.status(204).send();
   } catch (err) {
     res.status(400).json({ error: String(err) });

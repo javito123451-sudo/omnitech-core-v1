@@ -1,14 +1,22 @@
 import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { organizationsTable } from "./organizations";
+import { clientsTable } from "./clients";
 
 export const appointmentsTable = pgTable("appointments", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id")
+    .notNull()
+    .default(1)
+    .references(() => organizationsTable.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   startTime: timestamp("start_time").notNull(),
   endTime: timestamp("end_time").notNull(),
-  clientId: integer("client_id").notNull(),
+  clientId: integer("client_id")
+    .notNull()
+    .references(() => clientsTable.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("pending"),
   type: text("type"),
   reminder: boolean("reminder").notNull().default(false),
