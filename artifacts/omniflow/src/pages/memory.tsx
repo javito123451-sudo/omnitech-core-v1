@@ -186,14 +186,29 @@ function MemoryModal({
       let res: Response;
       if (isEdit) {
         res = await fetch(`${API_BASE}/api/memory/${mem.id}`, {
-          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
         });
       } else {
         res = await fetch(`${API_BASE}/api/memory`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
         });
       }
-      if (!res.ok) { setError("Error al guardar."); return; }
+      if (!res.ok) {
+        let msg = `Error ${res.status}`;
+        try {
+          const data = await res.json() as { error?: string; message?: string };
+          msg = data.message ?? data.error ?? msg;
+        } catch { /* ignore parse error */ }
+        console.error("[Memory] save failed:", res.status, msg);
+        setError(msg);
+        return;
+      }
       const saved = await res.json() as MemoryEntry;
       onSaved(saved);
       onClose();
@@ -325,7 +340,7 @@ function HistoryDrawer({
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE}/api/memory/${mem.id}/history`)
+    fetch(`${API_BASE}/api/memory/${mem.id}/history`, { credentials: "include" })
       .then(r => r.json())
       .then(data => { setEntries(data as HistoryEntry[]); setLoading(false); })
       .catch(() => setLoading(false));
@@ -431,7 +446,7 @@ export default function MemoryPage() {
       const url = category && category !== "all"
         ? `${API_BASE}/api/memory?category=${category}`
         : `${API_BASE}/api/memory`;
-      const res = await fetch(url);
+      const res = await fetch(url, { credentials: "include" });
       if (res.ok) setMemories(await res.json() as MemoryEntry[]);
     } finally {
       setLoading(false);
@@ -447,7 +462,7 @@ export default function MemoryPage() {
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`${API_BASE}/api/memory/search?q=${encodeURIComponent(searchQuery)}`);
+        const res = await fetch(`${API_BASE}/api/memory/search?q=${encodeURIComponent(searchQuery)}`, { credentials: "include" });
         if (res.ok) setSearchResults(await res.json() as MemoryEntry[]);
       } finally {
         setSearching(false);
@@ -465,7 +480,7 @@ export default function MemoryPage() {
 
   const handleDelete = async (id: number) => {
     if (!confirm("¿Eliminar este recuerdo?")) return;
-    await fetch(`${API_BASE}/api/memory/${id}`, { method: "DELETE" });
+    await fetch(`${API_BASE}/api/memory/${id}`, { method: "DELETE", credentials: "include" });
     setMemories(prev => prev.filter(m => m.id !== id));
     if (searchResults) setSearchResults(prev => prev?.filter(m => m.id !== id) ?? null);
   };

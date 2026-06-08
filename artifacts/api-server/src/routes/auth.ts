@@ -10,12 +10,19 @@ authRouter.get("/me", requireAuth, async (req, res) => {
   const clerkUserId = req.clerkUserId!;
 
   try {
-    const clerkUser = await clerkClient().users.getUser(clerkUserId);
-    const clerkEmail =
-      clerkUser.emailAddresses[0]?.emailAddress ?? "unknown@example.com";
-    const clerkName =
-      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
-    const clerkAvatar = clerkUser.imageUrl ?? null;
+    // Fetch Clerk profile — non-fatal if Clerk API is unavailable
+    let clerkEmail = "unknown@example.com";
+    let clerkName: string | null = null;
+    let clerkAvatar: string | null = null;
+    try {
+      const clerkUser = await clerkClient().users.getUser(clerkUserId);
+      clerkEmail = clerkUser.emailAddresses[0]?.emailAddress ?? clerkEmail;
+      clerkName  = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
+      clerkAvatar = clerkUser.imageUrl ?? null;
+    } catch (clerkErr) {
+      // Proceed with fallback values so provisioning never blocks on Clerk API errors
+      console.warn("Clerk API unavailable — provisioning with fallback profile:", String(clerkErr));
+    }
 
     let [user] = await db
       .select()
