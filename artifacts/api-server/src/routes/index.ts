@@ -7,16 +7,17 @@ import { statsRouter } from "./stats";
 import { chatRouter } from "./chat";
 import { calendarAiRouter } from "./calendar-ai";
 import { authRouter } from "./auth";
+import { organizationsRouter } from "./organizations";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
-
 router.use("/auth", authRouter);
 
 router.use(requireAuth, resolveOrg);
 
+router.use("/organizations", organizationsRouter);
 router.use("/clients", clientsRouter);
 router.use("/appointments", appointmentsRouter);
 router.use("/messages", messagesRouter);

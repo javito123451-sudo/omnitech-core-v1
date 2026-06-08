@@ -39,15 +39,16 @@ appointmentsRouter.get("/", async (req, res) => {
       .where(eq(clientsTable.orgId, orgId));
     const clientMap = new Map(clients.map((c) => [c.id, { name: c.name, company: c.company }]));
 
-    const mapped = rows.map((r) => ({
-      ...r,
-      clientName: clientMap.get(r.clientId)?.name ?? null,
-      clientCompany: clientMap.get(r.clientId)?.company ?? null,
-      startTime: r.startTime.toISOString(),
-      endTime: r.endTime.toISOString(),
-      createdAt: r.createdAt.toISOString(),
-    }));
-    res.json(mapped);
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        clientName: clientMap.get(r.clientId)?.name ?? null,
+        clientCompany: clientMap.get(r.clientId)?.company ?? null,
+        startTime: r.startTime.toISOString(),
+        endTime: r.endTime.toISOString(),
+        createdAt: r.createdAt.toISOString(),
+      }))
+    );
   } catch (err) {
     res.status(400).json({ error: String(err) });
   }
@@ -57,6 +58,17 @@ appointmentsRouter.post("/", async (req, res) => {
   try {
     const orgId = req.orgId!;
     const body = CreateAppointmentBody.parse(req.body);
+
+    const [client] = await db
+      .select({ name: clientsTable.name, company: clientsTable.company })
+      .from(clientsTable)
+      .where(and(eq(clientsTable.id, body.clientId), eq(clientsTable.orgId, orgId)));
+
+    if (!client) {
+      res.status(400).json({ error: "Client not found in this organization." });
+      return;
+    }
+
     const [appt] = await db
       .insert(appointmentsTable)
       .values({
@@ -74,23 +86,18 @@ appointmentsRouter.post("/", async (req, res) => {
       })
       .returning();
 
-    const [client] = await db
-      .select({ name: clientsTable.name, company: clientsTable.company })
-      .from(clientsTable)
-      .where(and(eq(clientsTable.id, body.clientId), eq(clientsTable.orgId, orgId)));
-
     await db.insert(activityTable).values({
       orgId,
       type: "appointment_scheduled",
       description: `Appointment "${appt.title}" scheduled`,
-      clientName: client?.name ?? null,
+      clientName: client.name,
       userId: req.userId,
     });
 
     res.status(201).json({
       ...appt,
-      clientName: client?.name ?? null,
-      clientCompany: client?.company ?? null,
+      clientName: client.name,
+      clientCompany: client.company,
       startTime: appt.startTime.toISOString(),
       endTime: appt.endTime.toISOString(),
       createdAt: appt.createdAt.toISOString(),
@@ -123,7 +130,10 @@ appointmentsRouter.patch("/:id", async (req, res) => {
       .where(and(eq(appointmentsTable.id, id), eq(appointmentsTable.orgId, orgId)))
       .returning();
 
-    if (!appt) return res.status(404).json({ error: "Not found" });
+    if (!appt) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
 
     const [client] = await db
       .select({ name: clientsTable.name, company: clientsTable.company })

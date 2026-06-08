@@ -5,30 +5,32 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useUser, useAuth } from "@clerk/react";
-import { useLocation } from "wouter";
+import { useUser } from "@clerk/react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-interface OrgInfo {
+export interface OrgInfo {
   id: number;
   name: string;
   slug: string;
   plan: string;
   role: string;
+  logoUrl?: string | null;
 }
 
-interface UserInfo {
+export interface UserInfo {
   id: number;
   clerkId: string;
   email: string;
   name: string | null;
+  avatarUrl?: string | null;
 }
 
 interface OrgContextValue {
   org: OrgInfo | null;
   user: UserInfo | null;
   loading: boolean;
+  needsSetup: boolean;
   refetch: () => void;
 }
 
@@ -36,6 +38,7 @@ const OrgContext = createContext<OrgContextValue>({
   org: null,
   user: null,
   loading: true,
+  needsSetup: false,
   refetch: () => {},
 });
 
@@ -45,20 +48,21 @@ export function useOrg() {
 
 export function OrgProvider({ children }: { children: ReactNode }) {
   const { isSignedIn, isLoaded } = useUser();
-  const { getToken } = useAuth();
-  const [, setLocation] = useLocation();
   const [org, setOrg] = useState<OrgInfo | null>(null);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
   const [tick, setTick] = useState(0);
 
   const refetch = () => setTick((t) => t + 1);
 
   useEffect(() => {
     if (!isLoaded) return;
+
     if (!isSignedIn) {
       setOrg(null);
       setUser(null);
+      setNeedsSetup(false);
       setLoading(false);
       return;
     }
@@ -72,9 +76,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       .then(({ user: u, organization }) => {
         setUser(u);
         setOrg(organization);
-        if (!organization) {
-          setLocation("/setup");
-        }
+        setNeedsSetup(!organization);
       })
       .catch((err) => {
         console.error("OrgProvider: failed to load user", err);
@@ -85,7 +87,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   }, [isSignedIn, isLoaded, tick]);
 
   return (
-    <OrgContext.Provider value={{ org, user, loading, refetch }}>
+    <OrgContext.Provider value={{ org, user, loading, needsSetup, refetch }}>
       {children}
     </OrgContext.Provider>
   );

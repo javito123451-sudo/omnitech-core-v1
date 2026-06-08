@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
+import { clerkClient } from "@clerk/express";
 import { db, usersTable, orgMembersTable, organizationsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 
 export const authRouter = Router();
@@ -10,15 +10,12 @@ authRouter.get("/me", requireAuth, async (req, res) => {
   const clerkUserId = req.clerkUserId!;
 
   try {
-    const auth = getAuth(req);
+    const clerkUser = await clerkClient().users.getUser(clerkUserId);
     const clerkEmail =
-      (auth?.sessionClaims?.email as string | undefined) ??
-      (auth?.sessionClaims?.["primary_email"] as string | undefined) ??
-      "unknown@example.com";
+      clerkUser.emailAddresses[0]?.emailAddress ?? "unknown@example.com";
     const clerkName =
-      (auth?.sessionClaims?.["full_name"] as string | undefined) ??
-      (auth?.sessionClaims?.name as string | undefined) ??
-      null;
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
+    const clerkAvatar = clerkUser.imageUrl ?? null;
 
     let [user] = await db
       .select()
@@ -28,15 +25,12 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     if (!user) {
       [user] = await db
         .insert(usersTable)
-        .values({ clerkId: clerkUserId, email: clerkEmail, name: clerkName })
+        .values({ clerkId: clerkUserId, email: clerkEmail, name: clerkName, avatarUrl: clerkAvatar })
         .returning();
     } else {
       [user] = await db
         .update(usersTable)
-        .set({
-          email: clerkEmail,
-          ...(clerkName ? { name: clerkName } : {}),
-        })
+        .set({ email: clerkEmail, name: clerkName, avatarUrl: clerkAvatar })
         .where(eq(usersTable.clerkId, clerkUserId))
         .returning();
     }
@@ -48,19 +42,27 @@ authRouter.get("/me", requireAuth, async (req, res) => {
         orgName: organizationsTable.name,
         orgSlug: organizationsTable.slug,
         orgPlan: organizationsTable.plan,
+        orgLogoUrl: organizationsTable.logoUrl,
       })
       .from(orgMembersTable)
       .innerJoin(organizationsTable, eq(orgMembersTable.orgId, organizationsTable.id))
       .where(eq(orgMembersTable.userId, user.id));
 
     res.json({
-      user: { id: user.id, clerkId: user.clerkId, email: user.email, name: user.name },
+      user: {
+        id: user.id,
+        clerkId: user.clerkId,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+      },
       organization: membership
         ? {
             id: membership.orgId,
             name: membership.orgName,
             slug: membership.orgSlug,
             plan: membership.orgPlan,
+            logoUrl: membership.orgLogoUrl,
             role: membership.role,
           }
         : null,
@@ -74,13 +76,13 @@ authRouter.post("/setup-org", requireAuth, async (req, res) => {
   const clerkUserId = req.clerkUserId!;
   const { orgName } = req.body as { orgName?: string };
 
-  if (!orgName || !orgName.trim()) {
+  if (!orgName?.trim()) {
     res.status(400).json({ error: "orgName is required" });
     return;
   }
 
   try {
-    let [user] = await db
+    const [user] = await db
       .select()
       .from(usersTable)
       .where(eq(usersTable.clerkId, clerkUserId));
@@ -100,12 +102,15 @@ authRouter.post("/setup-org", requireAuth, async (req, res) => {
       return;
     }
 
-    const slug = orgName
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 50) + "-" + Math.random().toString(36).slice(2, 7);
+    const slug =
+      orgName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 50) +
+      "-" +
+      Math.random().toString(36).slice(2, 7);
 
     const [org] = await db
       .insert(organizationsTable)
@@ -119,7 +124,14 @@ authRouter.post("/setup-org", requireAuth, async (req, res) => {
     });
 
     res.status(201).json({
-      organization: { id: org.id, name: org.name, slug: org.slug, plan: org.plan, role: "owner" },
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        plan: org.plan,
+        logoUrl: org.logoUrl,
+        role: "owner",
+      },
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });

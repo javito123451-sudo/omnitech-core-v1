@@ -3,9 +3,13 @@ import OpenAI from "openai";
 
 export const calendarAiRouter = Router();
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 calendarAiRouter.post("/", async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    res.status(503).json({ error: "OPENAI_API_KEY no configurada" });
+    return;
+  }
+
   try {
     const { action, context } = req.body as {
       action: "create" | "summary" | "follow-up" | "suggest-time";
@@ -45,9 +49,11 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
 }`;
       userPrompt = `Contexto: ${JSON.stringify(context, null, 2)}`;
     } else {
-      return res.status(400).json({ error: "Unknown action" });
+      res.status(400).json({ error: "Unknown action" });
+      return;
     }
 
+    const openai = new OpenAI({ apiKey });
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -63,15 +69,16 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
     if (action === "create" || action === "suggest-time") {
       try {
         const parsed = JSON.parse(raw);
-        return res.json({ result: parsed });
+        res.json({ result: parsed });
+        return;
       } catch {
-        return res.json({ result: raw });
+        res.json({ result: raw });
+        return;
       }
     }
 
     res.json({ result: raw });
   } catch (err) {
-    console.error("calendar-ai error:", err);
     res.status(500).json({ error: String(err) });
   }
 });
