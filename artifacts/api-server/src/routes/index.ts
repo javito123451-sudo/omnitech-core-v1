@@ -9,6 +9,7 @@ import { calendarAiRouter } from "./calendar-ai";
 import { authRouter } from "./auth";
 import { organizationsRouter } from "./organizations";
 import { invitationsRouter } from "./invitations";
+import { memoryRouter } from "./memory";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -27,5 +28,6 @@ router.get("/conversations", conversationsHandler);
 router.use("/stats", statsRouter);
 router.use("/chat", chatRouter);
 router.use("/calendar-ai", calendarAiRouter);
+router.use("/memory", memoryRouter);
 
 export default router;

@@ -9,6 +9,7 @@ import {
   UserRound, X, Building2, ChevronDown, ChevronUp,
   Tag, DollarSign, Clock, MessageSquare, ExternalLink,
   Phone, Mail, StickyNote, Menu,
+  Brain, BookOpen,
 } from "lucide-react";
 import { Input }  from "@/components/ui/input";
 import { Badge }  from "@/components/ui/badge";
@@ -30,6 +31,11 @@ type Msg = {
 type Session = {
   id: string; title: string; preview: string; ts: Date;
   msgs: Msg[]; clientId?: number;
+};
+type AgentMemory = {
+  id: number; orgId: number; agentSlug: string;
+  memoryKey: string; memoryVal: string;
+  source: string | null; updatedAt: string;
 };
 
 interface ClientCtxApi {
@@ -464,6 +470,121 @@ function ClientPicker({
   );
 }
 
+// ── Memory Panel ─────────────────────────────────────────────────────────────
+const CAT_META: Record<string, { label: string; cls: string }> = {
+  client:     { label: "Cliente",     cls: "text-blue-400 bg-blue-400/10 border-blue-400/25" },
+  sop:        { label: "Proceso",     cls: "text-violet-400 bg-violet-400/10 border-violet-400/25" },
+  decision:   { label: "Decisión",    cls: "text-amber-400 bg-amber-400/10 border-amber-400/25" },
+  fact:       { label: "Hecho",       cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/25" },
+  preference: { label: "Preferencia", cls: "text-pink-400 bg-pink-400/10 border-pink-400/25" },
+};
+
+function parseMemKey(key: string) {
+  const i = key.indexOf(":");
+  if (i === -1) return { cat: "fact", name: key.replace(/_/g, " ") };
+  return { cat: key.slice(0, i), name: key.slice(i + 1).replace(/_/g, " ") };
+}
+
+function MemoryPanel({
+  memories, flashedMemId, addOpen, addKey, addVal,
+  onAddKeyChange, onAddValChange, onAddToggle, onAddSubmit, onDelete, onClose,
+}: {
+  memories:       AgentMemory[];
+  flashedMemId:   number | null;
+  addOpen:        boolean;
+  addKey:         string;
+  addVal:         string;
+  onAddKeyChange: (v: string) => void;
+  onAddValChange: (v: string) => void;
+  onAddToggle:    () => void;
+  onAddSubmit:    () => void;
+  onDelete:       (id: number) => void;
+  onClose:        () => void;
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border shrink-0">
+        <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <Brain className="w-3.5 h-3.5 text-primary"/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-white">Memoria organizacional</p>
+          <p className="text-[10px] text-muted-foreground">{memories.length} recuerdos guardados</p>
+        </div>
+        <button onClick={onClose}
+          className="p-1 rounded text-muted-foreground hover:text-white transition-colors">
+          <X className="w-3.5 h-3.5"/>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        {memories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-36 text-muted-foreground gap-2 text-center px-4">
+            <BookOpen className="w-7 h-7 opacity-20"/>
+            <p className="text-xs leading-relaxed">Aún no hay recuerdos.<br/>La IA guardará hechos importantes<br/>automáticamente.</p>
+          </div>
+        ) : memories.map(mem => {
+          const { cat, name } = parseMemKey(mem.memoryKey);
+          const meta = CAT_META[cat] ?? CAT_META["fact"]!;
+          const isNew = mem.id === flashedMemId;
+          return (
+            <div key={mem.id}
+              className={cn(
+                "p-2 rounded-lg border group transition-all duration-500",
+                isNew
+                  ? "border-primary/50 bg-primary/5 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                  : "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12]"
+              )}>
+              <div className="flex items-start gap-1.5 mb-1">
+                <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0", meta.cls)}>
+                  {meta.label}
+                </span>
+                <p className="text-[11px] font-medium text-slate-300 capitalize leading-tight flex-1 min-w-0 truncate">
+                  {name}
+                </p>
+                <button onClick={() => onDelete(mem.id)}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-400 transition-all shrink-0">
+                  <Trash2 className="w-3 h-3"/>
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-3">{mem.memoryVal}</p>
+              {isNew && <p className="text-[9px] text-primary mt-1 font-medium">✦ Guardado por la IA</p>}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="p-2 border-t border-border shrink-0">
+        {addOpen ? (
+          <div className="space-y-1.5">
+            <Input value={addKey} onChange={e => onAddKeyChange(e.target.value)}
+              placeholder="clave (ej: client:nombre)" className="h-7 text-xs bg-background/50 border-border"/>
+            <textarea value={addVal} onChange={e => onAddValChange(e.target.value)}
+              placeholder="¿Qué quieres recordar?" rows={2}
+              className="w-full text-xs bg-background/50 border border-border rounded-md px-2 py-1.5 text-white placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50"/>
+            <div className="flex gap-1.5">
+              <button onClick={onAddSubmit} disabled={!addKey.trim() || !addVal.trim()}
+                className="flex-1 h-7 text-xs rounded-md bg-primary text-white font-medium disabled:opacity-40 hover:bg-primary/90 transition-colors">
+                Guardar
+              </button>
+              <button onClick={onAddToggle}
+                className="h-7 px-2 text-xs rounded-md text-muted-foreground hover:text-white hover:bg-white/5 transition-colors">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={onAddToggle}
+            className="w-full flex items-center justify-center gap-1.5 h-7 rounded-md text-xs text-muted-foreground hover:text-white hover:bg-white/5 border border-dashed border-white/[0.08] transition-colors">
+            <Plus className="w-3 h-3"/>
+            Añadir recuerdo manual
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Welcome screen ─────────────────────────────────────────────────────────────
 function WelcomeScreen({
   selectedClient,
@@ -524,7 +645,7 @@ function WelcomeScreen({
 }
 
 // ── Session serialise / deserialise ───────────────────────────────────────────
-const STORAGE_KEY = "omniflow_chat_sessions_v2";
+const STORAGE_KEY = "omnitech_chat_sessions_v3";
 function loadSessions(): Session[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -553,6 +674,13 @@ export default function Assistant() {
   const [contextId,      setContextId]      = useState<number | null>(null);
   const [showPicker,     setShowPicker]     = useState(false);
 
+  const [memories,        setMemories]        = useState<AgentMemory[]>([]);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [flashedMemId,    setFlashedMemId]    = useState<number | null>(null);
+  const [addMemKey,       setAddMemKey]       = useState("");
+  const [addMemVal,       setAddMemVal]       = useState("");
+  const [addMemOpen,      setAddMemOpen]      = useState(false);
+
   const bottomRef    = useRef<HTMLDivElement>(null);
   const abortRef     = useRef<AbortController | null>(null);
   const inputAreaRef = useRef<HTMLDivElement>(null);
@@ -568,6 +696,15 @@ export default function Assistant() {
 
   // Persist sessions to localStorage
   useEffect(() => { saveSessions(sessions); }, [sessions]);
+
+  // ── Organizational memory ─────────────────────────────────────────────────
+  const fetchMemories = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/memory`);
+      if (res.ok) setMemories(await res.json() as AgentMemory[]);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { fetchMemories(); }, [fetchMemories]);
 
   // ── Live client data from API ──────────────────────────────────────────────
   const { data: clientFull } = useGetClient(contextId ?? 0, {
@@ -743,11 +880,21 @@ export default function Assistant() {
           const payload = line.slice(6).trim();
           if (payload === "[DONE]") { done = true; break; }
 
-          let parsed: { token?: string; error?: string };
+          let parsed: { token?: string; error?: string; event?: string; memory?: AgentMemory };
           try { parsed = JSON.parse(payload); }
           catch { continue; }
 
           if (parsed.error) { markError(parsed.error); return; }
+          if (parsed.event === "memory_saved" && parsed.memory) {
+            const mem = parsed.memory;
+            setMemories(prev => {
+              const idx = prev.findIndex(m => m.id === mem.id);
+              if (idx >= 0) return prev.map(m => m.id === mem.id ? mem : m);
+              return [mem, ...prev];
+            });
+            setFlashedMemId(mem.id);
+            setTimeout(() => setFlashedMemId(null), 3000);
+          }
           if (parsed.token) {
             acc += parsed.token;
             const snap = acc;
@@ -888,7 +1035,7 @@ export default function Assistant() {
       </div>
 
       {/* ── Chat area ── always visible; sidebar overlays it on mobile */}
-      <div className="flex-1 flex flex-col bg-card border border-border rounded-xl overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col bg-card border border-border rounded-xl overflow-hidden min-w-0 relative">
 
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0 bg-background/30">
@@ -911,6 +1058,20 @@ export default function Assistant() {
               </span>
             </div>
           </div>
+          <button
+            onClick={() => setMemoryPanelOpen(v => !v)}
+            title="Memoria organizacional"
+            className={cn(
+              "p-1.5 rounded-lg transition-colors relative",
+              memoryPanelOpen
+                ? "text-primary bg-primary/10"
+                : "text-muted-foreground hover:text-white hover:bg-white/5"
+            )}>
+            <Brain className="w-4 h-4"/>
+            {memories.length > 0 && !memoryPanelOpen && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary"/>
+            )}
+          </button>
           {activeSession && (
             <button onClick={startNewChat}
               className="p-1.5 rounded-lg text-muted-foreground hover:text-white hover:bg-white/5 transition-colors">
@@ -918,6 +1079,55 @@ export default function Assistant() {
             </button>
           )}
         </div>
+
+        {/* ── Memory Overlay Panel ── */}
+        <AnimatePresence>
+          {memoryPanelOpen && (
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="absolute inset-y-0 right-0 w-72 bg-[#0d1117] border-l border-border flex flex-col z-20 shadow-2xl">
+              <MemoryPanel
+                memories={memories}
+                flashedMemId={flashedMemId}
+                addOpen={addMemOpen}
+                addKey={addMemKey}
+                addVal={addMemVal}
+                onAddKeyChange={setAddMemKey}
+                onAddValChange={setAddMemVal}
+                onAddToggle={() => setAddMemOpen(v => !v)}
+                onAddSubmit={async () => {
+                  if (!addMemKey.trim() || !addMemVal.trim()) return;
+                  try {
+                    const res = await fetch(`${API_BASE}/api/memory`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ key: addMemKey, value: addMemVal }),
+                    });
+                    if (res.ok) {
+                      const mem = await res.json() as AgentMemory;
+                      setMemories(prev => {
+                        const idx = prev.findIndex(m => m.id === mem.id);
+                        if (idx >= 0) return prev.map(m => m.id === mem.id ? mem : m);
+                        return [mem, ...prev];
+                      });
+                      setFlashedMemId(mem.id);
+                      setTimeout(() => setFlashedMemId(null), 3000);
+                      setAddMemKey(""); setAddMemVal(""); setAddMemOpen(false);
+                    }
+                  } catch { /* ignore */ }
+                }}
+                onDelete={async (id) => {
+                  await fetch(`${API_BASE}/api/memory/${id}`, { method: "DELETE" });
+                  setMemories(prev => prev.filter(m => m.id !== id));
+                }}
+                onClose={() => setMemoryPanelOpen(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Current Client section ── */}
         <AnimatePresence>
