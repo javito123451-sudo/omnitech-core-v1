@@ -94,18 +94,35 @@ const STATUS_ES: Record<string, string> = {
   churned:  "Cliente perdido (canceló o dejó de comprar)",
 };
 
+function resolveMemoryLabel(m: AgentMemoryRow): string {
+  if (m.title) return m.title;
+  const i = m.memoryKey.indexOf(":");
+  const name = i !== -1 ? m.memoryKey.slice(i + 1) : m.memoryKey;
+  return name.replace(/_/g, " ");
+}
+
+function resolveMemoryCat(m: AgentMemoryRow): string {
+  if (m.category) return m.category;
+  const i = m.memoryKey.indexOf(":");
+  return i !== -1 ? m.memoryKey.slice(0, i) : "info";
+}
+
 function buildSystemPrompt(
   memories: AgentMemoryRow[],
   clientContext?: ClientContext,
 ): string {
   const memoryBlock =
     memories.length > 0
-      ? `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 MEMORIA ORGANIZACIONAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${memories.map(m => `[${m.memoryKey}] ${m.memoryVal}`).join("\n")}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Usa esta memoria para personalizar y contextualizar tus respuestas. Cuando el usuario haga referencia a clientes, procesos o decisiones que ya están en la memoria, úsalos sin volver a preguntar.`
+      ? `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 MEMORIA ORGANIZACIONAL (${memories.length} entradas)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${memories.map(m => {
+  const label = resolveMemoryLabel(m);
+  const cat   = resolveMemoryCat(m);
+  return `### ${label} [${cat}]\n${m.memoryVal}`;
+}).join("\n\n")}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUCCIÓN CRÍTICA: La MEMORIA ORGANIZACIONAL contiene información oficial y real de esta organización. Cuando el usuario pregunte sobre servicios, procesos, clientes, decisiones, objetivos u cualquier información que ya esté en la memoria, DEBES responder usando esa información como fuente primaria y exacta. No inventes ni supongas — cita lo que está en la memoria.`
       : "";
 
   const base = BASE_SYSTEM_PROMPT + memoryBlock;
@@ -309,8 +326,15 @@ router.post("/", async (req, res) => {
   const lastUserMessage = messages.filter(m => m.role === "user").at(-1)?.content ?? "";
   try {
     memories = await getRelevantMemories(openai, orgId, lastUserMessage);
-  } catch {
-    // If memory load fails, continue without it
+    console.log(
+      `[Chat] org=${orgId} memories_loaded=${memories.length}` +
+      (memories.length > 0
+        ? ` keys=[${memories.map(m => m.title ?? m.memoryKey).join(", ")}]`
+        : " (none — assistant will respond without memory context)"),
+    );
+  } catch (memErr) {
+    console.error("[Chat] FAILED to load memories:", String(memErr));
+    // Continue without memory — non-fatal
   }
 
   res.setHeader("Content-Type", "text/event-stream");
