@@ -5,8 +5,56 @@ import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
 const AGENT_SLUG = "operator";
-
 type AgentMemoryRow = typeof agentMemoryTable.$inferSelect;
+
+// ── Semantic helpers ──────────────────────────────────────────────────────────
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot  += (a[i] ?? 0) * (b[i] ?? 0);
+    magA += (a[i] ?? 0) ** 2;
+    magB += (b[i] ?? 0) ** 2;
+  }
+  if (magA === 0 || magB === 0) return 0;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+async function getRelevantMemories(
+  openai: OpenAI,
+  orgId: number,
+  userMessage: string,
+  limit = 20,
+): Promise<AgentMemoryRow[]> {
+  const all = await db
+    .select()
+    .from(agentMemoryTable)
+    .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, AGENT_SLUG)))
+    .orderBy(desc(agentMemoryTable.updatedAt))
+    .limit(200);
+
+  if (all.length <= limit) return all;
+
+  const withEmb = all.filter(r => r.embedding && (r.embedding as number[]).length > 0);
+  if (withEmb.length === 0) return all.slice(0, limit);
+
+  try {
+    const qRes = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: userMessage.slice(0, 500),
+    });
+    const qVec = qRes.data[0]!.embedding;
+    return all
+      .map(r => ({
+        mem: r,
+        score: r.embedding ? cosineSimilarity(qVec, r.embedding as number[]) : 0.1,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(s => s.mem);
+  } catch {
+    return all.slice(0, limit);
+  }
+}
 
 // ── System prompt ────────────────────────────────────────────────────────────
 
@@ -193,6 +241,16 @@ ${existingList}`,
       const rawName = args.key.replace(/^[^:]+:/, "").toLowerCase().replace(/\s+/g, "_");
       const normalizedKey = `${args.category}:${rawName}`;
 
+      // Generate embedding for AI-saved memory
+      let emb: number[] | null = null;
+      try {
+        const embRes = await openai.embeddings.create({
+          model: "text-embedding-3-small",
+          input: `${normalizedKey} ${args.value}`.slice(0, 2000),
+        });
+        emb = embRes.data[0]?.embedding ?? null;
+      } catch { /* Non-critical */ }
+
       const [mem] = await db
         .insert(agentMemoryTable)
         .values({
@@ -200,12 +258,16 @@ ${existingList}`,
           agentSlug: AGENT_SLUG,
           memoryKey: normalizedKey,
           memoryVal: args.value.slice(0, 500),
+          category: args.category,
+          embedding: emb,
           source: "ai",
         })
         .onConflictDoUpdate({
           target: [agentMemoryTable.orgId, agentMemoryTable.agentSlug, agentMemoryTable.memoryKey],
           set: {
             memoryVal: args.value.slice(0, 500),
+            category: args.category,
+            embedding: emb,
             source: "ai",
             updatedAt: new Date(),
           },
@@ -242,20 +304,11 @@ router.post("/", async (req, res) => {
   const orgId = req.orgId!;
   const openai = new OpenAI({ apiKey });
 
-  // Load org memories (isolated by orgId)
+  // Load relevant memories via semantic search (isolated by orgId)
   let memories: AgentMemoryRow[] = [];
+  const lastUserMessage = messages.filter(m => m.role === "user").at(-1)?.content ?? "";
   try {
-    memories = await db
-      .select()
-      .from(agentMemoryTable)
-      .where(
-        and(
-          eq(agentMemoryTable.orgId, orgId),
-          eq(agentMemoryTable.agentSlug, AGENT_SLUG),
-        ),
-      )
-      .orderBy(desc(agentMemoryTable.updatedAt))
-      .limit(50);
+    memories = await getRelevantMemories(openai, orgId, lastUserMessage);
   } catch {
     // If memory load fails, continue without it
   }

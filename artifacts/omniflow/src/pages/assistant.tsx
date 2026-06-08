@@ -472,11 +472,15 @@ function ClientPicker({
 
 // ── Memory Panel ─────────────────────────────────────────────────────────────
 const CAT_META: Record<string, { label: string; cls: string }> = {
-  client:     { label: "Cliente",     cls: "text-blue-400 bg-blue-400/10 border-blue-400/25" },
-  sop:        { label: "Proceso",     cls: "text-violet-400 bg-violet-400/10 border-violet-400/25" },
-  decision:   { label: "Decisión",    cls: "text-amber-400 bg-amber-400/10 border-amber-400/25" },
-  fact:       { label: "Hecho",       cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/25" },
-  preference: { label: "Preferencia", cls: "text-pink-400 bg-pink-400/10 border-pink-400/25" },
+  client:     { label: "Cliente",      cls: "text-blue-400 bg-blue-400/10 border-blue-400/25" },
+  sop:        { label: "SOP",          cls: "text-violet-400 bg-violet-400/10 border-violet-400/25" },
+  process:    { label: "Proceso",      cls: "text-cyan-400 bg-cyan-400/10 border-cyan-400/25" },
+  decision:   { label: "Decisión",     cls: "text-amber-400 bg-amber-400/10 border-amber-400/25" },
+  context:    { label: "Contexto",     cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/25" },
+  goal:       { label: "Objetivo",     cls: "text-rose-400 bg-rose-400/10 border-rose-400/25" },
+  info:       { label: "Información",  cls: "text-sky-400 bg-sky-400/10 border-sky-400/25" },
+  fact:       { label: "Hecho",        cls: "text-green-400 bg-green-400/10 border-green-400/25" },
+  preference: { label: "Preferencia",  cls: "text-pink-400 bg-pink-400/10 border-pink-400/25" },
 };
 
 function parseMemKey(key: string) {

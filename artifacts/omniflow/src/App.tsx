@@ -18,6 +18,7 @@ import Statistics from "@/pages/statistics";
 import Setup from "@/pages/setup";
 import Settings from "@/pages/settings";
 import InvitePage from "@/pages/invite";
+import MemoryPage from "@/pages/memory";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -207,6 +208,13 @@ function AppRoutes() {
         </ProtectedRoute>
       </Route>
       <Route path="/invite/:token" component={InvitePage} />
+      <Route path="/memory">
+        <ProtectedRoute>
+          <MainLayout>
+            <MemoryPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

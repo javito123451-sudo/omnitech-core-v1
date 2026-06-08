@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut, Hexagon, Settings } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut, Hexagon, Settings, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useClerk, useUser } from "@clerk/react";
@@ -14,6 +14,7 @@ const navItems = [
   { icon: MessageSquare,   label: "Asistente",    href: "/assistant" },
   { icon: CalendarDays,    label: "Calendario",   href: "/calendar" },
   { icon: BarChart3,       label: "Estadísticas", href: "/statistics" },
+  { icon: Brain,           label: "Memoria",      href: "/memory" },
 ];
 
 export default function MainLayout({ children }: { children: ReactNode }) {
