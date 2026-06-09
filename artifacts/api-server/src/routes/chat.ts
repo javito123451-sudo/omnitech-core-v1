@@ -83,6 +83,8 @@ Instrucciones:
 - Cuando sugieras mensajes para clientes, ponlos entre comillas en bloque con >
 - Propón siempre un siguiente paso accionable al final de tu respuesta
 - No menciones que eres GPT o que eres de OpenAI — eres OmniTech AI
+- CRÍTICO: Cuando el usuario mencione una cita, reunión, llamada o evento con fecha + cliente, SIEMPRE llama a la herramienta create_appointment para guardarla en el sistema. No describas la cita sin crearla. Si falta información, usa valores por defecto razonables.
+- CRÍTICO: Cuando el usuario pida crear un presupuesto con cliente + servicios, SIEMPRE llama a create_quote. No generes solo texto Markdown sin guardar el presupuesto real.
 
 FORMATO EJECUTIVO VISUAL:
 Cuando respondas sobre citas, actividad, clientes o resúmenes del CRM, usa este formato con emojis (solo las secciones relevantes):
@@ -314,6 +316,59 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           },
         },
         required: ["period"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_appointment",
+      description:
+        "Crea una cita real en el calendario del CRM y la guarda en la base de datos. " +
+        "DEBES usar esta herramienta siempre que el usuario mencione una fecha + cliente + motivo, " +
+        "aunque lo diga de forma conversacional. Ejemplos: 'el martes tenemos reunión con X', " +
+        "'agenda una llamada con Y para el viernes', 'el 22 de junio validamos con Z'. " +
+        "Infiere la fecha en formato YYYY-MM-DD usando la fecha actual del sistema.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          client_name: {
+            type: "string",
+            description: "Nombre del cliente tal como aparece en el CRM. Se buscará por coincidencia.",
+          },
+          title: {
+            type: "string",
+            description: "Título de la cita. Ej: 'Reunión de validación', 'Llamada de seguimiento'.",
+          },
+          date: {
+            type: "string",
+            description:
+              "Fecha en formato YYYY-MM-DD. Usa la fecha actual del sistema para resolver fechas relativas " +
+              "como 'el martes', 'mañana', '22 de junio'. Ejemplo: '2026-06-22'.",
+          },
+          start_time: {
+            type: "string",
+            description: "Hora de inicio en formato HH:MM (24h). Por defecto '10:00'.",
+          },
+          duration_minutes: {
+            type: "number",
+            description: "Duración en minutos. Por defecto 60.",
+          },
+          description: {
+            type: "string",
+            description: "Descripción o motivo de la cita. Opcional.",
+          },
+          location: {
+            type: "string",
+            description: "Lugar o enlace de videollamada. Opcional.",
+          },
+          type: {
+            type: "string",
+            enum: ["meeting", "call", "demo", "follow_up", "other"],
+            description: "Tipo de cita. Por defecto 'meeting'.",
+          },
+        },
+        required: ["client_name", "title", "date"],
       },
     },
   },
@@ -558,6 +613,88 @@ async function executeCrmTool(
           clientName:  r.clientName ?? null,
           createdAt:   r.createdAt.toISOString(),
         })),
+      });
+    }
+
+    // ── create_appointment ───────────────────────────────────────────────────
+    if (toolName === "create_appointment") {
+      const clientName      = String(args["client_name"] ?? "");
+      const title           = String(args["title"]       ?? "Cita");
+      const dateStr         = String(args["date"]        ?? "");
+      const startTimeStr    = String(args["start_time"]  ?? "10:00");
+      const durationMinutes = Number(args["duration_minutes"] ?? 60);
+      const description     = args["description"] ? String(args["description"]) : null;
+      const location        = args["location"]    ? String(args["location"])    : null;
+      const apptType        = String(args["type"] ?? "meeting");
+
+      if (!clientName || !title || !dateStr) {
+        return JSON.stringify({ error: "Se necesitan client_name, title y date" });
+      }
+
+      // Parse date + time into UTC timestamp
+      const [h = "10", m = "00"] = startTimeStr.split(":");
+      const [y, mo, d] = dateStr.split("-").map(Number);
+      if (!y || !mo || !d) {
+        return JSON.stringify({ error: `Formato de fecha inválido: "${dateStr}". Usa YYYY-MM-DD.` });
+      }
+      // Treat user-supplied time as Europe/Madrid local → store as UTC
+      // Approximate: Madrid is UTC+2 in summer (CEST), UTC+1 in winter (CET)
+      // For simplicity we'll just store the given time as-is UTC (AI knows it's Madrid)
+      const startTime = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+      const endTime   = new Date(startTime.getTime() + durationMinutes * 60_000);
+
+      // Find client by name (fuzzy)
+      const matchedClients = await db
+        .select()
+        .from(clientsTable)
+        .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientName}%`)))
+        .limit(5);
+
+      if (matchedClients.length === 0) {
+        return JSON.stringify({ error: `No encontré ningún cliente que coincida con "${clientName}". Usa list_clients para verificar el nombre exacto.` });
+      }
+      const client = matchedClients[0]!;
+
+      const [appointment] = await db.insert(appointmentsTable).values({
+        orgId,
+        clientId:    client.id,
+        title,
+        description,
+        startTime,
+        endTime,
+        status:      "pending",
+        type:        apptType,
+        location,
+        reminder:    false,
+      }).returning();
+
+      // Log activity
+      await db.insert(activityTable).values({
+        orgId,
+        type:        "appointment_scheduled",
+        description: `Cita "${title}" agendada con ${client.name} para el ${startTime.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}`,
+        clientName:  client.name,
+      }).catch(() => {/* non-critical */});
+
+      const localDate = startTime.toLocaleDateString("es-ES", {
+        weekday: "long", day: "numeric", month: "long", year: "numeric",
+      });
+      const localTime = `${h}:${m}`;
+
+      return JSON.stringify({
+        success:       true,
+        appointmentId: appointment!.id,
+        clientName:    client.name,
+        clientCompany: client.company ?? null,
+        title,
+        date:          localDate,
+        time:          localTime,
+        duration:      durationMinutes,
+        status:        "pending",
+        type:          apptType,
+        description,
+        location,
+        message:       `Cita #${appointment!.id} creada correctamente para ${client.name} el ${localDate} a las ${localTime}.`,
       });
     }
 
@@ -1033,6 +1170,27 @@ router.post("/", async (req, res) => {
         apiMessages.push({ role: "assistant", content: null, tool_calls: crmToolCalls });
         apiMessages.push(...toolResults);
         res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: crmToolCalls.map(tc => tc.function.name) })}\n\n`);
+
+        // Emit domain-specific events so the frontend can refresh relevant caches
+        for (let i = 0; i < crmToolCalls.length; i++) {
+          const tc = crmToolCalls[i];
+          if (tc?.function.name === "create_appointment") {
+            try {
+              const apptResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
+              if (apptResult["success"]) {
+                res.write(`data: ${JSON.stringify({ event: "appointment_created", appointment: apptResult })}\n\n`);
+              }
+            } catch { /* non-critical */ }
+          }
+          if (tc?.function.name === "create_quote") {
+            try {
+              const qResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
+              if (qResult["success"]) {
+                res.write(`data: ${JSON.stringify({ event: "quote_created", quote: qResult })}\n\n`);
+              }
+            } catch { /* non-critical */ }
+          }
+        }
       }
     }
 

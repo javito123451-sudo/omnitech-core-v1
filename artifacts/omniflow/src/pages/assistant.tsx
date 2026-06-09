@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow, format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -686,6 +687,7 @@ export default function Assistant() {
   const [addMemVal,       setAddMemVal]       = useState("");
   const [addMemOpen,      setAddMemOpen]      = useState(false);
 
+  const queryClient  = useQueryClient();
   const bottomRef    = useRef<HTMLDivElement>(null);
   const abortRef     = useRef<AbortController | null>(null);
   const inputAreaRef = useRef<HTMLDivElement>(null);
@@ -928,6 +930,10 @@ export default function Assistant() {
             setSessions(prev => prev.map(s =>
               s.id === targetId ? { ...s, dbSessionId: dbSid } : s,
             ));
+          }
+          if (parsed.event === "appointment_created") {
+            // Invalidate appointments cache so the calendar page refreshes automatically
+            void queryClient.invalidateQueries({ queryKey: ["appointments"] });
           }
           if (parsed.event === "memory_saved" && parsed.memory) {
             const mem = parsed.memory;
