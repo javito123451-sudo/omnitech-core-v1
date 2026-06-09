@@ -1,7 +1,15 @@
 import { Router } from "express";
 import OpenAI from "openai";
-import { db, agentMemoryTable, aiSessionsTable, aiMessagesTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import {
+  db,
+  agentMemoryTable,
+  aiSessionsTable,
+  aiMessagesTable,
+  clientsTable,
+  appointmentsTable,
+  activityTable,
+} from "@workspace/db";
+import { eq, and, desc, gte, lt } from "drizzle-orm";
 
 const router = Router();
 const AGENT_SLUG = "operator";
@@ -156,6 +164,220 @@ INSTRUCCIONES ESPECIALES PARA ESTE CLIENTE:
 - Ten en cuenta su estado actual (${clientContext.status ?? "desconocido"}) para adaptar el tono y la estrategia
 - Si hay notas del CRM, úsalas para personalizar tu respuesta
 - Si hay información de última interacción, menciónala si es relevante para dar contexto`;
+}
+
+// ── CRM Tools ─────────────────────────────────────────────────────────────────
+
+const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "list_clients",
+      description:
+        "Lista los clientes del CRM con nombre, empresa, estado, valor económico y email. " +
+        "Úsala ante preguntas sobre: lista de clientes, cuántos clientes hay, cuántos activos/prospectos/inactivos, " +
+        "valor de la cartera, o cualquier consulta que implique datos de clientes.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          status: {
+            type: "string",
+            enum: ["all", "lead", "active", "inactive", "churned"],
+            description:
+              "Filtra por estado. 'all' devuelve todos. " +
+              "'lead' = prospectos, 'active' = activos, 'inactive' = inactivos, 'churned' = perdidos.",
+          },
+        },
+        required: ["status"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_appointments",
+      description:
+        "Obtiene citas y reuniones del calendario con nombre del cliente asociado. " +
+        "Úsala ante preguntas sobre: próximas citas, reuniones programadas, agenda, historial de citas.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          period: {
+            type: "string",
+            enum: ["upcoming", "past", "all"],
+            description: "'upcoming' = próximas, 'past' = pasadas, 'all' = todas.",
+          },
+          limit: {
+            type: "number",
+            description: "Máximo número de citas a devolver. Por defecto 10.",
+          },
+        },
+        required: ["period"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_recent_activity",
+      description:
+        "Obtiene el registro de actividad reciente del CRM: clientes añadidos, mensajes enviados, " +
+        "citas programadas, cambios de estado. Úsala ante preguntas sobre actividad, historial o últimas acciones.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          limit: {
+            type: "number",
+            description: "Número de entradas de actividad a devolver. Por defecto 20.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+];
+
+const CRM_TOOL_NAMES = new Set(CRM_TOOLS.map(t => t.function.name));
+
+const STATUS_LABEL: Record<string, string> = {
+  lead:     "Prospecto",
+  active:   "Activo",
+  inactive: "Inactivo",
+  churned:  "Perdido",
+};
+
+async function executeCrmTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  orgId: number,
+): Promise<string> {
+  try {
+    if (toolName === "list_clients") {
+      const status = (args["status"] as string | undefined) ?? "all";
+      const rows =
+        status !== "all"
+          ? await db
+              .select()
+              .from(clientsTable)
+              .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.status, status)))
+              .orderBy(clientsTable.name)
+          : await db
+              .select()
+              .from(clientsTable)
+              .where(eq(clientsTable.orgId, orgId))
+              .orderBy(clientsTable.name);
+
+      const totalValue = rows.reduce((acc, c) => acc + (c.value ?? 0), 0);
+      const byStatus: Record<string, number> = {};
+      for (const c of rows) {
+        byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
+      }
+
+      return JSON.stringify({
+        total: rows.length,
+        totalValue: Math.round(totalValue),
+        byStatus: Object.entries(byStatus).map(([s, n]) => ({
+          status: s,
+          label: STATUS_LABEL[s] ?? s,
+          count: n,
+        })),
+        clients: rows.map(c => ({
+          id:      c.id,
+          name:    c.name,
+          company: c.company ?? null,
+          status:  c.status,
+          label:   STATUS_LABEL[c.status] ?? c.status,
+          email:   c.email,
+          phone:   c.phone ?? null,
+          value:   c.value ?? 0,
+          tags:    c.tags ?? null,
+        })),
+      });
+    }
+
+    if (toolName === "get_appointments") {
+      const period = (args["period"] as string | undefined) ?? "all";
+      const limit  = Math.min(Number(args["limit"] ?? 10), 50);
+      const now    = new Date();
+
+      const baseSelect = {
+        id:          appointmentsTable.id,
+        title:       appointmentsTable.title,
+        description: appointmentsTable.description,
+        startTime:   appointmentsTable.startTime,
+        endTime:     appointmentsTable.endTime,
+        status:      appointmentsTable.status,
+        type:        appointmentsTable.type,
+        location:    appointmentsTable.location,
+        clientId:    appointmentsTable.clientId,
+        clientName:  clientsTable.name,
+        clientCompany: clientsTable.company,
+      };
+
+      let rows;
+      if (period === "upcoming") {
+        rows = await db
+          .select(baseSelect)
+          .from(appointmentsTable)
+          .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
+          .where(and(eq(appointmentsTable.orgId, orgId), gte(appointmentsTable.startTime, now)))
+          .orderBy(appointmentsTable.startTime)
+          .limit(limit);
+      } else if (period === "past") {
+        rows = await db
+          .select(baseSelect)
+          .from(appointmentsTable)
+          .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
+          .where(and(eq(appointmentsTable.orgId, orgId), lt(appointmentsTable.startTime, now)))
+          .orderBy(desc(appointmentsTable.startTime))
+          .limit(limit);
+      } else {
+        rows = await db
+          .select(baseSelect)
+          .from(appointmentsTable)
+          .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
+          .where(eq(appointmentsTable.orgId, orgId))
+          .orderBy(desc(appointmentsTable.startTime))
+          .limit(limit);
+      }
+
+      return JSON.stringify({
+        total: rows.length,
+        period,
+        appointments: rows.map(r => ({
+          ...r,
+          startTime: r.startTime.toISOString(),
+          endTime:   r.endTime.toISOString(),
+        })),
+      });
+    }
+
+    if (toolName === "get_recent_activity") {
+      const limit = Math.min(Number(args["limit"] ?? 20), 50);
+      const rows  = await db
+        .select()
+        .from(activityTable)
+        .where(eq(activityTable.orgId, orgId))
+        .orderBy(desc(activityTable.createdAt))
+        .limit(limit);
+
+      return JSON.stringify({
+        total: rows.length,
+        activity: rows.map(r => ({
+          id:          r.id,
+          type:        r.type,
+          description: r.description,
+          clientName:  r.clientName ?? null,
+          createdAt:   r.createdAt.toISOString(),
+        })),
+      });
+    }
+
+    return JSON.stringify({ error: `Herramienta desconocida: ${toolName}` });
+  } catch (err) {
+    console.error(`[CRM Tool] ${toolName} error:`, String(err));
+    return JSON.stringify({ error: `Error ejecutando ${toolName}: ${String(err)}` });
+  }
 }
 
 // ── Memory extraction ─────────────────────────────────────────────────────────
@@ -425,12 +647,61 @@ router.post("/", async (req, res) => {
   res.write(`data: ${JSON.stringify({ event: "session_created", sessionId })}\n\n`);
 
   try {
+    // ── Phase 1: CRM tool resolution (non-streaming) ───────────────────────
+    // Build the initial messages array. We'll accumulate tool messages into it.
+    const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: "system", content: buildSystemPrompt(memories, clientContext) },
+      ...messages,
+    ];
+
+    // Call OpenAI with CRM tools to let it decide what data it needs.
+    // max_tokens is kept low — this call is only for tool selection, not prose.
+    const phase1 = await openai.chat.completions.create({
+      model:        "gpt-4o-mini",
+      messages:     apiMessages,
+      tools:        CRM_TOOLS,
+      tool_choice:  "auto",
+      max_tokens:   300,
+      temperature:  0.1,
+    });
+
+    const phase1Msg    = phase1.choices[0]?.message;
+    const crmToolCalls = (phase1Msg?.tool_calls ?? []).filter(
+      tc => CRM_TOOL_NAMES.has(tc.function.name),
+    );
+
+    if (crmToolCalls.length > 0) {
+      // ── Execute CRM tools in parallel ──────────────────────────────────
+      const toolResults = await Promise.all(
+        crmToolCalls.map(async tc => {
+          let args: Record<string, unknown> = {};
+          try { args = JSON.parse(tc.function.arguments) as Record<string, unknown>; } catch { /* use {} */ }
+
+          const result = await executeCrmTool(tc.function.name, args, orgId);
+          console.log(`[CRM] tool=${tc.function.name} args=${tc.function.arguments} result_len=${result.length}`);
+
+          return {
+            role:         "tool" as const,
+            tool_call_id: tc.id,
+            content:      result,
+          };
+        }),
+      );
+
+      // Append assistant tool-call message + tool results to message history
+      apiMessages.push({ role: "assistant", content: null, tool_calls: crmToolCalls });
+      apiMessages.push(...toolResults);
+
+      // Signal to client that tools were resolved
+      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: crmToolCalls.map(tc => tc.function.name) })}\n\n`);
+    }
+
+    // ── Phase 2: Final streaming response ─────────────────────────────────
+    // If no CRM tools were called, apiMessages is just system + user history.
+    // If tools were called, apiMessages now includes tool results as context.
     const stream = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: buildSystemPrompt(memories, clientContext) },
-        ...messages,
-      ],
+      model:       "gpt-4o-mini",
+      messages:    apiMessages,
       stream:      true,
       max_tokens:  700,
       temperature: 0.7,
