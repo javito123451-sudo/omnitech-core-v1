@@ -322,6 +322,22 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_strategic_brief",
+      description:
+        "Obtiene un briefing estratégico completo del negocio con scoring de clientes, prioridades de acción y forecast de ingresos. " +
+        "DEBES usar esta herramienta SIEMPRE para preguntas como: '¿Cómo va mi negocio?', '¿Qué debo hacer hoy?', " +
+        "'¿A qué cliente llamo?', '¿Dónde está el dinero?', '¿Qué me hará ganar más?', '¿Qué cliente priorizo?'. " +
+        "Devuelve clientes rankeados por score económico, prioridades accionables y análisis de riesgos.",
+      parameters: {
+        type: "object" as const,
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_appointment",
       description:
         "Crea una cita real en el calendario del CRM y la guarda en la base de datos. " +
@@ -616,6 +632,206 @@ async function executeCrmTool(
       });
     }
 
+    // ── get_strategic_brief ──────────────────────────────────────────────────
+    if (toolName === "get_strategic_brief") {
+      const now = new Date();
+      const thirtyAgo      = new Date(now.getTime() - 30  * 86_400_000);
+      const sevenFromNow   = new Date(now.getTime() + 7   * 86_400_000);
+      const fourteenAgo    = new Date(now.getTime() - 14  * 86_400_000);
+
+      const [allClients, allQuotes, allAppointments, recentActivity] = await Promise.all([
+        db.select().from(clientsTable).where(eq(clientsTable.orgId, orgId)),
+        db.select().from(quotesTable).where(eq(quotesTable.orgId, orgId)),
+        db.select().from(appointmentsTable)
+           .where(eq(appointmentsTable.orgId, orgId))
+           .orderBy(desc(appointmentsTable.startTime)),
+        db.select().from(activityTable)
+           .where(and(eq(activityTable.orgId, orgId), gte(activityTable.createdAt, thirtyAgo)))
+           .orderBy(desc(activityTable.createdAt)).limit(30),
+      ]);
+
+      // Normalise client value to 0-100 (relative to max in portfolio)
+      const maxValue = Math.max(...allClients.map(c => c.value ?? 0), 1);
+
+      // Build lookup maps
+      const quotesByClient = new Map<number, (typeof allQuotes[number])[]>();
+      for (const q of allQuotes) {
+        if (!quotesByClient.has(q.clientId)) quotesByClient.set(q.clientId, []);
+        quotesByClient.get(q.clientId)!.push(q);
+      }
+      const apptsByClient = new Map<number, (typeof allAppointments[number])[]>();
+      for (const a of allAppointments) {
+        if (!apptsByClient.has(a.clientId)) apptsByClient.set(a.clientId, []);
+        apptsByClient.get(a.clientId)!.push(a);
+      }
+
+      // Score each client
+      const scored = allClients.map(client => {
+        const quotes = quotesByClient.get(client.id) ?? [];
+        const appts  = apptsByClient.get(client.id)  ?? [];
+
+        // ── economic_value (0–100) ──────────────────────────────────────────
+        let economicValue = 0;
+        if (client.value && client.value > 0) {
+          economicValue = Math.min(100, (client.value / maxValue) * 100);
+        } else {
+          economicValue = { active: 60, lead: 40, inactive: 20, churned: 5 }[client.status] ?? 30;
+        }
+
+        // ── close_proximity (0–100) ─────────────────────────────────────────
+        let closeProximity = 10;
+        const sentQuotes   = quotes.filter(q => q.status === "sent");
+        const activeQuotes = quotes.filter(q => ["sent","draft"].includes(q.status));
+        if (sentQuotes.length > 0) {
+          const nearestExpiry = sentQuotes
+            .filter(q => q.validUntil)
+            .map(q => (q.validUntil!.getTime() - now.getTime()) / 86_400_000)
+            .filter(d => d >= 0)
+            .sort((a, b) => a - b)[0];
+          if (nearestExpiry !== undefined) {
+            closeProximity = nearestExpiry <= 3 ? 100 : nearestExpiry <= 7 ? 85 : nearestExpiry <= 14 ? 65 : 50;
+          } else {
+            closeProximity = 55; // sent but no expiry
+          }
+        } else if (activeQuotes.length > 0) {
+          closeProximity = 30;
+        }
+
+        // ── pipeline_status (0–100) ─────────────────────────────────────────
+        const hasCompletedAppt = appts.some(a => a.status === "completed");
+        const pipelineStatus = client.status === "active"    ? 80
+          : (client.status === "lead" && hasCompletedAppt)   ? 90
+          : client.status === "lead"                         ? 55
+          : client.status === "inactive"                     ? 20
+          : /* churned */                                      5;
+
+        // ── urgency (0–100) ─────────────────────────────────────────────────
+        let urgency = 15;
+        const upcomingAppts = appts.filter(a =>
+          a.status !== "cancelled" && a.startTime >= now && a.startTime <= sevenFromNow,
+        );
+        const overdueAppts  = appts.filter(a =>
+          a.status === "pending" && a.startTime < now,
+        );
+        const quoteSentRecently = sentQuotes.some(q =>
+          q.createdAt >= fourteenAgo,
+        );
+        if (overdueAppts.length > 0)                           urgency = 95;
+        else if (upcomingAppts.some(a => {
+          const d = (a.startTime.getTime() - now.getTime()) / 86_400_000;
+          return d <= 1;
+        }))                                                    urgency = 100;
+        else if (upcomingAppts.some(a => {
+          const d = (a.startTime.getTime() - now.getTime()) / 86_400_000;
+          return d <= 3;
+        }))                                                    urgency = 80;
+        else if (upcomingAppts.length > 0)                     urgency = 60;
+        else if (quoteSentRecently)                            urgency = 50;
+
+        // ── final score ─────────────────────────────────────────────────────
+        const score = Math.round(
+          economicValue   * 0.5 +
+          closeProximity  * 0.2 +
+          pipelineStatus  * 0.2 +
+          urgency         * 0.1,
+        );
+
+        // Best action recommendation
+        let recommendedAction = "Mantener seguimiento";
+        if (overdueAppts.length > 0)
+          recommendedAction = "Reprogramar cita vencida urgentemente";
+        else if (sentQuotes.length > 0 && closeProximity >= 80)
+          recommendedAction = "Hacer follow-up del presupuesto — expira pronto";
+        else if (sentQuotes.length > 0)
+          recommendedAction = "Llamar para seguimiento del presupuesto enviado";
+        else if (pipelineStatus === 90)
+          recommendedAction = "Lead caliente: enviar presupuesto ahora";
+        else if (activeQuotes.length > 0)
+          recommendedAction = "Finalizar y enviar presupuesto en borrador";
+        else if (client.status === "active" && quotes.length === 0)
+          recommendedAction = "Crear presupuesto — cliente activo sin propuesta";
+        else if (client.status === "inactive")
+          recommendedAction = "Campaña de reactivación urgente";
+        else if (client.status === "churned")
+          recommendedAction = "Preparar propuesta de recuperación";
+        else if (upcomingAppts.length > 0)
+          recommendedAction = "Preparar material para la cita próxima";
+
+        return {
+          id:               client.id,
+          name:             client.name,
+          company:          client.company,
+          status:           client.status,
+          value:            client.value,
+          score,
+          score_breakdown: {
+            economic:  Math.round(economicValue),
+            proximity: Math.round(closeProximity),
+            pipeline:  pipelineStatus,
+            urgency:   Math.round(urgency),
+          },
+          recommended_action: recommendedAction,
+          active_quotes:      activeQuotes.length,
+          sent_quotes:        sentQuotes.map(q => ({
+            title: q.title, total: q.total, valid_until: q.validUntil?.toLocaleDateString("es-ES"),
+          })),
+          upcoming_appointments: upcomingAppts.map(a => ({
+            title: a.title, date: a.startTime.toLocaleDateString("es-ES"),
+            time: a.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }),
+          })),
+          overdue_appointments: overdueAppts.length,
+        };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+
+      // ── KPI summary ─────────────────────────────────────────────────────────
+      const pipelineTotal   = allQuotes.filter(q => ["draft","sent"].includes(q.status)).reduce((s, q) => s + (q.total ?? 0), 0);
+      const confirmedTotal  = allQuotes.filter(q => q.status === "accepted").reduce((s, q) => s + (q.total ?? 0), 0);
+      const activeCount     = allClients.filter(c => c.status === "active").length;
+      const leadCount       = allClients.filter(c => c.status === "lead").length;
+      const atRiskCount     = allClients.filter(c => ["inactive","churned"].includes(c.status)).length;
+
+      // ── Top risks ────────────────────────────────────────────────────────────
+      const risks: string[] = [];
+      if (atRiskCount > 0) risks.push(`${atRiskCount} cliente(s) inactivo(s)/perdido(s) — impacto directo en cartera`);
+      const expiringQuotes = allQuotes.filter(q =>
+        q.validUntil && ["sent","draft"].includes(q.status) &&
+        q.validUntil <= sevenFromNow && q.validUntil >= now,
+      );
+      if (expiringQuotes.length > 0)
+        risks.push(`${expiringQuotes.length} presupuesto(s) expiran en 7 días — €${expiringQuotes.reduce((s,q) => s+(q.total??0),0).toLocaleString("es-ES")} en riesgo`);
+      const overdueAll = allAppointments.filter(a => a.status === "pending" && a.startTime < now);
+      if (overdueAll.length > 0) risks.push(`${overdueAll.length} cita(s) vencida(s) sin reprogramar`);
+
+      return JSON.stringify({
+        generated_at: now.toISOString(),
+        kpis: {
+          total_clients: allClients.length,
+          active_clients: activeCount,
+          leads: leadCount,
+          at_risk: atRiskCount,
+          pipeline_eur: Math.round(pipelineTotal),
+          confirmed_eur: Math.round(confirmedTotal),
+          total_quotes: allQuotes.length,
+          activity_30d: recentActivity.length,
+        },
+        top_clients_by_score: scored.slice(0, 8),
+        top_priority: scored[0] ?? null,
+        second_priority: scored[1] ?? null,
+        third_priority: scored[2] ?? null,
+        main_risks: risks,
+        recent_activity_summary: recentActivity.slice(0, 5).map(a => ({
+          type: a.type, description: a.description, client: a.clientName,
+          date: a.createdAt.toLocaleDateString("es-ES"),
+        })),
+        instructions_for_ai:
+          "Usa estos datos para responder con DECISIONES priorizadas por impacto económico. " +
+          "Menciona los scores para justificar la priorización. " +
+          "No muestres la tabla completa — presenta sólo lo relevante para la pregunta del usuario.",
+      });
+    }
+
     // ── create_appointment ───────────────────────────────────────────────────
     if (toolName === "create_appointment") {
       const clientName      = String(args["client_name"] ?? "");
@@ -796,37 +1012,43 @@ async function executeCrmTool(
 // ── Executive dashboard detection ─────────────────────────────────────────────
 
 const EXECUTIVE_KEYWORDS =
-  /resumen ejecutivo|estado del negocio|situaci[oó]n actual|dashboard|an[aá]lisis comercial|informe ejecutivo|estado actual|panorama general|visi[oó]n general|overview|c[oó]mo va el negocio|c[oó]mo estamos|dame un resumen|resumen del d[ií]a|resumen de (la )?semana/i;
+  /resumen ejecutivo|estado del negocio|situaci[oó]n actual|dashboard|an[aá]lisis comercial|informe ejecutivo|estado actual|panorama general|visi[oó]n general|overview|c[oó]mo va el negocio|c[oó]mo va mi negocio|c[oó]mo estamos|dame un resumen|resumen del d[ií]a|resumen de (la )?semana|qu[eé] debo hacer( hoy)?|d[oó]nde debo (centrarme|enfocarme|focalizarme)|en qu[eé] (me )?centrar|qu[eé] (me )?har[aá] ganar|ganar m[aá]s (dinero|pasta)|qu[eé] cliente.{0,20}priorizar|qu[eé] priorizo|a qui[eé]n (debo |debería )?llamar|por d[oó]nde empez|próximos pasos|siguiente(s)? paso(s)?|estrategia (del|de) (negocio|semana|mes)|d[oó]nde est[aá] el dinero|mayor impacto|mayor retorno|mejor oportunidad/i;
 
 const EXECUTIVE_SYSTEM_ADDON = `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 MODO INFORME EJECUTIVO ACTIVO
+🧠 MODO INTELIGENCIA ESTRATÉGICA ACTIVO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-El usuario solicita un informe del estado del negocio. Los datos reales del CRM ya están adjuntos como resultados de herramientas.
+El usuario hace una pregunta estratégica. Los datos del CRM están adjuntos. Tu misión: responder con DECISIONES, no con datos.
 
-GENERA UN INFORME EJECUTIVO COMPLETO con EXACTAMENTE esta estructura:
+FÓRMULA DE SCORING (ya calculada en get_strategic_brief):
+  score = valor_económico × 0.5 + proximidad_cierre × 0.2 + estado_pipeline × 0.2 + urgencia × 0.1
 
-📊 **Resumen Ejecutivo**
-Métricas clave: total de clientes, cartera total en €, clientes activos vs prospectos.
+ADAPTA la estructura según la pregunta del usuario:
 
-📅 **Citas y Agenda**
-Lista cada cita con: hora, título, cliente. Si no hay citas próximas, indícalo claramente.
+Si pregunta "¿Cómo va mi negocio?" o similar → INFORME EJECUTIVO:
+📊 **Estado del Negocio**  — 2-3 métricas clave con €
+🏆 **Top 3 Clientes por Impacto** — con score, valor € y por qué priorizarlos
+⚡ **Acción Más Rentable Esta Semana** — UNA acción concreta con nombre real
+⚠️ **Riesgo Principal** — el mayor riesgo con su impacto económico estimado
 
-👥 **Estado de Clientes**
-Clientes destacados por valor. Prospectos prioritarios. Inactivos a recuperar.
+Si pregunta "¿Qué debo hacer hoy?" o "¿Qué cliente priorizar?" → DECISIÓN DIRECTA:
+🥇 **Prioridad #1** — cliente + acción + razón económica
+🥈 **Prioridad #2** — cliente + acción + razón económica
+🥉 **Prioridad #3** — cliente + acción + razón económica
+📌 **Por qué este orden** — 1 frase con la lógica de priorización
 
-⚠️ **Alertas y Pendientes**
-Citas sin confirmar. Clientes sin actividad reciente. Cualquier riesgo identificado.
-
-🚀 **Recomendaciones Prioritarias**
-Exactamente 3 acciones concretas con nombres de clientes reales y pasos específicos.
+Si pregunta "¿Qué me hará ganar más?" o "¿Dónde está el dinero?" → ANÁLISIS DE OPORTUNIDAD:
+💰 **Mayor Oportunidad Inmediata** — cliente + valor potencial + próximo paso
+📈 **Pipeline Total** — € en cartera vs € confirmado
+🎯 **Acción de Mayor ROI** — la que tiene mejor ratio impacto/esfuerzo
 
 REGLAS CRÍTICAS:
-- Cita siempre nombres reales de clientes, valores en € y fechas exactas de los datos recibidos
-- NUNCA uses información genérica o inventada
-- Si no hay datos en alguna sección, dilo explícitamente
-- Máximo 500 palabras en total — conciso y ejecutivo`;
+- Responde con DECISIONES, nunca con tablas de datos crudos
+- Cita nombres reales, €€€ reales y fechas exactas del CRM
+- Usa el score del get_strategic_brief para justificar la priorización
+- Máximo 400 palabras — ejecutivo, directo, accionable
+- Siempre termina con UNA acción que el usuario debe hacer AHORA MISMO`;
 
 // ── Memory extraction ─────────────────────────────────────────────────────────
 
@@ -1112,11 +1334,12 @@ router.post("/", async (req, res) => {
       // Skip phase 1 — we know exactly which data is needed for a full report.
       console.log(`[Chat] Executive mode triggered for org=${orgId}`);
 
-      const [clientsData, upcomingData, pendingData, activityData] = await Promise.all([
-        executeCrmTool("list_clients",       { status: "all",      sort: "value_desc", limit: 50 }, orgId),
-        executeCrmTool("get_appointments",   { date_filter: "upcoming",   status_filter: "all",     limit: 10 }, orgId),
-        executeCrmTool("get_appointments",   { date_filter: "all",        status_filter: "pending",  limit: 20 }, orgId),
-        executeCrmTool("get_recent_activity",{ period: "this_month", limit: 30 }, orgId),
+      const [clientsData, upcomingData, pendingData, activityData, strategicData] = await Promise.all([
+        executeCrmTool("list_clients",        { status: "all",      sort: "value_desc", limit: 50 }, orgId),
+        executeCrmTool("get_appointments",    { date_filter: "upcoming",   status_filter: "all",     limit: 10 }, orgId),
+        executeCrmTool("get_appointments",    { date_filter: "all",        status_filter: "pending",  limit: 20 }, orgId),
+        executeCrmTool("get_recent_activity", { period: "this_month", limit: 30 }, orgId),
+        executeCrmTool("get_strategic_brief", {}, orgId),
       ]);
 
       // Inject as synthetic tool call sequence (OpenAI requires paired calls+results)
@@ -1124,10 +1347,11 @@ router.post("/", async (req, res) => {
         role: "assistant",
         content: null,
         tool_calls: [
-          { id: "exec_1", type: "function", function: { name: "list_clients",        arguments: '{"status":"all","sort":"value_desc"}' } },
-          { id: "exec_2", type: "function", function: { name: "get_appointments",    arguments: '{"date_filter":"upcoming","status_filter":"all","limit":10}' } },
-          { id: "exec_3", type: "function", function: { name: "get_appointments",    arguments: '{"date_filter":"all","status_filter":"pending","limit":20}' } },
-          { id: "exec_4", type: "function", function: { name: "get_recent_activity", arguments: '{"period":"this_month","limit":30}' } },
+          { id: "exec_1", type: "function", function: { name: "list_clients",          arguments: '{"status":"all","sort":"value_desc"}' } },
+          { id: "exec_2", type: "function", function: { name: "get_appointments",      arguments: '{"date_filter":"upcoming","status_filter":"all","limit":10}' } },
+          { id: "exec_3", type: "function", function: { name: "get_appointments",      arguments: '{"date_filter":"all","status_filter":"pending","limit":20}' } },
+          { id: "exec_4", type: "function", function: { name: "get_recent_activity",   arguments: '{"period":"this_month","limit":30}' } },
+          { id: "exec_5", type: "function", function: { name: "get_strategic_brief",   arguments: '{}' } },
         ],
       });
       apiMessages.push(
@@ -1135,9 +1359,10 @@ router.post("/", async (req, res) => {
         { role: "tool", tool_call_id: "exec_2", content: upcomingData },
         { role: "tool", tool_call_id: "exec_3", content: pendingData },
         { role: "tool", tool_call_id: "exec_4", content: activityData },
+        { role: "tool", tool_call_id: "exec_5", content: strategicData },
       );
 
-      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: ["list_clients", "get_appointments", "get_appointments", "get_recent_activity"] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: ["list_clients", "get_appointments", "get_appointments", "get_recent_activity", "get_strategic_brief"] })}\n\n`);
 
     } else {
       // ── Phase 1: CRM tool resolution (non-streaming) ─────────────────────
