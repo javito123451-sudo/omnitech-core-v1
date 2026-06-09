@@ -1,4 +1,5 @@
 - [Calendar premium upgrade](calendar-upgrade.md) — Calendar has 3 views (week/month/day), new statuses (pending/confirmed/completed/cancelled), new DB columns (reminder/tags/location), AI panel at /api/calendar-ai, drag-and-drop on week grid.
 - [Quotes module](quotes-module.md) — Full quotes/presupuestos module: DB tables (quotes, quote_items), CRUD API at /api/quotes, PDF via pdfkit (external in esbuild), frontend at /quotes, AI tool create_quote in chat.ts.
+- [Executive Intelligence Layer](executive-dashboard.md) — Dashboard at /executive: forecast, risks, priorities, opportunities. Babel backtick-in-template-literal gotcha documented.
 - [API codegen workflow](codegen-workflow.md) — Orval codegen via `pnpm --filter @workspace/api-spec run codegen`; DB migration via `pnpm --filter @workspace/db exec drizzle-kit push --force`; pg available at `node_modules/.pnpm/pg@8.20.0/node_modules/pg` for direct SQL.
 - [Phase 1 multi-tenant auth](phase1-multitenant.md) — Clerk + org_id row-level isolation implemented; FK migration requires pre-seeding default org before drizzle-kit push.

@@ -13,6 +13,7 @@ import { organizationsRouter } from "./organizations";
 import { invitationsRouter } from "./invitations";
 import { memoryRouter } from "./memory";
 import { quotesRouter } from "./quotes";
+import { executiveRouter } from "./executive";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -51,5 +52,6 @@ router.use("/chat", chatRouter);
 router.use("/calendar-ai", calendarAiRouter);
 router.use("/memory", memoryRouter);
 router.use("/quotes", quotesRouter);
+router.use("/executive", executiveRouter);
 
 export default router;
