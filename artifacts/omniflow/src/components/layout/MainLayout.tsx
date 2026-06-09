@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut, Hexagon, Settings, Brain } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3, LogOut, Hexagon, Settings, Brain, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useClerk, useUser } from "@clerk/react";
@@ -9,12 +9,13 @@ import { useOrg } from "@/lib/orgContext";
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Panel",        href: "/dashboard" },
-  { icon: Users,           label: "Clientes",     href: "/clients" },
-  { icon: MessageSquare,   label: "Asistente",    href: "/assistant" },
-  { icon: CalendarDays,    label: "Calendario",   href: "/calendar" },
-  { icon: BarChart3,       label: "Estadísticas", href: "/statistics" },
-  { icon: Brain,           label: "Memoria",      href: "/memory" },
+  { icon: LayoutDashboard, label: "Panel",          href: "/dashboard" },
+  { icon: Users,           label: "Clientes",       href: "/clients" },
+  { icon: FileText,        label: "Presupuestos",   href: "/quotes" },
+  { icon: MessageSquare,   label: "Asistente",      href: "/assistant" },
+  { icon: CalendarDays,    label: "Calendario",     href: "/calendar" },
+  { icon: BarChart3,       label: "Estadísticas",   href: "/statistics" },
+  { icon: Brain,           label: "Memoria",        href: "/memory" },
 ];
 
 export default function MainLayout({ children }: { children: ReactNode }) {

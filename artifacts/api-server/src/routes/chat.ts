@@ -8,8 +8,10 @@ import {
   clientsTable,
   appointmentsTable,
   activityTable,
+  quotesTable,
+  quoteItemsTable,
 } from "@workspace/db";
-import { eq, and, desc, gte, lt, inArray } from "drizzle-orm";
+import { eq, and, desc, gte, lt, inArray, ilike } from "drizzle-orm";
 
 const router = Router();
 const AGENT_SLUG = "operator";
@@ -315,6 +317,55 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "create_quote",
+      description:
+        "Crea un presupuesto real y lo guarda en el CRM. " +
+        "Úsala cuando el usuario diga 'crear presupuesto', 'hacer presupuesto', 'generar cotización' o similar. " +
+        "Busca primero el cliente con list_clients si no tienes certeza del nombre exacto.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          client_name: {
+            type: "string",
+            description: "Nombre del cliente tal como aparece en el CRM. Se buscará por coincidencia.",
+          },
+          title: {
+            type: "string",
+            description: "Título descriptivo del presupuesto. Ej: 'Servicios de automatización Q3 2026'.",
+          },
+          items: {
+            type: "array",
+            description: "Líneas del presupuesto. Mínimo 1.",
+            items: {
+              type: "object",
+              properties: {
+                description: { type: "string", description: "Descripción del servicio o producto." },
+                quantity:    { type: "number", description: "Cantidad. Por defecto 1." },
+                unit_price:  { type: "number", description: "Precio unitario en euros." },
+              },
+              required: ["description", "quantity", "unit_price"],
+            },
+          },
+          tax_rate: {
+            type: "number",
+            description: "Porcentaje de IVA. Por defecto 21 (IVA estándar España).",
+          },
+          notes: {
+            type: "string",
+            description: "Notas o condiciones del presupuesto. Opcional.",
+          },
+          valid_days: {
+            type: "number",
+            description: "Días de validez del presupuesto. Por defecto 30.",
+          },
+        },
+        required: ["client_name", "title", "items"],
+      },
+    },
+  },
 ];
 
 const CRM_TOOL_NAMES = new Set(CRM_TOOLS.map(t => t.function.name));
@@ -507,6 +558,94 @@ async function executeCrmTool(
           clientName:  r.clientName ?? null,
           createdAt:   r.createdAt.toISOString(),
         })),
+      });
+    }
+
+    // ── create_quote ────────────────────────────────────────────────────────
+    if (toolName === "create_quote") {
+      const clientName = String(args["client_name"] ?? "");
+      const title      = String(args["title"]       ?? "Presupuesto");
+      const rawItems   = (args["items"] as { description: string; quantity: number; unit_price: number }[]) ?? [];
+      const taxRate    = Number(args["tax_rate"]    ?? 21);
+      const notes      = args["notes"]      ? String(args["notes"])      : null;
+      const validDays  = Number(args["valid_days"]  ?? 30);
+
+      if (!clientName || rawItems.length === 0) {
+        return JSON.stringify({ error: "Se necesita client_name y al menos un ítem" });
+      }
+
+      // Find client by name (fuzzy)
+      const allClients = await db
+        .select()
+        .from(clientsTable)
+        .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientName}%`)))
+        .limit(5);
+
+      if (allClients.length === 0) {
+        return JSON.stringify({ error: `No encontré ningún cliente que coincida con "${clientName}". Usa list_clients para verificar el nombre exacto.` });
+      }
+      const client = allClients[0]!;
+
+      // Compute totals
+      const lineItems = rawItems.map((item, idx) => ({
+        description: item.description,
+        quantity:    Number(item.quantity)   || 1,
+        unitPrice:   Number(item.unit_price) || 0,
+        total:       (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
+        orderIndex:  idx,
+      }));
+      const subtotal  = lineItems.reduce((acc, i) => acc + i.total, 0);
+      const taxAmount = subtotal * (taxRate / 100);
+      const total     = subtotal + taxAmount;
+
+      const validUntil = new Date();
+      validUntil.setDate(validUntil.getDate() + validDays);
+
+      const [quote] = await db.insert(quotesTable).values({
+        orgId,
+        clientId:  client.id,
+        title,
+        status:    "draft",
+        subtotal,
+        taxRate,
+        taxAmount,
+        total,
+        notes,
+        validUntil,
+      }).returning();
+
+      await db.insert(quoteItemsTable).values(
+        lineItems.map(item => ({ ...item, quoteId: quote!.id })),
+      );
+
+      await db.insert(activityTable).values({
+        orgId,
+        type:        "quote_created",
+        description: `Presupuesto "${title}" creado para ${client.name} — ${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(total)}`,
+        clientName:  client.name,
+      }).catch(() => {/* non-critical */});
+
+      return JSON.stringify({
+        success:       true,
+        quoteId:       quote!.id,
+        quoteNumber:   String(quote!.id).padStart(5, "0"),
+        clientName:    client.name,
+        clientCompany: client.company ?? null,
+        title,
+        status:        "draft",
+        subtotal:      Math.round(subtotal * 100) / 100,
+        taxRate,
+        taxAmount:     Math.round(taxAmount * 100) / 100,
+        total:         Math.round(total * 100) / 100,
+        validUntil:    validUntil.toLocaleDateString("es-ES"),
+        items:         lineItems.map(i => ({
+          description: i.description,
+          quantity:    i.quantity,
+          unitPrice:   i.unitPrice,
+          total:       Math.round(i.total * 100) / 100,
+        })),
+        downloadPath: `/api/quotes/${quote!.id}/pdf`,
+        message: `Presupuesto #${String(quote!.id).padStart(5, "0")} creado con éxito. Disponible en la sección Presupuestos.`,
       });
     }
 
