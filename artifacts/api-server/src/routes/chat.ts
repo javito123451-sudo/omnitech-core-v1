@@ -517,6 +517,41 @@ async function executeCrmTool(
   }
 }
 
+// ── Executive dashboard detection ─────────────────────────────────────────────
+
+const EXECUTIVE_KEYWORDS =
+  /resumen ejecutivo|estado del negocio|situaci[oó]n actual|dashboard|an[aá]lisis comercial|informe ejecutivo|estado actual|panorama general|visi[oó]n general|overview|c[oó]mo va el negocio|c[oó]mo estamos|dame un resumen|resumen del d[ií]a|resumen de (la )?semana/i;
+
+const EXECUTIVE_SYSTEM_ADDON = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 MODO INFORME EJECUTIVO ACTIVO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+El usuario solicita un informe del estado del negocio. Los datos reales del CRM ya están adjuntos como resultados de herramientas.
+
+GENERA UN INFORME EJECUTIVO COMPLETO con EXACTAMENTE esta estructura:
+
+📊 **Resumen Ejecutivo**
+Métricas clave: total de clientes, cartera total en €, clientes activos vs prospectos.
+
+📅 **Citas y Agenda**
+Lista cada cita con: hora, título, cliente. Si no hay citas próximas, indícalo claramente.
+
+👥 **Estado de Clientes**
+Clientes destacados por valor. Prospectos prioritarios. Inactivos a recuperar.
+
+⚠️ **Alertas y Pendientes**
+Citas sin confirmar. Clientes sin actividad reciente. Cualquier riesgo identificado.
+
+🚀 **Recomendaciones Prioritarias**
+Exactamente 3 acciones concretas con nombres de clientes reales y pasos específicos.
+
+REGLAS CRÍTICAS:
+- Cita siempre nombres reales de clientes, valores en € y fechas exactas de los datos recibidos
+- NUNCA uses información genérica o inventada
+- Si no hay datos en alguna sección, dilo explícitamente
+- Máximo 500 palabras en total — conciso y ejecutivo`;
+
 // ── Memory extraction ─────────────────────────────────────────────────────────
 
 const SAVE_MEMORY_TOOL: OpenAI.Chat.ChatCompletionTool = {
@@ -784,63 +819,91 @@ router.post("/", async (req, res) => {
   res.write(`data: ${JSON.stringify({ event: "session_created", sessionId })}\n\n`);
 
   try {
-    // ── Phase 1: CRM tool resolution (non-streaming) ───────────────────────
-    // Build the initial messages array. We'll accumulate tool messages into it.
+    // Detect executive dashboard / business summary requests
+    const isExecutive = EXECUTIVE_KEYWORDS.test(lastUserMessage);
+
+    // Build system prompt — inject executive addon when in executive mode
+    const systemContent = buildSystemPrompt(memories, clientContext) +
+      (isExecutive ? EXECUTIVE_SYSTEM_ADDON : "");
+
     const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: "system", content: buildSystemPrompt(memories, clientContext) },
+      { role: "system", content: systemContent },
       ...messages,
     ];
 
-    // Call OpenAI with CRM tools to let it decide what data it needs.
-    // max_tokens is kept low — this call is only for tool selection, not prose.
-    const phase1 = await openai.chat.completions.create({
-      model:        "gpt-4o-mini",
-      messages:     apiMessages,
-      tools:        CRM_TOOLS,
-      tool_choice:  "auto",
-      max_tokens:   300,
-      temperature:  0.1,
-    });
+    if (isExecutive) {
+      // ── Executive mode: pre-fetch ALL CRM tables in parallel ─────────────
+      // Skip phase 1 — we know exactly which data is needed for a full report.
+      console.log(`[Chat] Executive mode triggered for org=${orgId}`);
 
-    const phase1Msg    = phase1.choices[0]?.message;
-    const crmToolCalls = (phase1Msg?.tool_calls ?? []).filter(
-      tc => CRM_TOOL_NAMES.has(tc.function.name),
-    );
+      const [clientsData, upcomingData, pendingData, activityData] = await Promise.all([
+        executeCrmTool("list_clients",       { status: "all",      sort: "value_desc", limit: 50 }, orgId),
+        executeCrmTool("get_appointments",   { date_filter: "upcoming",   status_filter: "all",     limit: 10 }, orgId),
+        executeCrmTool("get_appointments",   { date_filter: "all",        status_filter: "pending",  limit: 20 }, orgId),
+        executeCrmTool("get_recent_activity",{ period: "this_month", limit: 30 }, orgId),
+      ]);
 
-    if (crmToolCalls.length > 0) {
-      // ── Execute CRM tools in parallel ──────────────────────────────────
-      const toolResults = await Promise.all(
-        crmToolCalls.map(async tc => {
-          let args: Record<string, unknown> = {};
-          try { args = JSON.parse(tc.function.arguments) as Record<string, unknown>; } catch { /* use {} */ }
-
-          const result = await executeCrmTool(tc.function.name, args, orgId);
-          console.log(`[CRM] tool=${tc.function.name} args=${tc.function.arguments} result_len=${result.length}`);
-
-          return {
-            role:         "tool" as const,
-            tool_call_id: tc.id,
-            content:      result,
-          };
-        }),
+      // Inject as synthetic tool call sequence (OpenAI requires paired calls+results)
+      apiMessages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "exec_1", type: "function", function: { name: "list_clients",        arguments: '{"status":"all","sort":"value_desc"}' } },
+          { id: "exec_2", type: "function", function: { name: "get_appointments",    arguments: '{"date_filter":"upcoming","status_filter":"all","limit":10}' } },
+          { id: "exec_3", type: "function", function: { name: "get_appointments",    arguments: '{"date_filter":"all","status_filter":"pending","limit":20}' } },
+          { id: "exec_4", type: "function", function: { name: "get_recent_activity", arguments: '{"period":"this_month","limit":30}' } },
+        ],
+      });
+      apiMessages.push(
+        { role: "tool", tool_call_id: "exec_1", content: clientsData },
+        { role: "tool", tool_call_id: "exec_2", content: upcomingData },
+        { role: "tool", tool_call_id: "exec_3", content: pendingData },
+        { role: "tool", tool_call_id: "exec_4", content: activityData },
       );
 
-      // Append assistant tool-call message + tool results to message history
-      apiMessages.push({ role: "assistant", content: null, tool_calls: crmToolCalls });
-      apiMessages.push(...toolResults);
+      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: ["list_clients", "get_appointments", "get_appointments", "get_recent_activity"] })}\n\n`);
 
-      // Signal to client that tools were resolved
-      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: crmToolCalls.map(tc => tc.function.name) })}\n\n`);
+    } else {
+      // ── Phase 1: CRM tool resolution (non-streaming) ─────────────────────
+      // Let OpenAI decide which tools to call based on the user's question.
+      const phase1 = await openai.chat.completions.create({
+        model:        "gpt-4o-mini",
+        messages:     apiMessages,
+        tools:        CRM_TOOLS,
+        tool_choice:  "auto",
+        max_tokens:   300,
+        temperature:  0.1,
+      });
+
+      const phase1Msg    = phase1.choices[0]?.message;
+      const crmToolCalls = (phase1Msg?.tool_calls ?? []).filter(
+        tc => CRM_TOOL_NAMES.has(tc.function.name),
+      );
+
+      if (crmToolCalls.length > 0) {
+        const toolResults = await Promise.all(
+          crmToolCalls.map(async tc => {
+            let args: Record<string, unknown> = {};
+            try { args = JSON.parse(tc.function.arguments) as Record<string, unknown>; } catch { /* use {} */ }
+            const result = await executeCrmTool(tc.function.name, args, orgId);
+            console.log(`[CRM] tool=${tc.function.name} args=${tc.function.arguments} result_len=${result.length}`);
+            return { role: "tool" as const, tool_call_id: tc.id, content: result };
+          }),
+        );
+
+        apiMessages.push({ role: "assistant", content: null, tool_calls: crmToolCalls });
+        apiMessages.push(...toolResults);
+        res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: crmToolCalls.map(tc => tc.function.name) })}\n\n`);
+      }
     }
 
-    // ── Phase 2: Final streaming response ─────────────────────────────────
-    // If no CRM tools were called, apiMessages is just system + user history.
-    // If tools were called, apiMessages now includes tool results as context.
+    // ── Phase 2: Final streaming response (always) ─────────────────────────
+    // Executive reports get more token budget for complete structured output.
     const stream = await openai.chat.completions.create({
       model:       "gpt-4o-mini",
       messages:    apiMessages,
       stream:      true,
-      max_tokens:  700,
+      max_tokens:  isExecutive ? 1200 : 700,
       temperature: 0.7,
     });
 
