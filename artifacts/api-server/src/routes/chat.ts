@@ -9,7 +9,7 @@ import {
   appointmentsTable,
   activityTable,
 } from "@workspace/db";
-import { eq, and, desc, gte, lt } from "drizzle-orm";
+import { eq, and, desc, gte, lt, inArray } from "drizzle-orm";
 
 const router = Router();
 const AGENT_SLUG = "operator";
@@ -80,7 +80,17 @@ Instrucciones:
 - Cuando generes presupuestos, usa formato de tabla Markdown
 - Cuando sugieras mensajes para clientes, ponlos entre comillas en bloque con >
 - Propón siempre un siguiente paso accionable al final de tu respuesta
-- No menciones que eres GPT o que eres de OpenAI — eres OmniTech AI`;
+- No menciones que eres GPT o que eres de OpenAI — eres OmniTech AI
+
+FORMATO EJECUTIVO VISUAL:
+Cuando respondas sobre citas, actividad, clientes o resúmenes del CRM, usa este formato con emojis (solo las secciones relevantes):
+📊 **Resumen** — cifras clave en 1-2 líneas
+📅 **Citas** — lista limpia de citas con hora y cliente
+👥 **Clientes** — clientes destacados o involucrados
+⚠️ **Pendientes** — alertas, sin respuesta, sin confirmar
+🚀 **Recomendación** — próximo paso accionable concreto
+
+Nunca uses tablas técnicas con columnas de datos crudos. Presenta la información de forma ejecutiva y legible.`;
 
 interface ClientContext {
   id?: number;
@@ -119,6 +129,18 @@ function buildSystemPrompt(
   memories: AgentMemoryRow[],
   clientContext?: ClientContext,
 ): string {
+  // Inject current date/time (Spain timezone) so AI can reason about "hoy", "mañana", "esta semana"
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("es-ES", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    timeZone: "Europe/Madrid",
+  });
+  const timeStr = now.toLocaleTimeString("es-ES", {
+    hour: "2-digit", minute: "2-digit",
+    timeZone: "Europe/Madrid",
+  });
+  const dateBlock = `\n\n🗓️ FECHA Y HORA ACTUAL (Madrid): ${dateStr}, ${timeStr}. Usa esta fecha para interpretar correctamente "hoy", "mañana" y "esta semana" al consultar citas y actividad.`;
+
   const memoryBlock =
     memories.length > 0
       ? `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -133,7 +155,7 @@ ${memories.map(m => {
 INSTRUCCIÓN CRÍTICA: La MEMORIA ORGANIZACIONAL contiene información oficial y real de esta organización. Cuando el usuario pregunte sobre servicios, procesos, clientes, decisiones, objetivos u cualquier información que ya esté en la memoria, DEBES responder usando esa información como fuente primaria y exacta. No inventes ni supongas — cita lo que está en la memoria.`
       : "";
 
-  const base = BASE_SYSTEM_PROMPT + memoryBlock;
+  const base = BASE_SYSTEM_PROMPT + dateBlock + memoryBlock;
 
   if (!clientContext) return base;
 
@@ -168,24 +190,68 @@ INSTRUCCIONES ESPECIALES PARA ESTE CLIENTE:
 
 // ── CRM Tools ─────────────────────────────────────────────────────────────────
 
+// ── Date helpers (Spain / Madrid timezone) ───────────────────────────────────
+
+function getMadridDayBounds(offsetDays = 0): { start: Date; end: Date } {
+  const now = new Date();
+  // Resolve "today" in Europe/Madrid by formatting + re-parsing
+  const madridDateStr = now.toLocaleDateString("en-CA", { timeZone: "Europe/Madrid" }); // "YYYY-MM-DD"
+  const [y, m, d] = madridDateStr.split("-").map(Number);
+  // Create UTC midnight for that Madrid date
+  const startUTC = new Date(Date.UTC(y!, m! - 1, d! + offsetDays, 0, 0, 0));
+  const endUTC   = new Date(Date.UTC(y!, m! - 1, d! + offsetDays + 1, 0, 0, 0));
+  return { start: startUTC, end: endUTC };
+}
+
+function getMadridWeekBounds(): { start: Date; end: Date } {
+  const { start: todayStart } = getMadridDayBounds(0);
+  const dow = todayStart.getUTCDay(); // 0=Sun … 6=Sat
+  const daysToMon = dow === 0 ? -6 : 1 - dow;
+  const weekStart = new Date(todayStart);
+  weekStart.setUTCDate(weekStart.getUTCDate() + daysToMon);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+  return { start: weekStart, end: weekEnd };
+}
+
+function getMadridMonthStart(): Date {
+  const now = new Date();
+  const madridDateStr = now.toLocaleDateString("en-CA", { timeZone: "Europe/Madrid" });
+  const [y, m] = madridDateStr.split("-").map(Number);
+  return new Date(Date.UTC(y!, m! - 1, 1, 0, 0, 0));
+}
+
+// ── CRM Tools ─────────────────────────────────────────────────────────────────
+
 const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
       name: "list_clients",
       description:
-        "Lista los clientes del CRM con nombre, empresa, estado, valor económico y email. " +
-        "Úsala ante preguntas sobre: lista de clientes, cuántos clientes hay, cuántos activos/prospectos/inactivos, " +
-        "valor de la cartera, o cualquier consulta que implique datos de clientes.",
+        "Lista clientes del CRM. Úsala para: listado completo, cuántos clientes hay, " +
+        "conteo por estado, valor de cartera, último cliente creado, clientes que necesitan seguimiento.",
       parameters: {
         type: "object" as const,
         properties: {
           status: {
             type: "string",
-            enum: ["all", "lead", "active", "inactive", "churned"],
+            enum: ["all", "lead", "active", "inactive", "churned", "followup"],
             description:
-              "Filtra por estado. 'all' devuelve todos. " +
-              "'lead' = prospectos, 'active' = activos, 'inactive' = inactivos, 'churned' = perdidos.",
+              "'all' = todos · 'lead' = prospectos · 'active' = activos · " +
+              "'inactive' = inactivos · 'churned' = perdidos · " +
+              "'followup' = clientes que necesitan seguimiento (leads + inactivos).",
+          },
+          sort: {
+            type: "string",
+            enum: ["name", "created_desc", "value_desc"],
+            description:
+              "'name' = por nombre (defecto) · 'created_desc' = más recientes primero " +
+              "(usar para ¿último cliente creado?) · 'value_desc' = por valor.",
+          },
+          limit: {
+            type: "number",
+            description: "Máximo clientes a devolver. Por defecto 50.",
           },
         },
         required: ["status"],
@@ -197,22 +263,30 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "get_appointments",
       description:
-        "Obtiene citas y reuniones del calendario con nombre del cliente asociado. " +
-        "Úsala ante preguntas sobre: próximas citas, reuniones programadas, agenda, historial de citas.",
+        "Obtiene citas del calendario con cliente asociado. " +
+        "Úsala para: citas de hoy, mañana, esta semana, pendientes, próximas reuniones, historial.",
       parameters: {
         type: "object" as const,
         properties: {
-          period: {
+          date_filter: {
             type: "string",
-            enum: ["upcoming", "past", "all"],
-            description: "'upcoming' = próximas, 'past' = pasadas, 'all' = todas.",
+            enum: ["today", "tomorrow", "this_week", "upcoming", "past", "all"],
+            description:
+              "'today' = hoy · 'tomorrow' = mañana · 'this_week' = esta semana (lun-dom) · " +
+              "'upcoming' = todas las futuras · 'past' = pasadas · 'all' = todas sin filtro de fecha.",
+          },
+          status_filter: {
+            type: "string",
+            enum: ["all", "pending", "confirmed", "completed", "cancelled"],
+            description:
+              "Filtra por estado de cita. 'pending' = pendientes de confirmar · 'all' = cualquier estado.",
           },
           limit: {
             type: "number",
-            description: "Máximo número de citas a devolver. Por defecto 10.",
+            description: "Máximo de citas. Por defecto 20.",
           },
         },
-        required: ["period"],
+        required: ["date_filter"],
       },
     },
   },
@@ -221,17 +295,23 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "get_recent_activity",
       description:
-        "Obtiene el registro de actividad reciente del CRM: clientes añadidos, mensajes enviados, " +
-        "citas programadas, cambios de estado. Úsala ante preguntas sobre actividad, historial o últimas acciones.",
+        "Obtiene el registro de actividad del CRM: clientes añadidos, mensajes, citas, cambios de estado. " +
+        "Úsala para preguntas sobre qué ocurrió hoy, esta semana, este mes o en general.",
       parameters: {
         type: "object" as const,
         properties: {
+          period: {
+            type: "string",
+            enum: ["today", "this_week", "this_month", "all"],
+            description:
+              "'today' = hoy · 'this_week' = esta semana · 'this_month' = este mes · 'all' = todo.",
+          },
           limit: {
             type: "number",
-            description: "Número de entradas de actividad a devolver. Por defecto 20.",
+            description: "Número de entradas. Por defecto 30.",
           },
         },
-        required: [],
+        required: ["period"],
       },
     },
   },
@@ -246,123 +326,180 @@ const STATUS_LABEL: Record<string, string> = {
   churned:  "Perdido",
 };
 
+const APPT_STATUS_LABEL: Record<string, string> = {
+  pending:   "⏳ Pendiente",
+  confirmed: "✅ Confirmada",
+  completed: "✔️ Completada",
+  cancelled: "❌ Cancelada",
+};
+
 async function executeCrmTool(
   toolName: string,
   args: Record<string, unknown>,
   orgId: number,
 ): Promise<string> {
   try {
+    // ── list_clients ────────────────────────────────────────────────────────
     if (toolName === "list_clients") {
       const status = (args["status"] as string | undefined) ?? "all";
-      const rows =
-        status !== "all"
-          ? await db
-              .select()
-              .from(clientsTable)
-              .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.status, status)))
-              .orderBy(clientsTable.name)
-          : await db
-              .select()
-              .from(clientsTable)
-              .where(eq(clientsTable.orgId, orgId))
-              .orderBy(clientsTable.name);
+      const sort   = (args["sort"]   as string | undefined) ?? "name";
+      const limit  = Math.min(Number(args["limit"] ?? 50), 100);
+
+      const orderBy =
+        sort === "created_desc" ? desc(clientsTable.createdAt) :
+        sort === "value_desc"   ? desc(clientsTable.value)     :
+        clientsTable.name;
+
+      const whereClause =
+        status === "all"
+          ? eq(clientsTable.orgId, orgId)
+          : status === "followup"
+            ? and(eq(clientsTable.orgId, orgId), inArray(clientsTable.status, ["lead", "inactive"]))
+            : and(eq(clientsTable.orgId, orgId), eq(clientsTable.status, status));
+
+      const rows = await db
+        .select()
+        .from(clientsTable)
+        .where(whereClause)
+        .orderBy(orderBy)
+        .limit(limit);
 
       const totalValue = rows.reduce((acc, c) => acc + (c.value ?? 0), 0);
       const byStatus: Record<string, number> = {};
-      for (const c of rows) {
-        byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
-      }
+      for (const c of rows) byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
 
       return JSON.stringify({
         total: rows.length,
         totalValue: Math.round(totalValue),
         byStatus: Object.entries(byStatus).map(([s, n]) => ({
-          status: s,
-          label: STATUS_LABEL[s] ?? s,
-          count: n,
+          status: s, label: STATUS_LABEL[s] ?? s, count: n,
         })),
         clients: rows.map(c => ({
-          id:      c.id,
-          name:    c.name,
-          company: c.company ?? null,
-          status:  c.status,
-          label:   STATUS_LABEL[c.status] ?? c.status,
-          email:   c.email,
-          phone:   c.phone ?? null,
-          value:   c.value ?? 0,
-          tags:    c.tags ?? null,
+          id:        c.id,
+          name:      c.name,
+          company:   c.company ?? null,
+          status:    c.status,
+          label:     STATUS_LABEL[c.status] ?? c.status,
+          email:     c.email,
+          phone:     c.phone ?? null,
+          value:     c.value ?? 0,
+          tags:      c.tags ?? null,
+          createdAt: c.createdAt.toISOString(),
         })),
       });
     }
 
+    // ── get_appointments ────────────────────────────────────────────────────
     if (toolName === "get_appointments") {
-      const period = (args["period"] as string | undefined) ?? "all";
-      const limit  = Math.min(Number(args["limit"] ?? 10), 50);
-      const now    = new Date();
+      const dateFilter   = (args["date_filter"]   as string | undefined) ?? "all";
+      const statusFilter = (args["status_filter"] as string | undefined) ?? "all";
+      const limit        = Math.min(Number(args["limit"] ?? 20), 50);
+      const now          = new Date();
+
+      // Build date range condition
+      let dateCondition = undefined;
+      if (dateFilter === "today") {
+        const { start, end } = getMadridDayBounds(0);
+        dateCondition = and(gte(appointmentsTable.startTime, start), lt(appointmentsTable.startTime, end));
+      } else if (dateFilter === "tomorrow") {
+        const { start, end } = getMadridDayBounds(1);
+        dateCondition = and(gte(appointmentsTable.startTime, start), lt(appointmentsTable.startTime, end));
+      } else if (dateFilter === "this_week") {
+        const { start, end } = getMadridWeekBounds();
+        dateCondition = and(gte(appointmentsTable.startTime, start), lt(appointmentsTable.startTime, end));
+      } else if (dateFilter === "upcoming") {
+        dateCondition = gte(appointmentsTable.startTime, now);
+      } else if (dateFilter === "past") {
+        dateCondition = lt(appointmentsTable.startTime, now);
+      }
+
+      // Build status condition
+      const statusCondition =
+        statusFilter !== "all" ? eq(appointmentsTable.status, statusFilter) : undefined;
+
+      // Combine all conditions
+      const conditions = [
+        eq(appointmentsTable.orgId, orgId),
+        dateCondition,
+        statusCondition,
+      ].filter(Boolean);
+
+      const orderDir =
+        dateFilter === "past" ? desc(appointmentsTable.startTime) : appointmentsTable.startTime;
 
       const baseSelect = {
-        id:          appointmentsTable.id,
-        title:       appointmentsTable.title,
-        description: appointmentsTable.description,
-        startTime:   appointmentsTable.startTime,
-        endTime:     appointmentsTable.endTime,
-        status:      appointmentsTable.status,
-        type:        appointmentsTable.type,
-        location:    appointmentsTable.location,
-        clientId:    appointmentsTable.clientId,
-        clientName:  clientsTable.name,
+        id:            appointmentsTable.id,
+        title:         appointmentsTable.title,
+        description:   appointmentsTable.description,
+        startTime:     appointmentsTable.startTime,
+        endTime:       appointmentsTable.endTime,
+        status:        appointmentsTable.status,
+        type:          appointmentsTable.type,
+        location:      appointmentsTable.location,
+        clientId:      appointmentsTable.clientId,
+        clientName:    clientsTable.name,
         clientCompany: clientsTable.company,
       };
 
-      let rows;
-      if (period === "upcoming") {
-        rows = await db
-          .select(baseSelect)
-          .from(appointmentsTable)
-          .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
-          .where(and(eq(appointmentsTable.orgId, orgId), gte(appointmentsTable.startTime, now)))
-          .orderBy(appointmentsTable.startTime)
-          .limit(limit);
-      } else if (period === "past") {
-        rows = await db
-          .select(baseSelect)
-          .from(appointmentsTable)
-          .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
-          .where(and(eq(appointmentsTable.orgId, orgId), lt(appointmentsTable.startTime, now)))
-          .orderBy(desc(appointmentsTable.startTime))
-          .limit(limit);
-      } else {
-        rows = await db
-          .select(baseSelect)
-          .from(appointmentsTable)
-          .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
-          .where(eq(appointmentsTable.orgId, orgId))
-          .orderBy(desc(appointmentsTable.startTime))
-          .limit(limit);
-      }
+      const rows = await db
+        .select(baseSelect)
+        .from(appointmentsTable)
+        .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
+        .where(conditions.length === 1 ? conditions[0] : and(...conditions as Parameters<typeof and>))
+        .orderBy(orderDir)
+        .limit(limit);
 
       return JSON.stringify({
-        total: rows.length,
-        period,
+        total:       rows.length,
+        date_filter: dateFilter,
+        queried_at:  now.toISOString(),
         appointments: rows.map(r => ({
-          ...r,
-          startTime: r.startTime.toISOString(),
-          endTime:   r.endTime.toISOString(),
+          id:            r.id,
+          title:         r.title,
+          description:   r.description ?? null,
+          startTime:     r.startTime.toISOString(),
+          endTime:       r.endTime.toISOString(),
+          status:        r.status,
+          statusLabel:   APPT_STATUS_LABEL[r.status] ?? r.status,
+          type:          r.type ?? null,
+          location:      r.location ?? null,
+          clientName:    r.clientName ?? null,
+          clientCompany: r.clientCompany ?? null,
         })),
       });
     }
 
+    // ── get_recent_activity ─────────────────────────────────────────────────
     if (toolName === "get_recent_activity") {
-      const limit = Math.min(Number(args["limit"] ?? 20), 50);
-      const rows  = await db
+      const period = (args["period"] as string | undefined) ?? "all";
+      const limit  = Math.min(Number(args["limit"] ?? 30), 100);
+
+      let periodCondition = undefined;
+      if (period === "today") {
+        const { start } = getMadridDayBounds(0);
+        periodCondition = gte(activityTable.createdAt, start);
+      } else if (period === "this_week") {
+        const { start } = getMadridWeekBounds();
+        periodCondition = gte(activityTable.createdAt, start);
+      } else if (period === "this_month") {
+        periodCondition = gte(activityTable.createdAt, getMadridMonthStart());
+      }
+
+      const conditions = [
+        eq(activityTable.orgId, orgId),
+        periodCondition,
+      ].filter(Boolean);
+
+      const rows = await db
         .select()
         .from(activityTable)
-        .where(eq(activityTable.orgId, orgId))
+        .where(conditions.length === 1 ? conditions[0] : and(...conditions as Parameters<typeof and>))
         .orderBy(desc(activityTable.createdAt))
         .limit(limit);
 
       return JSON.stringify({
-        total: rows.length,
+        total:  rows.length,
+        period,
         activity: rows.map(r => ({
           id:          r.id,
           type:        r.type,
