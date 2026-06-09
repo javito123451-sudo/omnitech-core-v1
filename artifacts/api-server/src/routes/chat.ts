@@ -1012,25 +1012,54 @@ async function executeCrmTool(
 // ── Executive dashboard detection ─────────────────────────────────────────────
 
 const EXECUTIVE_KEYWORDS =
-  /resumen ejecutivo|estado del negocio|situaci[oó]n actual|dashboard|an[aá]lisis comercial|informe ejecutivo|estado actual|panorama general|visi[oó]n general|overview|c[oó]mo va el negocio|c[oó]mo va mi negocio|c[oó]mo estamos|dame un resumen|resumen del d[ií]a|resumen de (la )?semana|qu[eé] debo hacer( hoy)?|d[oó]nde debo (centrarme|enfocarme|focalizarme)|en qu[eé] (me )?centrar|qu[eé] (me )?har[aá] ganar|ganar m[aá]s (dinero|pasta)|qu[eé] cliente.{0,20}priorizar|qu[eé] priorizo|a qui[eé]n (debo |debería )?llamar|por d[oó]nde empez|próximos pasos|siguiente(s)? paso(s)?|estrategia (del|de) (negocio|semana|mes)|d[oó]nde est[aá] el dinero|mayor impacto|mayor retorno|mejor oportunidad/i;
+  /resumen ejecutivo|estado del negocio|situaci[oó]n actual|dashboard|an[aá]lisis comercial|informe ejecutivo|estado actual|panorama general|visi[oó]n general|overview|c[oó]mo va el negocio|c[oó]mo va mi negocio|c[oó]mo estamos|dame un resumen|resumen del d[ií]a|resumen de (la )?semana|qu[eé] debo hacer( hoy)?|d[oó]nde debo (centrarme|enfocarme|focalizarme)|en qu[eé] (me )?centrar|qu[eé] (me )?har[aá] ganar|ganar m[aá]s (dinero|pasta)|qu[eé] cliente.{0,20}priorizar|qu[eé] priorizo|a qui[eé]n (debo |debería )?llamar|por d[oó]nde empez|pr[oó]ximos pasos|siguiente(s)? paso(s)?|estrategia (del|de) (negocio|semana|mes)|d[oó]nde est[aá] el dinero|mayor impacto|mayor retorno|mejor oportunidad|\bceo\b|\bcoo\b|\bcfo\b|inversor(es)?|junta (directiva|de (accionistas|socios))|consejo (de administraci[oó]n|directivo|asesor|\b)|para el (consejo|directorio|board)\b|pitch|due diligence|escalado|escalabilidad|escalar (el )?negocio|crecimiento (del negocio|sostenible|acelerado|exponencial)|plan de crecimiento|estrategia (empresarial|de negocio|comercial|de ventas|de expansi[oó]n)|an[aá]lisis estrat[eé]gico|visi[oó]n estrat[eé]gica|objetivo(s)? estrat[eé]gico(s)?|m[eé]tricas (clave|de negocio|para el)|kpi(s)?|retorno (de la )?(inversi[oó]n|inversion)|roi\b|margen(es)? (de beneficio|bruto|neto)|ticket medio|ltv\b|lifetime value|churn\b|tasa de (retenci[oó]n|abandono|conversi[oó]n)|pipeline (de ventas|comercial)/i;
 
 const EXECUTIVE_SYSTEM_ADDON = `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🧠 MODO INTELIGENCIA ESTRATÉGICA ACTIVO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-El usuario hace una pregunta estratégica. Los datos del CRM están adjuntos. Tu misión: responder con DECISIONES, no con datos.
+El usuario hace una pregunta estratégica o de alto nivel directivo. Los datos reales del CRM están adjuntos como resultados de herramientas.
 
-FÓRMULA DE SCORING (ya calculada en get_strategic_brief):
+⛔ PROHIBIDO ABSOLUTO:
+- NO respondas con conocimiento general, marcos teóricos ni buenas prácticas genéricas
+- NO inventes cifras, clientes ni métricas
+- NO digas "típicamente", "en general", "suele ser" ni nada que no provenga del CRM
+- Si no hay datos suficientes para responder algo, dilo explícitamente
+
+✅ OBLIGATORIO antes de responder:
+1. Consultar clientes y pipeline (ya en exec_1 / list_clients)
+2. Consultar citas próximas y pendientes (exec_2 y exec_3)
+3. Consultar actividad e ingresos recientes (exec_4)
+4. Leer el scoring calculado (exec_5 / get_strategic_brief con kpis.pipeline_eur y confirmed_eur)
+5. Basar CADA afirmación en esos datos — cita el dato de origen
+
+FÓRMULA DE SCORING (ya calculada):
   score = valor_económico × 0.5 + proximidad_cierre × 0.2 + estado_pipeline × 0.2 + urgencia × 0.1
 
-ADAPTA la estructura según la pregunta del usuario:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTRUCTURA SEGÚN EL CONTEXTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Si pregunta "¿Cómo va mi negocio?" o similar → INFORME EJECUTIVO:
-📊 **Estado del Negocio**  — 2-3 métricas clave con €
-🏆 **Top 3 Clientes por Impacto** — con score, valor € y por qué priorizarlos
+Si menciona CEO, COO, CFO, Consejo, Junta, Inversor, Board o Pitch → INFORME PARA DIRECTIVOS:
+📊 **Estado Actual del Negocio** — pipeline €X, confirmado €Y, clientes activos N
+🏆 **Top 3 Clientes Estratégicos** — nombre, valor €, score, estado y próximo paso
+📈 **Tendencia** — actividad del último mes: N interacciones, N citas, N presupuestos
+⚠️ **Riesgos Identificados** — con impacto económico estimado en €
+🚀 **Palancas de Crecimiento** — 2-3 acciones concretas con nombre de cliente y €€€ potencial
+
+Si menciona Estrategia, Escalado, Crecimiento, KPIs, ROI, Pipeline → ANÁLISIS ESTRATÉGICO:
+📈 **Situación Base** — métricas actuales del CRM (pipeline, conversión, actividad)
+🎯 **Mayor Palanca de Crecimiento** — el cliente o segmento con mayor potencial de €
+💰 **Oportunidad Económica Inmediata** — €€€ en presupuestos enviados pendientes de cierre
+⚡ **Acción Estratégica #1** — la de mayor impacto con menor esfuerzo
+📌 **Riesgo Principal** — qué puede frenar el crecimiento según los datos actuales
+
+Si pregunta "¿Cómo va mi negocio?" o situación general → INFORME EJECUTIVO:
+📊 **Estado del Negocio** — 2-3 métricas clave con €
+🏆 **Top 3 Clientes por Impacto** — con score, valor € y acción recomendada
 ⚡ **Acción Más Rentable Esta Semana** — UNA acción concreta con nombre real
-⚠️ **Riesgo Principal** — el mayor riesgo con su impacto económico estimado
+⚠️ **Riesgo Principal** — el mayor riesgo con su impacto económico
 
 Si pregunta "¿Qué debo hacer hoy?" o "¿Qué cliente priorizar?" → DECISIÓN DIRECTA:
 🥇 **Prioridad #1** — cliente + acción + razón económica
@@ -1044,11 +1073,11 @@ Si pregunta "¿Qué me hará ganar más?" o "¿Dónde está el dinero?" → ANÁ
 🎯 **Acción de Mayor ROI** — la que tiene mejor ratio impacto/esfuerzo
 
 REGLAS CRÍTICAS:
-- Responde con DECISIONES, nunca con tablas de datos crudos
-- Cita nombres reales, €€€ reales y fechas exactas del CRM
+- Cada afirmación debe citar su fuente de datos (nombre del cliente, €, fecha)
+- Responde con DECISIONES y DATOS, nunca con consejos genéricos
 - Usa el score del get_strategic_brief para justificar la priorización
-- Máximo 400 palabras — ejecutivo, directo, accionable
-- Siempre termina con UNA acción que el usuario debe hacer AHORA MISMO`;
+- Máximo 450 palabras — ejecutivo, directo, accionable
+- Siempre termina con UNA acción concreta que el usuario debe hacer AHORA MISMO`;
 
 // ── Memory extraction ─────────────────────────────────────────────────────────
 
