@@ -31,6 +31,7 @@ type Msg = {
 type Session = {
   id: string; title: string; preview: string; ts: Date;
   msgs: Msg[]; clientId?: number;
+  dbSessionId?: string;
 };
 type AgentMemory = {
   id: number; orgId: number; agentSlug: string;
@@ -704,11 +705,41 @@ export default function Assistant() {
   // ── Organizational memory ─────────────────────────────────────────────────
   const fetchMemories = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/memory`);
+      const res = await fetch(`${API_BASE}/api/memory`, { credentials: "include" });
       if (res.ok) setMemories(await res.json() as AgentMemory[]);
     } catch { /* ignore */ }
   }, []);
   useEffect(() => { fetchMemories(); }, [fetchMemories]);
+
+  // ── Sync sessions from DB on mount (restores after page reload) ────────────
+  const syncSessionsFromDB = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/sessions`, { credentials: "include" });
+      if (!res.ok) return;
+      const dbSessions = await res.json() as Array<{
+        id: string; title: string | null; clientId: number | null; updatedAt: string;
+      }>;
+      setSessions(prev => {
+        const knownDbIds = new Set(prev.map(s => s.dbSessionId).filter(Boolean));
+        const toAdd: Session[] = dbSessions
+          .filter(db => !knownDbIds.has(db.id))
+          .map(db => ({
+            id:          crypto.randomUUID(),
+            dbSessionId: db.id,
+            title:       db.title ?? "Conversación",
+            preview:     "",
+            ts:          new Date(db.updatedAt),
+            msgs:        [],
+            clientId:    db.clientId ?? undefined,
+          }));
+        if (toAdd.length === 0) return prev;
+        return [...toAdd, ...prev].sort(
+          (a, b) => b.ts.getTime() - a.ts.getTime(),
+        );
+      });
+    } catch { /* ignore — DB sync is best-effort */ }
+  }, []);
+  useEffect(() => { syncSessionsFromDB(); }, [syncSessionsFromDB]);
 
   // ── Live client data from API ──────────────────────────────────────────────
   const { data: clientFull } = useGetClient(contextId ?? 0, {
@@ -848,12 +879,15 @@ export default function Assistant() {
       ));
 
     try {
+      const currentDbSessionId = sessionsRef.current.find(s => s.id === targetId)?.dbSessionId;
       const res = await fetch(`${API_BASE}/api/chat`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        method:      "POST",
+        headers:     { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           messages:      history,
           clientContext: currentApiContext,
+          sessionId:     currentDbSessionId,
         }),
         signal: ctrl.signal,
       });
@@ -889,6 +923,12 @@ export default function Assistant() {
           catch { continue; }
 
           if (parsed.error) { markError(parsed.error); return; }
+          if (parsed.event === "session_created" && parsed.sessionId) {
+            const dbSid = parsed.sessionId as string;
+            setSessions(prev => prev.map(s =>
+              s.id === targetId ? { ...s, dbSessionId: dbSid } : s,
+            ));
+          }
           if (parsed.event === "memory_saved" && parsed.memory) {
             const mem = parsed.memory;
             setMemories(prev => {

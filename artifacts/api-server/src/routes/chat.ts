@@ -1,6 +1,6 @@
 import { Router } from "express";
 import OpenAI from "openai";
-import { db, agentMemoryTable } from "@workspace/db";
+import { db, agentMemoryTable, aiSessionsTable, aiMessagesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
@@ -299,12 +299,60 @@ ${existingList}`,
   return saved;
 }
 
+// ── Session endpoints ──────────────────────────────────────────────────────────
+
+router.get("/sessions", async (req, res) => {
+  try {
+    const sessions = await db
+      .select()
+      .from(aiSessionsTable)
+      .where(and(eq(aiSessionsTable.orgId, req.orgId!), eq(aiSessionsTable.userId, req.userId!)))
+      .orderBy(desc(aiSessionsTable.updatedAt))
+      .limit(50);
+    res.json(sessions.map(s => ({
+      ...s,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    })));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+router.get("/sessions/:sessionId/messages", async (req, res) => {
+  try {
+    const [session] = await db
+      .select()
+      .from(aiSessionsTable)
+      .where(and(
+        eq(aiSessionsTable.id, req.params.sessionId),
+        eq(aiSessionsTable.orgId, req.orgId!),
+        eq(aiSessionsTable.userId, req.userId!),
+      ));
+    if (!session) { res.status(404).json({ error: "Sesión no encontrada" }); return; }
+
+    const msgs = await db
+      .select()
+      .from(aiMessagesTable)
+      .where(eq(aiMessagesTable.sessionId, req.params.sessionId))
+      .orderBy(aiMessagesTable.createdAt);
+
+    res.json({
+      session:  { ...session, createdAt: session.createdAt.toISOString(), updatedAt: session.updatedAt.toISOString() },
+      messages: msgs.map(m => ({ ...m, createdAt: m.createdAt.toISOString() })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // ── Chat endpoint ─────────────────────────────────────────────────────────────
 
 router.post("/", async (req, res) => {
-  const { messages, clientContext } = req.body as {
+  const { messages, clientContext, sessionId: incomingSessionId } = req.body as {
     messages: { role: "user" | "assistant"; content: string }[];
     clientContext?: ClientContext;
+    sessionId?: string;
   };
 
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -337,11 +385,44 @@ router.post("/", async (req, res) => {
     // Continue without memory — non-fatal
   }
 
+  // ── Session persistence ────────────────────────────────────────────────────
+  let sessionId: string | undefined = incomingSessionId;
+  try {
+    if (sessionId) {
+      // Existing session — verify ownership and bump updatedAt
+      await db
+        .update(aiSessionsTable)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(aiSessionsTable.id, sessionId), eq(aiSessionsTable.orgId, orgId)));
+    } else {
+      // New session — create and title from first user message
+      const title = lastUserMessage.slice(0, 60) || "Nueva conversación";
+      const [newSession] = await db
+        .insert(aiSessionsTable)
+        .values({ orgId, userId: req.userId!, title, clientId: clientContext?.id ?? null })
+        .returning();
+      sessionId = newSession.id;
+    }
+    // Persist user message immediately (before streaming)
+    await db.insert(aiMessagesTable).values({
+      sessionId: sessionId!,
+      role:      "user",
+      content:   lastUserMessage,
+    });
+  } catch (sessionErr) {
+    console.error("[Chat] Session persistence error:", String(sessionErr));
+    // Non-fatal — continue; client will get undefined sessionId
+    sessionId = incomingSessionId;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
+
+  // Tell client which sessionId to use for continuation
+  res.write(`data: ${JSON.stringify({ event: "session_created", sessionId })}\n\n`);
 
   try {
     const stream = await openai.chat.completions.create({
@@ -363,6 +444,13 @@ router.post("/", async (req, res) => {
         accumulatedResponse += token;
         res.write(`data: ${JSON.stringify({ token })}\n\n`);
       }
+    }
+
+    // Persist AI response to session (fire-and-forget)
+    if (sessionId && accumulatedResponse.length > 0) {
+      db.insert(aiMessagesTable)
+        .values({ sessionId, role: "assistant", content: accumulatedResponse })
+        .catch(err => console.error("[Chat] Failed to save AI message:", String(err)));
     }
 
     // Extract and save memories after streaming (non-blocking on the user)

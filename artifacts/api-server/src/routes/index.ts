@@ -1,4 +1,6 @@
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
+import type { Request } from "express";
 import healthRouter from "./health";
 import { clientsRouter } from "./clients";
 import { appointmentsRouter } from "./appointments";
@@ -26,7 +28,25 @@ router.use("/appointments", appointmentsRouter);
 router.use("/messages", messagesRouter);
 router.get("/conversations", conversationsHandler);
 router.use("/stats", statsRouter);
+
+// ── Stricter rate limit for AI chat: 20 req/min keyed by org+user ────────────
+const chatLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Límite de mensajes alcanzado. Espera un momento antes de continuar." },
+  // Key by org+user for authenticated requests (bypasses IP-based limits per org)
+  // validate.keyGeneratorIpFallback disabled because we key on orgId, not IP
+  validate: { keyGeneratorIpFallback: false },
+  keyGenerator: (req: Request) => {
+    const r = req as Request & { orgId?: number; userId?: number };
+    return r.orgId ? `org:${r.orgId}:uid:${r.userId ?? "anon"}` : (req.ip ?? "anon");
+  },
+});
+router.use("/chat", chatLimiter);
 router.use("/chat", chatRouter);
+
 router.use("/calendar-ai", calendarAiRouter);
 router.use("/memory", memoryRouter);
 

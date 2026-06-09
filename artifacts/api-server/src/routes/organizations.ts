@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, organizationsTable, orgMembersTable, usersTable, orgInvitationsTable } from "@workspace/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { sendInvitationEmail } from "../lib/email";
 
 export const organizationsRouter = Router();
 
@@ -102,6 +103,24 @@ organizationsRouter.post("/invitations", async (req, res) => {
     const token = randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const [inv] = await db.insert(orgInvitationsTable).values({ orgId, invitedBy: req.userId!, email: email.trim().toLowerCase(), role, token, expiresAt }).returning();
+
+    // Fire invitation email asynchronously — non-blocking, never fails the request
+    const baseUrl  = req.get("origin") || `https://${req.get("host")}`;
+    const acceptUrl = `${baseUrl}/invite/${inv.token}`;
+    Promise.all([
+      db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId)),
+      db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, req.userId!)),
+    ]).then(([[org], [inviter]]) =>
+      sendInvitationEmail({
+        to:          inv.email,
+        inviterName: inviter?.name ?? null,
+        orgName:     org?.name ?? "Tu organización",
+        role:        inv.role,
+        acceptUrl,
+        expiresAt:   inv.expiresAt,
+      }),
+    ).catch(err => console.error("[Email] Invitation send failed:", String(err)));
+
     res.status(201).json({ id: inv.id, email: inv.email, role: inv.role, token: inv.token, expiresAt: inv.expiresAt.toISOString(), createdAt: inv.createdAt.toISOString() });
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
