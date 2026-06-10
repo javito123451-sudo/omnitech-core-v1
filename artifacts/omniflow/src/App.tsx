@@ -21,6 +21,7 @@ import InvitePage from "@/pages/invite";
 import MemoryPage from "@/pages/memory";
 import Quotes from "@/pages/quotes";
 import ExecutivePage from "@/pages/executive";
+import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -228,6 +229,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <ExecutivePage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/executive-dashboard">
+        <ProtectedRoute>
+          <MainLayout>
+            <ExecutiveDashboardPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>
