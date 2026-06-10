@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Omniflow CRM"
+title = "OmniTech Core"
 version = "1.0.0"
 id = "artifacts/omniflow"
 router = "path"
