@@ -291,8 +291,10 @@ function InlineChat({ onClose }: { onClose: () => void }) {
           const raw = line.slice(5).trim();
           try {
             const ev = JSON.parse(raw) as Record<string, unknown>;
+            console.log("SSE EVENT", ev);
             if (ev["event"] === "session_created" && ev["sessionId"]) setSessionId(ev["sessionId"] as string);
-            if (ev["event"] === "token" && typeof ev["token"] === "string") {
+            // Backend emits { token } with NO event field — check directly
+            if (typeof ev["token"] === "string" && ev["token"] !== "") {
               aiText += ev["token"];
               setMessages(prev => {
                 const copy = [...prev];
