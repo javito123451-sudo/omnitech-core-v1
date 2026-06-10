@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -6,7 +6,7 @@ import {
   RefreshCw, Send, ChevronRight, ArrowRight, CalendarDays,
   FileText, ShieldAlert, Lightbulb, CircleDot, Star,
   DollarSign, Activity, Clock, MessageSquare, X,
-  CheckCircle2, Circle,
+  CheckCircle2, Circle, Flame, Crosshair, TriangleAlert,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -217,6 +217,210 @@ function ClientCard({ c, rank, onClick }: { c: StrategicClient; rank: number; on
       </div>
       <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
     </motion.div>
+  );
+}
+
+// ── Executive Briefing computation ────────────────────────────────────────────
+interface BriefingMetric {
+  id: string;
+  emoji: string;
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub: string;
+  tone: "green" | "yellow" | "red" | "blue";
+  pulse?: boolean;
+}
+
+function computeBriefing(data: IntelligenceData): BriefingMetric[] {
+  const { kpis, forecast, priorities, risks, opportunities, insights } = data;
+
+  // ── 1. Dinero probable 30 días ───────────────────────────────────────────
+  const prob30 = forecast.confirmed + forecast.pipeline_conservative;
+  const prob30Tone: BriefingMetric["tone"] =
+    prob30 >= kpis.pipeline_value * 0.5 ? "green"
+    : prob30 >= kpis.pipeline_value * 0.2 ? "yellow"
+    : "red";
+
+  // ── 2. Dinero en riesgo ──────────────────────────────────────────────────
+  const riskEur = risks
+    .filter(r => ["critical", "high"].includes(r.severity))
+    .reduce((s, r) => s + (r.value ?? (kpis.pipeline_value / Math.max(kpis.total_clients, 1))), 0);
+  const riskPct = kpis.pipeline_value > 0 ? (riskEur / kpis.pipeline_value) * 100 : 0;
+  const riskTone: BriefingMetric["tone"] =
+    riskPct >= 30 ? "red" : riskPct >= 10 ? "yellow" : "green";
+
+  // ── 3. Cliente prioritario ────────────────────────────────────────────────
+  const topP = priorities[0];
+  const topClientName = topP?.client ?? "Sin datos";
+  const topClientValue = topP?.value ?? null;
+  const topClientTone: BriefingMetric["tone"] =
+    topP?.urgency === "urgente" ? "red"
+    : topP?.urgency === "alta"  ? "yellow"
+    : "blue";
+
+  // ── 4. Acción crítica ─────────────────────────────────────────────────────
+  const criticalAction = topP?.title ?? (insights[0]?.title ?? "Sin acciones críticas");
+  const criticalSub = topP?.description
+    ? topP.description.slice(0, 60) + (topP.description.length > 60 ? "…" : "")
+    : "Sin detalles";
+  const criticalTone: BriefingMetric["tone"] =
+    topP?.urgency === "urgente" ? "red"
+    : topP?.urgency === "alta"  ? "yellow"
+    : "blue";
+
+  // ── 5. Objetivo semanal ───────────────────────────────────────────────────
+  const weeklyOpp = opportunities[0];
+  const weeklyGoal = weeklyOpp
+    ? weeklyOpp.action
+    : (insights[0]?.title ?? "Mantener seguimiento de clientes activos");
+  const weeklyClient = weeklyOpp?.client ?? (insights[0] ? "Análisis IA" : "General");
+  const weeklyTone: BriefingMetric["tone"] = "green";
+
+  return [
+    {
+      id: "prob30",
+      emoji: "💰",
+      icon: DollarSign,
+      label: "Dinero probable 30 días",
+      value: fmt(Math.round(prob30)),
+      sub: `Escenario conservador · Pipeline: ${fmt(kpis.pipeline_value)}`,
+      tone: prob30Tone,
+      pulse: true,
+    },
+    {
+      id: "risk",
+      emoji: "⚠️",
+      icon: TriangleAlert,
+      label: "Dinero en riesgo",
+      value: riskEur > 0 ? fmt(Math.round(riskEur)) : "Sin riesgos críticos",
+      sub: riskEur > 0
+        ? `${kpis.at_risk} cliente${kpis.at_risk !== 1 ? "s" : ""} en riesgo · ${Math.round(riskPct)}% del pipeline`
+        : `${kpis.active_clients} clientes activos estables`,
+      tone: riskTone,
+    },
+    {
+      id: "top",
+      emoji: "🔥",
+      icon: Flame,
+      label: "Cliente prioritario",
+      value: topClientName,
+      sub: topClientValue
+        ? `${fmt(topClientValue)} · ${topP?.urgency ?? ""}`
+        : (topP?.action ?? "Mayor impacto económico"),
+      tone: topClientTone,
+    },
+    {
+      id: "critical",
+      emoji: "📅",
+      icon: Zap,
+      label: "Acción crítica",
+      value: criticalAction.length > 36 ? criticalAction.slice(0, 36) + "…" : criticalAction,
+      sub: criticalSub,
+      tone: criticalTone,
+      pulse: criticalTone === "red",
+    },
+    {
+      id: "weekly",
+      emoji: "🎯",
+      icon: Crosshair,
+      label: "Objetivo semanal",
+      value: weeklyGoal.length > 36 ? weeklyGoal.slice(0, 36) + "…" : weeklyGoal,
+      sub: weeklyClient,
+      tone: weeklyTone,
+    },
+  ];
+}
+
+// ── Briefing Card ─────────────────────────────────────────────────────────────
+const TONE_STYLES: Record<BriefingMetric["tone"], {
+  border: string; bg: string; glow: string; label: string; value: string; dot: string;
+}> = {
+  green:  { border: "border-emerald-500/25", bg: "from-emerald-950/30 to-slate-950/70", glow: "shadow-emerald-500/10", label: "text-emerald-400/70", value: "text-emerald-300", dot: "bg-emerald-500" },
+  yellow: { border: "border-amber-500/25",   bg: "from-amber-950/30 to-slate-950/70",   glow: "shadow-amber-500/10",   label: "text-amber-400/70",   value: "text-amber-300",   dot: "bg-amber-500"   },
+  red:    { border: "border-red-500/25",      bg: "from-red-950/30 to-slate-950/70",     glow: "shadow-red-500/10",     label: "text-red-400/70",     value: "text-red-300",     dot: "bg-red-500"     },
+  blue:   { border: "border-blue-500/25",     bg: "from-blue-950/30 to-slate-950/70",    glow: "shadow-blue-500/10",    label: "text-blue-400/70",    value: "text-blue-300",    dot: "bg-blue-500"    },
+};
+
+function BriefingCard({ metric, index }: { metric: BriefingMetric; index: number }) {
+  const s = TONE_STYLES[metric.tone];
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: index * 0.07, ease: "easeOut" }}
+      className={cn(
+        "relative rounded-2xl border p-4 flex flex-col gap-2.5 overflow-hidden",
+        "bg-gradient-to-br backdrop-blur-sm shadow-lg",
+        s.border, s.bg, s.glow,
+      )}
+    >
+      {/* Pulse indicator */}
+      {metric.pulse && (
+        <span className="absolute top-3 right-3 flex h-2 w-2">
+          <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-70", s.dot)} />
+          <span className={cn("relative inline-flex rounded-full h-2 w-2", s.dot)} />
+        </span>
+      )}
+
+      {/* Emoji + label */}
+      <div className="flex items-center gap-2">
+        <span className="text-base leading-none">{metric.emoji}</span>
+        <span className={cn("text-[10px] font-semibold uppercase tracking-widest truncate", s.label)}>
+          {metric.label}
+        </span>
+      </div>
+
+      {/* Main value */}
+      <div className={cn("text-lg font-black leading-tight tracking-tight", s.value)}>
+        {metric.value}
+      </div>
+
+      {/* Sub text */}
+      <div className="text-[11px] text-muted-foreground leading-snug line-clamp-2">
+        {metric.sub}
+      </div>
+
+      {/* Bottom glow line */}
+      <div className={cn("absolute bottom-0 left-0 right-0 h-[2px] opacity-40", s.dot)} />
+    </motion.div>
+  );
+}
+
+// ── Executive Briefing Section ────────────────────────────────────────────────
+function ExecutiveBriefing({ data, isLoading }: { data?: IntelligenceData; isLoading: boolean }) {
+  const metrics = useMemo(() => data ? computeBriefing(data) : [], [data]);
+
+  return (
+    <div>
+      {/* Section header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-0.5 h-5 rounded-full bg-gradient-to-b from-primary to-violet-500" />
+          <span className="text-[11px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+            Executive Briefing
+          </span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary/80 font-semibold">
+            Tiempo real
+          </span>
+        </div>
+      </div>
+
+      {/* Cards grid */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="rounded-2xl border border-white/5 bg-white/[0.02] h-[108px] animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {metrics.map((m, i) => (
+            <BriefingCard key={m.id} metric={m} index={i} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -488,6 +692,9 @@ export default function ExecutiveDashboardPage() {
             </button>
           </div>
         </div>
+
+        {/* ── Executive Briefing ──────────────────────────────────────────── */}
+        <ExecutiveBriefing data={data} isLoading={isLoading} />
 
         {/* ── Main grid ───────────────────────────────────────────────────── */}
         <div className={cn("grid gap-6", showChat ? "lg:grid-cols-[1fr_360px]" : "grid-cols-1")}>
