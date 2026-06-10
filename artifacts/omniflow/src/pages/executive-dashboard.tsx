@@ -7,6 +7,8 @@ import {
   FileText, ShieldAlert, Lightbulb, CircleDot, Star,
   DollarSign, Activity, Clock, MessageSquare, X,
   CheckCircle2, Circle, Flame, Crosshair, TriangleAlert,
+  TrendingDown, Minus, BarChart2, Lock, ChevronUp, Sparkles,
+  ListChecks, BadgeAlert, ArrowUpRight,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -424,6 +426,313 @@ function ExecutiveBriefing({ data, isLoading }: { data?: IntelligenceData; isLoa
   );
 }
 
+// ── Executive Report types ────────────────────────────────────────────────────
+interface ExecReport {
+  generated_at: string;
+  estado_general: {
+    score: number;
+    titulo: string;
+    descripcion: string;
+    tendencia: "positiva" | "estable" | "negativa";
+  };
+  dinero_probable: {
+    conservador: number;
+    base: number;
+    optimista: number;
+    resumen: string;
+  };
+  dinero_en_riesgo: {
+    total_estimado: number;
+    nivel: "bajo" | "medio" | "alto" | "crítico";
+    clientes_afectados: string[];
+    descripcion: string;
+  };
+  clientes_prioritarios: {
+    nombre: string;
+    empresa?: string | null;
+    valor_estimado?: number | null;
+    accion: string;
+    urgencia: "urgente" | "alta" | "media";
+  }[];
+  bloqueadores: {
+    titulo: string;
+    impacto: "alto" | "medio" | "bajo";
+    solucion: string;
+  }[];
+  accion_recomendada: {
+    titulo: string;
+    descripcion: string;
+    pasos: string[];
+    impacto_estimado: string;
+  };
+}
+
+// ── Report Modal ──────────────────────────────────────────────────────────────
+const TENDENCIA_CONFIG = {
+  positiva: { icon: TrendingUp,   color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/25", label: "Positiva" },
+  estable:  { icon: Minus,        color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25",   label: "Estable"  },
+  negativa: { icon: TrendingDown, color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25",     label: "Negativa" },
+};
+
+const NIVEL_COLOR: Record<string, string> = {
+  bajo:     "text-emerald-400",
+  medio:    "text-amber-400",
+  alto:     "text-orange-400",
+  "crítico": "text-red-400",
+};
+
+const IMPACTO_BADGE: Record<string, string> = {
+  alto:  "bg-red-500/15 text-red-300 border-red-500/25",
+  medio: "bg-amber-500/15 text-amber-300 border-amber-500/25",
+  bajo:  "bg-slate-500/15 text-slate-400 border-slate-500/25",
+};
+
+const URGENCIA_BADGE: Record<string, string> = {
+  urgente: "bg-red-500/15 text-red-300 border-red-500/25",
+  alta:    "bg-amber-500/15 text-amber-300 border-amber-500/25",
+  media:   "bg-blue-500/15 text-blue-300 border-blue-500/25",
+};
+
+function ScoreArc({ score }: { score: number }) {
+  const r = 54;
+  const circ = Math.PI * r;
+  const dash = (score / 100) * circ;
+  const color = score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : "#ef4444";
+  return (
+    <svg width="140" height="78" viewBox="0 0 140 78">
+      <path d="M 14 70 A 56 56 0 0 1 126 70" fill="none" stroke="#1e293b" strokeWidth="10" strokeLinecap="round" />
+      <path
+        d="M 14 70 A 56 56 0 0 1 126 70"
+        fill="none"
+        stroke={color}
+        strokeWidth="10"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${circ}`}
+        style={{ transition: "stroke-dasharray 1s ease" }}
+      />
+      <text x="70" y="62" textAnchor="middle" fontSize="28" fontWeight="900" fill={color}>{score}</text>
+    </svg>
+  );
+}
+
+function ReportSection({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-slate-900/50 overflow-hidden">
+      <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-white/[0.06] bg-white/[0.02]">
+        <Icon className="w-4 h-4 text-primary/80 shrink-0" />
+        <span className="text-[11px] font-black uppercase tracking-[0.15em] text-muted-foreground">{title}</span>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
+
+function ReportModal({ report, onClose }: { report: ExecReport; onClose: () => void }) {
+  const tend = TENDENCIA_CONFIG[report.estado_general.tendencia];
+  const TrendIcon = tend.icon;
+  const genTime = new Date(report.generated_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  const genDate = new Date(report.generated_at).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
+
+  const probData = [
+    { label: "Conservador", v: report.dinero_probable.conservador, fill: "#f59e0b" },
+    { label: "Base",        v: report.dinero_probable.base,         fill: "#3b82f6" },
+    { label: "Optimista",   v: report.dinero_probable.optimista,    fill: "#10b981" },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-sm overflow-y-auto py-6 px-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 10, scale: 0.97 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="w-full max-w-3xl bg-slate-950 border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="relative px-6 pt-6 pb-5 border-b border-white/[0.07] bg-gradient-to-r from-violet-950/50 to-slate-950">
+          <div className="absolute top-0 right-0 w-80 h-40 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2.5 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500/30 to-primary/20 border border-violet-500/20 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-violet-300" />
+                </div>
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.18em] text-primary/70">Informe Ejecutivo</div>
+                  <div className="text-[10px] text-muted-foreground">{genDate} · {genTime}</div>
+                </div>
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-foreground leading-tight">
+                {report.estado_general.titulo}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1.5 max-w-lg leading-relaxed">
+                {report.estado_general.descripcion}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors shrink-0 mt-1"
+            >
+              <X className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+
+          {/* Score + tendencia */}
+          <div className="flex items-center gap-6 mt-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <ScoreArc score={report.estado_general.score} />
+              <div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Salud del negocio</div>
+                <div className={cn("flex items-center gap-1.5 mt-1 text-xs font-semibold px-2.5 py-1 rounded-full border", tend.bg, tend.border, tend.color)}>
+                  <TrendIcon className="w-3 h-3" />
+                  Tendencia {tend.label}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-4">
+
+          {/* Dinero probable */}
+          <ReportSection title="Dinero probable (30 días)" icon={DollarSign}>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {probData.map(d => (
+                <div key={d.label} className="text-center rounded-xl border border-white/[0.07] bg-white/[0.02] py-3 px-2">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{d.label}</div>
+                  <div className="text-lg font-black" style={{ color: d.fill }}>€{d.v.toLocaleString("es-ES")}</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">{report.dinero_probable.resumen}</p>
+          </ReportSection>
+
+          {/* Dinero en riesgo */}
+          <ReportSection title="Dinero en riesgo" icon={TriangleAlert}>
+            <div className="flex items-start gap-4 flex-wrap">
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-5 py-3 text-center shrink-0">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Estimado</div>
+                <div className={cn("text-2xl font-black", NIVEL_COLOR[report.dinero_en_riesgo.nivel])}>
+                  €{report.dinero_en_riesgo.total_estimado.toLocaleString("es-ES")}
+                </div>
+                <div className={cn("text-[10px] font-semibold mt-1 uppercase tracking-wider", NIVEL_COLOR[report.dinero_en_riesgo.nivel])}>
+                  Nivel {report.dinero_en_riesgo.nivel}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-muted-foreground leading-relaxed mb-2">{report.dinero_en_riesgo.descripcion}</p>
+                {report.dinero_en_riesgo.clientes_afectados.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {report.dinero_en_riesgo.clientes_afectados.map((c, i) => (
+                      <span key={i} className="text-[11px] px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-300">{c}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </ReportSection>
+
+          {/* Clientes prioritarios */}
+          <ReportSection title="Clientes prioritarios" icon={Star}>
+            <div className="space-y-2.5">
+              {report.clientes_prioritarios.map((c, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                  <div className="text-lg font-black text-muted-foreground/40 w-5 text-center shrink-0">{i + 1}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-foreground">{c.nombre}</span>
+                      {c.empresa && <span className="text-[11px] text-muted-foreground">{c.empresa}</span>}
+                      <span className={cn("text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase tracking-wider", URGENCIA_BADGE[c.urgencia])}>
+                        {c.urgencia}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{c.accion}</div>
+                  </div>
+                  {c.valor_estimado && c.valor_estimado > 0 && (
+                    <div className="text-sm font-bold text-emerald-400 shrink-0">€{c.valor_estimado.toLocaleString("es-ES")}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </ReportSection>
+
+          {/* Bloqueadores */}
+          <ReportSection title="Bloqueadores" icon={Lock}>
+            <div className="space-y-2.5">
+              {report.bloqueadores.map((b, i) => (
+                <div key={i} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-sm font-semibold text-foreground">{b.titulo}</span>
+                    <span className={cn("text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase tracking-wider", IMPACTO_BADGE[b.impacto])}>
+                      {b.impacto}
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <ArrowUpRight className="w-3 h-3 text-primary/60 mt-0.5 shrink-0" />
+                    <span className="text-[11px] text-muted-foreground">{b.solucion}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ReportSection>
+
+          {/* Acción recomendada */}
+          <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 to-violet-900/10 overflow-hidden">
+            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-primary/15">
+              <Sparkles className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-[11px] font-black uppercase tracking-[0.15em] text-primary/80">Acción recomendada</span>
+            </div>
+            <div className="p-5">
+              <div className="flex items-start gap-4 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-black text-foreground mb-1.5">{report.accion_recomendada.titulo}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed mb-3">{report.accion_recomendada.descripcion}</p>
+                  <div className="space-y-1.5">
+                    {report.accion_recomendada.pasos.map((p, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/15 border border-primary/25 text-[10px] font-bold text-primary flex items-center justify-center shrink-0 mt-0.5">
+                          {i + 1}
+                        </span>
+                        <span className="text-[12px] text-foreground/80 leading-snug">{p}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-center shrink-0">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Impacto estimado</div>
+                  <div className="text-sm font-black text-emerald-300 leading-tight">{report.accion_recomendada.impacto_estimado}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/[0.06] bg-white/[0.01] flex items-center justify-between gap-4">
+          <div className="text-[11px] text-muted-foreground/60">
+            Generado con OmniTech AI · {genDate}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-xs px-4 py-2 rounded-xl border border-border bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cerrar informe
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Chart Tooltip ─────────────────────────────────────────────────────────────
 function ChartTip({ active, payload, label }: {
   active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string;
@@ -620,6 +929,26 @@ function InlineChat({ onClose }: { onClose: () => void }) {
 export default function ExecutiveDashboardPage() {
   const [, navigate] = useLocation();
   const [showChat, setShowChat] = useState(false);
+  const [showReport, setShowReport]     = useState(false);
+  const [reportData, setReportData]     = useState<ExecReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError]   = useState<string | null>(null);
+
+  const generateReport = useCallback(async () => {
+    setReportLoading(true);
+    setReportError(null);
+    try {
+      const r = await fetch(`${BASE}/api/executive/report`, { method: "POST" });
+      if (!r.ok) throw new Error("Error al generar el informe");
+      const json = await r.json() as ExecReport;
+      setReportData(json);
+      setShowReport(true);
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : "Error desconocido");
+    } finally {
+      setReportLoading(false);
+    }
+  }, []);
 
   const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useQuery<IntelligenceData>({
     queryKey: ["exec-dashboard-intel"],
@@ -670,7 +999,7 @@ export default function ExecutiveDashboardPage() {
               {isFetching && !isLoading && <RefreshCw className="w-3.5 h-3.5 text-muted-foreground animate-spin" />}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => void refetch()}
               className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-border bg-slate-900/60 hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground"
@@ -678,6 +1007,38 @@ export default function ExecutiveDashboardPage() {
               <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />
               Actualizar
             </button>
+
+            {/* ── Generar Informe Ejecutivo ── */}
+            <button
+              onClick={() => { if (reportData) { setShowReport(true); } else { void generateReport(); } }}
+              disabled={reportLoading}
+              className={cn(
+                "relative flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl border font-semibold transition-all overflow-hidden",
+                reportLoading
+                  ? "border-primary/30 bg-primary/10 text-primary/60 cursor-wait"
+                  : "border-primary/40 bg-gradient-to-r from-primary/20 to-violet-500/15 text-primary hover:from-primary/30 hover:to-violet-500/25 hover:border-primary/60 shadow-sm shadow-primary/10",
+              )}
+            >
+              {reportLoading ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Analizando…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Generar Informe Ejecutivo
+                  {reportData && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />}
+                </>
+              )}
+            </button>
+
+            {reportError && (
+              <span className="text-[11px] text-red-400 border border-red-500/20 bg-red-500/10 px-2 py-1 rounded-lg">
+                {reportError}
+              </span>
+            )}
+
             <button
               onClick={() => setShowChat(v => !v)}
               className={cn(
@@ -1027,6 +1388,13 @@ export default function ExecutiveDashboardPage() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* ── Report Modal ─────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showReport && reportData && (
+          <ReportModal report={reportData} onClose={() => setShowReport(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   db, clientsTable, appointmentsTable, quotesTable, activityTable,
 } from "@workspace/db";
 import { eq, and, desc, gte } from "drizzle-orm";
+import OpenAI from "openai";
 
 export const executiveRouter = Router();
 
@@ -339,4 +340,132 @@ executiveRouter.get("/", async (req, res) => {
     opportunities: opportunities.slice(0, 8),
     insights,
   });
+});
+
+// ── POST /report — AI Executive Report ───────────────────────────────────────
+executiveRouter.post("/report", async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
+
+  const orgId = (req as Request & { orgId?: number }).orgId ?? 1;
+  const now = new Date();
+  const thirtyAgo    = new Date(now.getTime() - 30 * 86_400_000);
+  const sevenFromNow = new Date(now.getTime() + 7  * 86_400_000);
+
+  const [allClients, allQuotes, allAppointments, recentActivity] = await Promise.all([
+    db.select().from(clientsTable).where(eq(clientsTable.orgId, orgId)),
+    db.select().from(quotesTable).where(eq(quotesTable.orgId, orgId)),
+    db.select().from(appointmentsTable).where(eq(appointmentsTable.orgId, orgId)).orderBy(desc(appointmentsTable.startTime)),
+    db.select().from(activityTable).where(and(eq(activityTable.orgId, orgId), gte(activityTable.createdAt, thirtyAgo))).orderBy(desc(activityTable.createdAt)).limit(30),
+  ]);
+
+  const pipelineQuotes  = allQuotes.filter(q => ["draft", "sent"].includes(q.status));
+  const acceptedQuotes  = allQuotes.filter(q => q.status === "accepted");
+  const pipelineValue   = pipelineQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  const confirmedValue  = acceptedQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  const sentTotal       = allQuotes.filter(q => q.status === "sent").reduce((s, q) => s + (q.total ?? 0), 0);
+  const draftTotal      = allQuotes.filter(q => q.status === "draft").reduce((s, q) => s + (q.total ?? 0), 0);
+  const activeClients   = allClients.filter(c => c.status === "active");
+  const inactiveClients = allClients.filter(c => ["inactive", "churned"].includes(c.status));
+  const leads           = allClients.filter(c => c.status === "lead");
+  const overdueAppts    = allAppointments.filter(a => a.status === "pending" && a.startTime < now);
+  const expiringQuotes  = allQuotes.filter(q => q.validUntil && ["draft","sent"].includes(q.status) && q.validUntil <= sevenFromNow && q.validUntil >= now);
+
+  const clientSummary = allClients.slice(0, 20).map(c => {
+    const quotes   = allQuotes.filter(q => q.clientId === c.id);
+    const appts    = allAppointments.filter(a => a.clientId === c.id);
+    const totalVal = quotes.reduce((s, q) => s + (q.total ?? 0), 0);
+    return `- ${c.name}${c.company ? " (" + c.company + ")" : ""}: estado=${c.status}, valor_total=€${totalVal}, presupuestos=${quotes.length}, citas=${appts.length}`;
+  }).join("\n");
+
+  const topQuotes = pipelineQuotes.slice(0, 8).map(q => {
+    const c = allClients.find(cl => cl.id === q.clientId);
+    return `- "${q.title}" para ${c?.name ?? "desconocido"}: €${q.total?.toLocaleString("es-ES")}, estado=${q.status}${q.validUntil ? ", vence=" + fmtDate(q.validUntil) : ""}`;
+  }).join("\n");
+
+  const context = [
+    "DATOS DEL NEGOCIO (hoy: " + fmtDate(now) + "):",
+    "",
+    "CLIENTES:",
+    `Total: ${allClients.length} | Activos: ${activeClients.length} | Leads: ${leads.length} | Inactivos/Perdidos: ${inactiveClients.length}`,
+    clientSummary,
+    "",
+    "PIPELINE Y PRESUPUESTOS:",
+    `Pipeline total: €${pipelineValue.toLocaleString("es-ES")} | Confirmado: €${confirmedValue.toLocaleString("es-ES")}`,
+    `Escenario conservador 30d: €${Math.round(sentTotal * 0.35 + draftTotal * 0.10).toLocaleString("es-ES")}`,
+    `Escenario base 30d: €${Math.round(sentTotal * 0.55 + draftTotal * 0.20).toLocaleString("es-ES")}`,
+    `Escenario optimista 30d: €${Math.round(sentTotal * 0.75 + draftTotal * 0.35).toLocaleString("es-ES")}`,
+    topQuotes || "Sin presupuestos activos",
+    "",
+    "RIESGOS:",
+    overdueAppts.length > 0 ? `${overdueAppts.length} citas vencidas pendientes de reprogramar` : "Sin citas vencidas",
+    expiringQuotes.length > 0 ? `${expiringQuotes.length} presupuestos expiran en los próximos 7 días` : "Sin presupuestos a vencer pronto",
+    inactiveClients.length > 0 ? `Clientes en riesgo: ${inactiveClients.map(c => c.name).join(", ")}` : "Sin clientes en riesgo crítico",
+    "",
+    "ACTIVIDAD ÚLTIMOS 30 DÍAS:",
+    `${recentActivity.length} registros de actividad`,
+    "",
+    "CALENDARIO:",
+    `${allAppointments.filter(a => a.startTime >= now).length} citas futuras programadas`,
+    `${allAppointments.filter(a => a.status === "completed").length} citas completadas en total`,
+  ].join("\n");
+
+  const openai = new OpenAI({ apiKey });
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.3,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Eres el CFO/estratega de OmniTech. Genera un informe ejecutivo en español basado en datos reales de negocio.
+Devuelve SOLO JSON con esta estructura exacta:
+{
+  "estado_general": {
+    "score": <0-100 salud del negocio>,
+    "titulo": "<resumen en máx 8 palabras>",
+    "descripcion": "<2-3 frases concisas del estado actual>",
+    "tendencia": "positiva|estable|negativa"
+  },
+  "dinero_probable": {
+    "conservador": <número>,
+    "base": <número>,
+    "optimista": <número>,
+    "resumen": "<1-2 frases sobre la previsión>"
+  },
+  "dinero_en_riesgo": {
+    "total_estimado": <número>,
+    "nivel": "bajo|medio|alto|crítico",
+    "clientes_afectados": ["<nombre>"],
+    "descripcion": "<qué está en riesgo y por qué>"
+  },
+  "clientes_prioritarios": [
+    { "nombre": "<nombre>", "empresa": "<empresa o null>", "valor_estimado": <número o null>, "accion": "<acción específica>", "urgencia": "urgente|alta|media" }
+  ],
+  "bloqueadores": [
+    { "titulo": "<bloqueador>", "impacto": "alto|medio|bajo", "solucion": "<acción directa para resolverlo>" }
+  ],
+  "accion_recomendada": {
+    "titulo": "<acción principal en máx 6 palabras>",
+    "descripcion": "<por qué esta acción tiene mayor retorno>",
+    "pasos": ["<paso 1>", "<paso 2>", "<paso 3>"],
+    "impacto_estimado": "<resultado esperado en euros o porcentaje>"
+  }
+}
+Máximo 3 clientes prioritarios y 3 bloqueadores. Sé directo y accionable. Sin texto fuera del JSON.`,
+      },
+      { role: "user", content: context },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  let report: Record<string, unknown>;
+  try {
+    report = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    res.status(500).json({ error: "Error al parsear respuesta AI" });
+    return;
+  }
+
+  res.json({ generated_at: now.toISOString(), ...report });
 });
