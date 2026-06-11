@@ -251,12 +251,15 @@ export function AIQuoteModal({
   const quoteNum = saved ? String(saved.id).padStart(5, "0") : "PREV";
 
   const generate = useCallback(async () => {
+    console.log("START GENERATION — service:", service, "estValue:", estValue, "clientId:", clientId);
     if (!service.trim()) {
       setError("Describe el servicio a presupuestar");
+      console.log("START GENERATION — aborted: service empty");
       return;
     }
     setError(null);
     setStep("generating");
+    console.log("CALLING API — URL:", BASE + "/api/quotes/ai-generate");
     try {
       const r = await fetch(`${BASE}/api/quotes/ai-generate`, {
         method: "POST",
@@ -268,14 +271,18 @@ export function AIQuoteModal({
           estimatedValue: estValue ? parseFloat(estValue) : null,
         }),
       });
+      console.log("API RESPONSE", { status: r.status, ok: r.ok, statusText: r.statusText });
       if (!r.ok) {
         const e = (await r.json()) as { error?: string };
+        console.log("API ERROR BODY", e);
         throw new Error(e.error ?? "Error");
       }
       const data = (await r.json()) as AIQuoteResult;
+      console.log("SETTING RESULT", { title: data.title, items: data.items?.length });
       setResult(data);
       setStep("preview");
     } catch (e) {
+      console.log("ERROR", e);
       setError(e instanceof Error ? e.message : "Error al generar");
       setStep("input");
     }
