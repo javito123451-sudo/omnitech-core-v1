@@ -396,11 +396,7 @@ export function AIQuoteModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 10 }}
-        transition={{ duration: 0.28, ease: "easeOut" }}
+      <div
         className="w-full max-w-2xl bg-slate-950 border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -472,12 +468,7 @@ export function AIQuoteModal({
           <AnimatePresence mode="wait">
             {/* ── Step: input ── */}
             {(step === "input" || step === "generating") && (
-              <motion.div
-                key="input"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
+              <div>
                 <div className="space-y-4">
                   {/* Client info read-only */}
                   <div className="flex items-center gap-3 p-3.5 rounded-xl border border-white/[0.07] bg-white/[0.02]">
@@ -556,18 +547,13 @@ export function AIQuoteModal({
                     )}
                   </button>
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* ── Step: preview / saving / saved ── */}
             {(step === "preview" || step === "saving" || step === "saved") &&
               result && (
-                <motion.div
-                  key="preview"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
+                <div>
                   <div className="space-y-4">
                     {/* Quote preview */}
                     <div className="max-h-[55vh] overflow-y-auto rounded-xl ring-1 ring-white/10">
@@ -651,11 +637,11 @@ export function AIQuoteModal({
                       </div>
                     )}
                   </div>
-                </motion.div>
+                </div>
               )}
           </AnimatePresence>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
