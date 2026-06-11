@@ -164,10 +164,7 @@ export function WhatsAppModal({
   const currentType = MSG_TYPES.find(m => m.type === msgType);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+    <div
       className="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-6 px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -406,6 +403,6 @@ export function WhatsAppModal({
           </div>
         </div>
       </motion.div>
-    </motion.div>
+    </div>
   );
 }
