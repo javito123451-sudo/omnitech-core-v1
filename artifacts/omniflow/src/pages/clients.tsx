@@ -244,7 +244,10 @@ function ClientProfileDialog({
   return (
     <>
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border text-white max-w-md w-full max-h-[90dvh] overflow-y-auto">
+      <DialogContent
+        className="bg-card border-border text-white max-w-md w-full max-h-[90dvh] overflow-y-auto"
+        onInteractOutside={(e) => { if (showQuote || showWhatsApp) e.preventDefault(); }}
+      >
         {/* Header */}
         <div className="flex items-start gap-4 pt-2">
           <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-xl shrink-0", avatarColor(client.name))}>
@@ -339,14 +342,14 @@ function ClientProfileDialog({
           <div className="space-y-2 pt-2">
             <div className="grid grid-cols-2 gap-2">
               <Button
-                onClick={() => setShowWhatsApp(true)}
+                onClick={() => { console.log("WHATSAPP CLICK"); setShowWhatsApp(true); }}
                 variant="outline"
                 className="h-9 text-sm border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold"
               >
                 <span className="mr-1.5">📲</span> WhatsApp IA
               </Button>
               <Button
-                onClick={() => setShowQuote(true)}
+                onClick={() => { console.log("PDF CLICK"); setShowQuote(true); }}
                 className="h-9 text-sm bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-500 font-bold"
               >
                 <span className="mr-1.5">📄</span> Presupuesto IA
