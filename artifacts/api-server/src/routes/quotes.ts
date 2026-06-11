@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, quotesTable, quoteItemsTable, clientsTable, activityTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { generateQuotePdf } from "../utils/pdf-quote";
+import OpenAI from "openai";
 
 export const quotesRouter = Router();
 
@@ -291,4 +292,93 @@ quotesRouter.get("/:id/pdf", async (req, res) => {
     console.error("[Quotes PDF]", err);
     res.status(500).json({ error: String(err) });
   }
+});
+
+// ── POST /ai-generate — AI Quote Generator ────────────────────────────────────
+quotesRouter.post("/ai-generate", async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
+
+  const orgId = req.orgId!;
+  const { clientId, serviceDescription, estimatedValue } = req.body as {
+    clientId: number;
+    serviceDescription: string;
+    estimatedValue?: number | null;
+  };
+
+  if (!clientId || !serviceDescription?.trim()) {
+    res.status(400).json({ error: "clientId y serviceDescription son obligatorios" });
+    return;
+  }
+
+  const [client] = await db.select().from(clientsTable)
+    .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
+  if (!client) { res.status(404).json({ error: "Cliente no encontrado" }); return; }
+
+  const now        = new Date();
+  const validUntil = new Date(now.getTime() + 30 * 86_400_000);
+  const dateStr    = now.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
+  const validStr   = validUntil.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
+
+  const prompt = [
+    "Cliente: " + client.name + (client.company ? " (" + client.company + ")" : ""),
+    "Servicio solicitado: " + serviceDescription,
+    estimatedValue ? "Valor estimado: " + estimatedValue + " EUR" : "",
+    "Fecha: " + dateStr,
+    "Validez: " + validStr,
+  ].filter(Boolean).join("\n");
+
+  const openai = new OpenAI({ apiKey });
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Eres un experto en redacción de presupuestos comerciales profesionales en español.
+Genera un presupuesto estructurado basado en el servicio descrito. Desglosa el servicio en partidas detalladas.
+
+Devuelve SOLO este JSON:
+{
+  "title": "<título profesional del presupuesto>",
+  "items": [
+    { "description": "<descripción detallada de la partida>", "quantity": <número>, "unitPrice": <precio sin IVA> }
+  ],
+  "notes": "<condiciones de pago, garantías, alcance del servicio y exclusiones — texto con saltos de línea>"
+}
+
+Reglas:
+- El título debe ser profesional: "Propuesta de [Servicio] para [Empresa/Cliente]"
+- Desglosa en 2-5 partidas específicas con descripciones claras
+- Si se da valor estimado, ajusta los precios unitarios para que el total (sin IVA) sea cercano a ese valor
+- Las notas deben incluir: condiciones de pago (50% inicio / 50% entrega), alcance, exclusiones y validez 30 días
+- Precios en euros, sin símbolo
+- Solo JSON, sin texto extra`,
+      },
+      { role: "user", content: prompt },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  let generated: { title: string; items: { description: string; quantity: number; unitPrice: number }[]; notes: string };
+  try {
+    generated = JSON.parse(raw) as typeof generated;
+  } catch {
+    res.status(500).json({ error: "Error al parsear respuesta AI" });
+    return;
+  }
+
+  res.json({
+    ...generated,
+    client: {
+      id:      client.id,
+      name:    client.name,
+      company: client.company,
+      email:   client.email,
+      phone:   client.phone,
+    },
+    validUntil: validUntil.toISOString(),
+    generatedAt: now.toISOString(),
+  });
 });

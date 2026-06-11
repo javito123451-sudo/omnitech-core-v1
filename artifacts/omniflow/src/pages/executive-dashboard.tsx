@@ -8,8 +8,9 @@ import {
   DollarSign, Activity, Clock, MessageSquare, X,
   CheckCircle2, Circle, Flame, Crosshair, TriangleAlert,
   TrendingDown, Minus, BarChart2, Lock, ChevronUp, Sparkles,
-  ListChecks, BadgeAlert, ArrowUpRight,
+  ListChecks, BadgeAlert, ArrowUpRight, FilePlus,
 } from "lucide-react";
+import { AIQuoteModal } from "@/components/ai-quote-modal";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell,
@@ -1164,6 +1165,10 @@ export default function ExecutiveDashboardPage() {
   const [ceoLoading, setCeoLoading]   = useState(false);
   const [ceoError, setCeoError]       = useState<string | null>(null);
 
+  const [aiQuoteClient, setAiQuoteClient] = useState<{
+    id: number; name: string; email: string; phone?: string | null; company?: string | null; value?: number | null;
+  } | null>(null);
+
   const generateCeo = useCallback(async () => {
     setCeoLoading(true);
     setCeoError(null);
@@ -1201,6 +1206,13 @@ export default function ExecutiveDashboardPage() {
     queryFn: fetchIntelligence,
     refetchInterval: 90_000,
     staleTime: 45_000,
+  });
+
+  const { data: allClients } = useQuery<{ id: number; name: string; email: string; phone?: string | null; company?: string | null; value?: string | null }[]>({
+    queryKey: ["clients-lookup"],
+    queryFn: () => fetch(BASE + "/api/clients").then(r => r.json()) as Promise<{ id: number; name: string; email: string; phone?: string | null; company?: string | null; value?: string | null }[]>,
+    staleTime: 300_000,
+    enabled: true,
   });
 
   const lastUpd = dataUpdatedAt
@@ -1563,28 +1575,44 @@ export default function ExecutiveDashboardPage() {
                   </div>
                 ) : (
                   <ul className="space-y-2">
-                    {data?.opportunities.slice(0, 5).map((o, i) => (
-                      <motion.li key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                        onClick={() => navigate(o.action_href)}
-                        className="group cursor-pointer flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white/[0.04] border border-transparent hover:border-emerald-500/15 transition-all">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-1.5" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                            <span className="text-xs font-semibold text-foreground">{o.title}</span>
-                            <span className={cn("text-[9px] px-1.5 rounded border font-semibold shrink-0",
-                              o.confidence === "muy alta" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"
-                              : o.confidence === "alta" ? "bg-green-500/15 text-green-400 border-green-500/25"
-                              : "bg-blue-500/15 text-blue-400 border-blue-500/25")}>
-                              {o.confidence}
+                    {data?.opportunities.slice(0, 5).map((o, i) => {
+                      const matchedClient = o.client
+                        ? allClients?.find(c => c.name.toLowerCase() === o.client!.toLowerCase())
+                        : undefined;
+                      return (
+                        <motion.li key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
+                          className="group flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white/[0.04] border border-transparent hover:border-emerald-500/15 transition-all">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-1.5 cursor-pointer"
+                            onClick={() => navigate(o.action_href)}
+                          />
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(o.action_href)}>
+                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                              <span className="text-xs font-semibold text-foreground">{o.title}</span>
+                              <span className={cn("text-[9px] px-1.5 rounded border font-semibold shrink-0",
+                                o.confidence === "muy alta" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"
+                                : o.confidence === "alta" ? "bg-green-500/15 text-green-400 border-green-500/25"
+                                : "bg-blue-500/15 text-blue-400 border-blue-500/25")}>
+                                {o.confidence}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground line-clamp-2">{o.description}</p>
+                            <span className="text-[10px] text-emerald-500/70 flex items-center gap-0.5 mt-1 group-hover:text-emerald-400 transition-colors">
+                              {o.action} <ArrowRight className="w-2.5 h-2.5" />
                             </span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground line-clamp-2">{o.description}</p>
-                          <span className="text-[10px] text-emerald-500/70 flex items-center gap-0.5 mt-1 group-hover:text-emerald-400 transition-colors">
-                            {o.action} <ArrowRight className="w-2.5 h-2.5" />
-                          </span>
-                        </div>
-                      </motion.li>
-                    ))}
+                          {matchedClient && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setAiQuoteClient({ id: matchedClient.id, name: matchedClient.name, email: matchedClient.email, phone: matchedClient.phone, company: matchedClient.company, value: matchedClient.value ? Number(matchedClient.value) : null }); }}
+                              title="Generar Presupuesto IA"
+                              className="shrink-0 w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 hover:bg-primary/25 hover:border-primary/40 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <FilePlus className="w-3.5 h-3.5 text-primary" />
+                            </button>
+                          )}
+                        </motion.li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -1675,6 +1703,21 @@ export default function ExecutiveDashboardPage() {
             onClose={() => setShowCeo(false)}
             onRefresh={() => void generateCeo()}
             loading={ceoLoading}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── AI Quote Modal ───────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {aiQuoteClient && (
+          <AIQuoteModal
+            clientId={aiQuoteClient.id}
+            clientName={aiQuoteClient.name}
+            clientEmail={aiQuoteClient.email}
+            clientPhone={aiQuoteClient.phone}
+            clientCompany={aiQuoteClient.company}
+            defaultValue={aiQuoteClient.value}
+            onClose={() => setAiQuoteClient(null)}
           />
         )}
       </AnimatePresence>

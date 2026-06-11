@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { AIQuoteModal } from "@/components/ai-quote-modal";
 import {
   useListClients, useCreateClient, useUpdateClient, useDeleteClient,
   getListClientsQueryKey,
@@ -226,6 +227,7 @@ function ClientProfileDialog({
   const queryClient = useQueryClient();
   const deleteClient = useDeleteClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showQuote, setShowQuote]         = useState(false);
   const tags = parseTags(client.tags);
 
   const handleDelete = () => {
@@ -238,6 +240,7 @@ function ClientProfileDialog({
   };
 
   return (
+    <>
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="bg-card border-border text-white max-w-md w-full max-h-[90dvh] overflow-y-auto">
         {/* Header */}
@@ -331,16 +334,24 @@ function ClientProfileDialog({
 
         {/* Actions */}
         {!confirmDelete ? (
-          <div className="flex gap-2 pt-2">
-            <Button onClick={onEdit} className="flex-1 bg-primary hover:bg-primary/90 h-9 text-sm">
-              <Pencil className="w-3.5 h-3.5 mr-1.5" /> Editar
-            </Button>
+          <div className="space-y-2 pt-2">
             <Button
-              variant="outline" onClick={() => setConfirmDelete(true)}
-              className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50 h-9 px-3"
+              onClick={() => setShowQuote(true)}
+              className="w-full h-9 text-sm bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-500 shadow-md shadow-primary/20 font-bold"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <span className="mr-1.5">📄</span> Generar Presupuesto IA
             </Button>
+            <div className="flex gap-2">
+              <Button onClick={onEdit} className="flex-1 bg-primary/10 hover:bg-primary/20 border border-primary/25 text-primary h-9 text-sm" variant="outline">
+                <Pencil className="w-3.5 h-3.5 mr-1.5" /> Editar
+              </Button>
+              <Button
+                variant="outline" onClick={() => setConfirmDelete(true)}
+                className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50 h-9 px-3"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-2 pt-2 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
@@ -364,6 +375,19 @@ function ClientProfileDialog({
         )}
       </DialogContent>
     </Dialog>
+
+    {showQuote && (
+      <AIQuoteModal
+        clientId={client.id}
+        clientName={client.name}
+        clientEmail={client.email}
+        clientPhone={client.phone}
+        clientCompany={client.company}
+        defaultValue={client.value ? Number(client.value) : null}
+        onClose={() => setShowQuote(false)}
+      />
+    )}
+  </>
   );
 }
 
