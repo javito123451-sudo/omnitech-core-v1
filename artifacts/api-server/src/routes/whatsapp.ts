@@ -1,7 +1,19 @@
 import { Router } from "express";
-import { db, clientsTable, activityTable, appointmentsTable, messagesTable, quotesTable } from "@workspace/db";
+import {
+  db,
+  clientsTable,
+  activityTable,
+  appointmentsTable,
+  messagesTable,
+  quotesTable,
+} from "@workspace/db";
 import { eq, and, desc, gt, isNotNull, inArray } from "drizzle-orm";
 import OpenAI from "openai";
+import {
+  getWhatsAppCreds,
+  resolveWhatsAppVerifyTokens,
+  logIntegrationEvent,
+} from "../utils/integrationCreds";
 
 export const whatsappRouter = Router();
 export const whatsappWebhookRouter = Router();
@@ -50,11 +62,12 @@ async function processIncomingMessage(payload: {
   const normalizedIncoming  = normalizePhone(fromPhone);
 
   // 1. Find client by phone (across all orgs — normalize & compare last 9 digits)
-  const allWithPhone = await db.select()
+  const allWithPhone = await db
+    .select()
     .from(clientsTable)
     .where(isNotNull(clientsTable.phone));
 
-  const client = allWithPhone.find(c =>
+  const client = allWithPhone.find((c) =>
     c.phone ? normalizePhone(c.phone) === normalizedIncoming : false,
   );
 
@@ -73,9 +86,9 @@ async function processIncomingMessage(payload: {
     direction: "inbound",
     isAi:      false,
     status:    "received",
-  }).catch(err => console.error("[WhatsApp Webhook] Message save failed:", err));
+  }).catch((err) => console.error("[WhatsApp Webhook] Message save failed:", err));
 
-  // 3. Log incoming WhatsApp activity
+  // 3. Log activity
   await db.insert(activityTable).values({
     orgId,
     type:        "whatsapp_received",
@@ -83,21 +96,34 @@ async function processIncomingMessage(payload: {
     clientName:  client.name,
   }).catch(() => {/* non-critical */});
 
+  // 4. Log integration event — message received
+  logIntegrationEvent({
+    orgId,
+    integrationSlug: "whatsapp",
+    direction:       "inbound",
+    eventType:       "message_received",
+    status:          "processed",
+    summary:         `Mensaje de ${client.name} (+${fromPhone.slice(-9)}): "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
+  });
+
   const trimmed = text.trim();
 
-  // 4. Check for acceptance / rejection keywords
-  const isAccepted  = ACCEPTANCE_RE.test(trimmed);
-  const isRejected  = !isAccepted && REJECTION_RE.test(trimmed);
+  // 5. Check for acceptance / rejection keywords
+  const isAccepted = ACCEPTANCE_RE.test(trimmed);
+  const isRejected = !isAccepted && REJECTION_RE.test(trimmed);
   if (!isAccepted && !isRejected) return;
 
-  // 5. Find the most recent sent/pending quote for this client
-  const [quote] = await db.select()
+  // 6. Find the most recent sent/pending quote for this client
+  const [quote] = await db
+    .select()
     .from(quotesTable)
-    .where(and(
-      eq(quotesTable.orgId,    orgId),
-      eq(quotesTable.clientId, client.id),
-      inArray(quotesTable.status, ["sent", "pending"]),
-    ))
+    .where(
+      and(
+        eq(quotesTable.orgId,    orgId),
+        eq(quotesTable.clientId, client.id),
+        inArray(quotesTable.status, ["sent", "pending"]),
+      ),
+    )
     .orderBy(desc(quotesTable.updatedAt))
     .limit(1);
 
@@ -109,19 +135,21 @@ async function processIncomingMessage(payload: {
   const newQuoteStatus = isAccepted ? "accepted" : "rejected";
   const activityType   = isAccepted ? "quote_accepted" : "quote_rejected";
 
-  // 6. Update quote status
-  await db.update(quotesTable)
+  // 7. Update quote status
+  await db
+    .update(quotesTable)
     .set({ status: newQuoteStatus, updatedAt: new Date() })
     .where(eq(quotesTable.id, quote.id));
 
-  // 7. Promote client to "active" on acceptance (never demote)
+  // 8. Promote client to "active" on acceptance (never demote)
   if (isAccepted && client.status !== "active") {
-    await db.update(clientsTable)
+    await db
+      .update(clientsTable)
       .set({ status: "active" })
       .where(eq(clientsTable.id, client.id));
   }
 
-  // 8. Log quote_accepted / quote_rejected to activity feed
+  // 9. Log activity feed
   const totalFormatted = new Intl.NumberFormat("es-ES", {
     style: "currency", currency: quote.currency ?? "EUR",
   }).format(quote.total ?? 0);
@@ -134,22 +162,42 @@ async function processIncomingMessage(payload: {
     clientName:  client.name,
   });
 
+  // 10. Log integration event — quote accepted/rejected
+  logIntegrationEvent({
+    orgId,
+    integrationSlug: "whatsapp",
+    direction:       "inbound",
+    eventType:       isAccepted ? "quote_accepted" : "quote_rejected",
+    status:          "processed",
+    summary:         `Presupuesto "${quote.title}" ${verb} por ${client.name} — ${totalFormatted}`,
+  });
+
   console.log(`[WhatsApp Webhook] ✅ Quote #${quote.id} "${quote.title}" ${newQuoteStatus} by ${client.name}`);
 }
 
 // ── GET /whatsapp/webhook — Meta hub verification (PUBLIC, no auth) ────────────
-whatsappWebhookRouter.get("/webhook", (req, res) => {
+// Supports both env var token and per-org DB tokens for multi-tenant setups
+whatsappWebhookRouter.get("/webhook", async (req, res) => {
   const mode      = req.query["hub.mode"];
-  const token     = req.query["hub.verify_token"];
+  const token     = req.query["hub.verify_token"] as string | undefined;
   const challenge = req.query["hub.challenge"];
 
-  const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "omnitech-webhook";
+  if (mode !== "subscribe" || !token) {
+    res.sendStatus(403);
+    return;
+  }
 
-  if (mode === "subscribe" && token === verifyToken) {
-    console.log("[WhatsApp Webhook] ✅ Verified by Meta");
-    res.status(200).send(String(challenge));
-  } else {
-    console.warn("[WhatsApp Webhook] ❌ Verification failed — check WHATSAPP_WEBHOOK_VERIFY_TOKEN env var");
+  try {
+    const validTokens = await resolveWhatsAppVerifyTokens();
+    if (validTokens.includes(token)) {
+      console.log("[WhatsApp Webhook] ✅ Verified by Meta");
+      res.status(200).send(String(challenge));
+    } else {
+      console.warn("[WhatsApp Webhook] ❌ Verification failed — token mismatch");
+      res.sendStatus(403);
+    }
+  } catch (err) {
+    console.error("[WhatsApp Webhook] Verification error:", err);
     res.sendStatus(403);
   }
 });
@@ -172,7 +220,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
             fromPhone:   msg.from,
             text:        msg.text?.body ?? "",
             waMessageId: msg.id,
-          }).catch(err =>
+          }).catch((err) =>
             console.error("[WhatsApp Webhook] Processing error:", err),
           );
         }
@@ -218,7 +266,7 @@ function buildUserPrompt(
   parts.push("- Nombre: " + client.name);
   if (client.company) parts.push("- Empresa: " + client.company);
   parts.push("- Estado: " + client.status);
-  if (client.tags) parts.push("- Etiquetas: " + client.tags);
+  if (client.tags)  parts.push("- Etiquetas: " + client.tags);
   if (client.notes) parts.push("- Notas CRM: " + client.notes);
   if (client.value) parts.push("- Valor estimado: " + client.value + " EUR");
 
@@ -320,25 +368,24 @@ whatsappRouter.post("/generate", async (req, res) => {
   });
 });
 
-// ── POST /send — WhatsApp Business API stub ───────────────────────────────────
-// Ready for future integration with Meta WhatsApp Business Cloud API
-// Required env vars (when live): WHATSAPP_BUSINESS_PHONE_ID, WHATSAPP_ACCESS_TOKEN
+// ── POST /send — WhatsApp Business API ────────────────────────────────────────
+// Reads credentials from org_integrations first, falls back to env vars
 whatsappRouter.post("/send", async (req, res) => {
-  const phoneId    = process.env.WHATSAPP_BUSINESS_PHONE_ID;
-  const token      = process.env.WHATSAPP_ACCESS_TOKEN;
-  const orgId      = req.orgId!;
+  const orgId = req.orgId!;
   const { to, message } = req.body as { to: string; message: string };
 
   if (!to || !message) {
     res.status(400).json({ error: "to y message son obligatorios" }); return;
   }
 
-  if (!phoneId || !token) {
+  const creds = await getWhatsAppCreds(orgId);
+
+  if (!creds) {
     res.json({
       success:  false,
       pending:  true,
       reason:   "whatsapp_business_not_configured",
-      message:  "WhatsApp Business API no configurada. Conecta WHATSAPP_BUSINESS_PHONE_ID y WHATSAPP_ACCESS_TOKEN para activar el envío directo.",
+      message:  "WhatsApp Business no configurado. Conéctalo en Integraciones.",
       fallback: "https://wa.me/" + to.replace(/\D/g, "") + "?text=" + encodeURIComponent(message),
     });
     return;
@@ -346,33 +393,157 @@ whatsappRouter.post("/send", async (req, res) => {
 
   try {
     const r = await fetch(
-      "https://graph.facebook.com/v19.0/" + phoneId + "/messages",
+      "https://graph.facebook.com/v19.0/" + creds.phoneNumberId + "/messages",
       {
         method: "POST",
         headers: {
-          "Authorization": "Bearer " + token,
+          "Authorization": "Bearer " + creds.accessToken,
           "Content-Type":  "application/json",
         },
         body: JSON.stringify({
           messaging_product: "whatsapp",
-          to:      to.replace(/\D/g, ""),
-          type:    "text",
-          text:    { body: message },
+          to:   to.replace(/\D/g, ""),
+          type: "text",
+          text: { body: message },
         }),
-      }
+      },
     );
     const data = await r.json() as { messages?: { id: string }[]; error?: { message: string } };
+
     if (!r.ok) {
-      res.status(502).json({ error: data.error?.message ?? "Error WhatsApp API" }); return;
+      logIntegrationEvent({
+        orgId,
+        integrationSlug: "whatsapp",
+        direction:       "outbound",
+        eventType:       "message_send_failed",
+        status:          "error",
+        summary:         `Envío fallido a +${to.replace(/\D/g, "").slice(-9)}`,
+        errorMessage:    data.error?.message ?? "Error desconocido de Meta API",
+      });
+      res.status(502).json({ error: data.error?.message ?? "Error WhatsApp API" });
+      return;
     }
+
     const messageId = data.messages?.[0]?.id;
+
     await db.insert(activityTable).values({
       orgId,
       type:        "whatsapp_sent",
-      description: "Mensaje WhatsApp enviado vía API (ID: " + (messageId ?? "?") + ")",
+      description: "Mensaje WhatsApp enviado vía API" + (creds.source === "db" ? " (credenciales de Integraciones)" : "") + " (ID: " + (messageId ?? "?") + ")",
     });
+
+    logIntegrationEvent({
+      orgId,
+      integrationSlug: "whatsapp",
+      direction:       "outbound",
+      eventType:       "message_sent",
+      status:          "processed",
+      summary:         `Mensaje enviado a +${to.replace(/\D/g, "").slice(-9)} (ID: ${messageId ?? "?"})`,
+    });
+
     res.json({ success: true, messageId });
   } catch (err) {
+    logIntegrationEvent({
+      orgId,
+      integrationSlug: "whatsapp",
+      direction:       "outbound",
+      eventType:       "message_send_failed",
+      status:          "error",
+      summary:         `Error de red enviando a +${to.replace(/\D/g, "").slice(-9)}`,
+      errorMessage:    String(err),
+    });
     res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /test-send — Envía mensaje de prueba real vía Meta API ───────────────
+whatsappRouter.post("/test-send", async (req, res) => {
+  const orgId = req.orgId!;
+  const { to } = req.body as { to: string };
+
+  if (!to) {
+    res.status(400).json({ error: "El campo 'to' (número de teléfono) es obligatorio." });
+    return;
+  }
+
+  const creds = await getWhatsAppCreds(orgId);
+
+  if (!creds) {
+    res.status(400).json({
+      error: "WhatsApp Business no configurado para esta organización. Conéctalo en Integraciones.",
+    });
+    return;
+  }
+
+  const testMessage = `🔧 Mensaje de prueba desde OmniTech Core — ${new Date().toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}`;
+  const toClean     = to.replace(/\D/g, "");
+
+  try {
+    const r = await fetch(
+      "https://graph.facebook.com/v19.0/" + creds.phoneNumberId + "/messages",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + creds.accessToken,
+          "Content-Type":  "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to:   toClean,
+          type: "text",
+          text: { body: testMessage },
+        }),
+      },
+    );
+
+    const data = await r.json() as { messages?: { id: string }[]; error?: { message: string; code?: number } };
+
+    if (!r.ok) {
+      logIntegrationEvent({
+        orgId,
+        integrationSlug: "whatsapp",
+        direction:       "outbound",
+        eventType:       "test_send_failed",
+        status:          "error",
+        summary:         `Mensaje de prueba fallido a +${toClean.slice(-9)}`,
+        errorMessage:    data.error?.message ?? "Error desconocido de Meta API",
+      });
+      res.status(502).json({
+        error:   data.error?.message ?? "Error WhatsApp API",
+        code:    data.error?.code,
+        success: false,
+      });
+      return;
+    }
+
+    const messageId = data.messages?.[0]?.id;
+
+    logIntegrationEvent({
+      orgId,
+      integrationSlug: "whatsapp",
+      direction:       "outbound",
+      eventType:       "test_sent",
+      status:          "processed",
+      summary:         `Mensaje de prueba enviado a +${toClean.slice(-9)} (ID: ${messageId ?? "?"}, fuente: ${creds.source})`,
+    });
+
+    res.json({
+      success:    true,
+      messageId,
+      message:    testMessage,
+      to:         toClean,
+      credSource: creds.source,
+    });
+  } catch (err) {
+    logIntegrationEvent({
+      orgId,
+      integrationSlug: "whatsapp",
+      direction:       "outbound",
+      eventType:       "test_send_failed",
+      status:          "error",
+      summary:         `Error de red en mensaje de prueba a +${toClean.slice(-9)}`,
+      errorMessage:    String(err),
+    });
+    res.status(500).json({ error: String(err), success: false });
   }
 });

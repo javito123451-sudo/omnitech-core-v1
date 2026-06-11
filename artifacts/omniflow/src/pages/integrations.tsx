@@ -3,6 +3,7 @@ import {
   MessageCircle, CreditCard, Globe, Mail, CalendarDays, Hash,
   CheckCircle2, AlertCircle, Loader2, Plug, Unplug, FlaskConical,
   ChevronRight, Clock, ArrowDownLeft, ArrowUpRight, Puzzle,
+  Send, RefreshCw,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,21 +61,21 @@ interface EventRow {
 interface FieldDef { key: string; label: string; type: string; placeholder: string; hint?: string }
 
 const META: Record<string, {
-  Icon:        React.ElementType;
-  color:       string;
-  bg:          string;
-  border:      string;
-  fields:      FieldDef[];
+  Icon:         React.ElementType;
+  color:        string;
+  bg:           string;
+  border:       string;
+  fields:       FieldDef[];
   webhookNote?: string;
 }> = {
   whatsapp: {
     Icon: MessageCircle, color: "text-green-400", bg: "bg-green-400/10", border: "border-green-400/20",
     fields: [
-      { key: "phoneNumberId", label: "Phone Number ID",   type: "text",     placeholder: "123456789012345",      hint: "Meta Business › WhatsApp › Configuración" },
+      { key: "phoneNumberId", label: "Phone Number ID",   type: "text",     placeholder: "123456789012345", hint: "Meta Business › WhatsApp › Configuración" },
       { key: "accessToken",   label: "Access Token",      type: "password",  placeholder: "EAABwz..." },
-      { key: "verifyToken",   label: "Verify Token",      type: "text",     placeholder: "omnitech-webhook",     hint: "Token que configurarás en Meta Business" },
+      { key: "verifyToken",   label: "Verify Token",      type: "text",     placeholder: "omnitech-webhook", hint: "Token que configurarás en Meta Business" },
     ],
-    webhookNote: "URL del webhook para Meta:",
+    webhookNote: "URL del webhook para Meta Business:",
   },
   stripe: {
     Icon: CreditCard, color: "text-violet-400", bg: "bg-violet-400/10", border: "border-violet-400/20",
@@ -87,8 +88,8 @@ const META: Record<string, {
   webhook_outbound: {
     Icon: Globe, color: "text-cyan-400", bg: "bg-cyan-400/10", border: "border-cyan-400/20",
     fields: [
-      { key: "url",    label: "URL del endpoint",          type: "url",      placeholder: "https://hooks.zapier.com/..." },
-      { key: "secret", label: "HMAC Secret (opcional)",    type: "password",  placeholder: "mi-secret" },
+      { key: "url",    label: "URL del endpoint",       type: "url",      placeholder: "https://hooks.zapier.com/..." },
+      { key: "secret", label: "HMAC Secret (opcional)", type: "password", placeholder: "mi-secret" },
     ],
   },
   gmail: {
@@ -110,6 +111,20 @@ const CATEGORY_LABELS: Record<string, string> = {
   payments: "Pagos", automation: "Automatización",
 };
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  message_received:    "Mensaje recibido",
+  message_sent:        "Mensaje enviado",
+  message_send_failed: "Envío fallido",
+  quote_accepted:      "Presupuesto aceptado",
+  quote_rejected:      "Presupuesto rechazado",
+  test_sent:           "Prueba enviada",
+  test_send_failed:    "Prueba fallida",
+  test_ok:             "Test OK",
+  test_failed:         "Test fallido",
+  connected:           "Conectado",
+  disconnected:        "Desconectado",
+};
+
 // ── Status badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   if (status === "active")
@@ -122,17 +137,21 @@ function StatusBadge({ status }: { status: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function IntegrationsPage() {
   const { toast } = useToast();
-  const [items,     setItems]     = useState<IntegrationItem[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [category,  setCategory]  = useState("all");
-  const [selected,  setSelected]  = useState<IntegrationDetail | null>(null);
+
+  const [items,         setItems]         = useState<IntegrationItem[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [category,      setCategory]      = useState("all");
+  const [selected,      setSelected]      = useState<IntegrationDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [modalTab,  setModalTab]  = useState<"config" | "events">("config");
-  const [form,      setForm]      = useState<Record<string, string>>({});
-  const [displayName, setDisplayName] = useState("");
-  const [saving,    setSaving]    = useState(false);
-  const [testing,   setTesting]   = useState(false);
+  const [modalTab,      setModalTab]      = useState<"config" | "events">("config");
+  const [form,          setForm]          = useState<Record<string, string>>({});
+  const [displayName,   setDisplayName]   = useState("");
+  const [saving,        setSaving]        = useState(false);
+  const [testing,       setTesting]       = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  // WhatsApp test panel
+  const [testPhone,     setTestPhone]     = useState("");
+  const [sendingTest,   setSendingTest]   = useState(false);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -149,11 +168,8 @@ export default function IntegrationsPage() {
 
   useEffect(() => { void loadList(); }, [loadList]);
 
-  const openDetail = async (slug: string) => {
+  const openDetail = useCallback(async (slug: string) => {
     setDetailLoading(true);
-    setModalTab("config");
-    setForm({});
-    setDisplayName("");
     try {
       const res  = await authFetch(`${BASE_URL}/api/integrations/${slug}`);
       const data = await res.json() as IntegrationDetail;
@@ -163,6 +179,18 @@ export default function IntegrationsPage() {
     } finally {
       setDetailLoading(false);
     }
+  }, [toast]);
+
+  const openModal = (slug: string) => {
+    setModalTab("config");
+    setForm({});
+    setDisplayName("");
+    setTestPhone("");
+    void openDetail(slug);
+  };
+
+  const refreshEvents = () => {
+    if (selected) void openDetail(selected.slug);
   };
 
   const handleConnect = async () => {
@@ -172,10 +200,7 @@ export default function IntegrationsPage() {
       const res = await authFetch(`${BASE_URL}/api/integrations/${selected.slug}/connect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          credentials: form,
-          displayName: displayName || undefined,
-        }),
+        body: JSON.stringify({ credentials: form, displayName: displayName || undefined }),
       });
       if (!res.ok) throw new Error((await res.json() as { error: string }).error);
       toast({ title: `${selected.name} conectado`, description: "Credenciales guardadas correctamente." });
@@ -211,15 +236,42 @@ export default function IntegrationsPage() {
       const data = await res.json() as { success: boolean; message: string; duration_ms: number };
       toast({
         title:       data.success ? "✅ Test exitoso" : "⚠️ Test fallido",
-        description: data.message,
+        description: `${data.message}${data.duration_ms ? ` (${data.duration_ms}ms)` : ""}`,
         variant:     data.success ? "default" : "destructive",
       });
-      // Reload detail to see new event
-      await openDetail(selected.slug);
+      void openDetail(selected.slug);
     } catch {
       toast({ title: "Error en el test", variant: "destructive" });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleSendTestMessage = async () => {
+    if (!selected || !testPhone.trim()) return;
+    setSendingTest(true);
+    try {
+      const res  = await authFetch(`${BASE_URL}/api/whatsapp/test-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: testPhone }),
+      });
+      const data = await res.json() as { success: boolean; messageId?: string; error?: string; credSource?: string };
+      if (data.success) {
+        toast({
+          title:       "✅ Mensaje de prueba enviado",
+          description: `ID: ${data.messageId ?? "—"} · Credenciales: ${data.credSource ?? "—"}`,
+        });
+        void openDetail(selected.slug);
+        setModalTab("events");
+      } else {
+        toast({ title: "Error al enviar prueba", description: data.error ?? "Error desconocido", variant: "destructive" });
+        void openDetail(selected.slug);
+      }
+    } catch {
+      toast({ title: "Error de red al enviar prueba", variant: "destructive" });
+    } finally {
+      setSendingTest(false);
     }
   };
 
@@ -228,16 +280,14 @@ export default function IntegrationsPage() {
     : items.filter((i) => i.category === category);
 
   const categories = ["all", ...Array.from(new Set(items.map((i) => i.category)))];
-
   const isOAuth    = (slug: string) => ["gmail", "google_calendar", "slack"].includes(slug);
-  const meta       = selected ? (META[selected.slug] ?? META.webhook_outbound) : null;
   const selectedMeta = selected ? (META[selected.slug] ?? null) : null;
 
-  const webhookUrl = selected
-    ? `${window.location.origin}${BASE_URL}/api/integrations/${selected.slug}/inbound`
+  const webhookUrl   = selected
+    ? (selected.slug === "whatsapp"
+        ? `${window.location.origin}${BASE_URL}/api/whatsapp/webhook`
+        : `${window.location.origin}${BASE_URL}/api/integrations/${selected.slug}/inbound`)
     : "";
-
-  const waWebhookUrl = `${window.location.origin}${BASE_URL}/api/whatsapp/webhook`;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -265,7 +315,7 @@ export default function IntegrationsPage() {
               "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
               category === cat
                 ? "bg-primary/15 text-primary border-primary/25"
-                : "text-muted-foreground border-border hover:border-border hover:bg-white/5 hover:text-foreground",
+                : "text-muted-foreground border-border hover:bg-white/5 hover:text-foreground",
             )}
           >
             {CATEGORY_LABELS[cat] ?? cat}
@@ -281,12 +331,12 @@ export default function IntegrationsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((item) => {
-            const m = META[item.slug];
+            const m    = META[item.slug];
             const Icon = m?.Icon ?? Globe;
             return (
               <Card
                 key={item.slug}
-                onClick={() => openDetail(item.slug)}
+                onClick={() => openModal(item.slug)}
                 className={cn(
                   "cursor-pointer transition-all hover:border-primary/30 hover:bg-card/80 group",
                   item.status === "active" && "border-green-500/20",
@@ -295,7 +345,10 @@ export default function IntegrationsPage() {
               >
                 <CardContent className="p-4 flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shrink-0", m?.bg ?? "bg-muted/30", m?.border ?? "border-border", "border")}>
+                    <div className={cn(
+                      "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border",
+                      m?.bg ?? "bg-muted/30", m?.border ?? "border-border",
+                    )}>
                       <Icon className={cn("w-4 h-4", m?.color ?? "text-muted-foreground")} />
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
@@ -334,7 +387,7 @@ export default function IntegrationsPage() {
 
       {/* ── Detail Modal ────────────────────────────────────────────────── */}
       <Dialog open={!!selected || detailLoading} onOpenChange={(o) => { if (!o) setSelected(null); }}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto">
 
           {detailLoading || !selected ? (
             <div className="flex items-center justify-center py-12">
@@ -355,7 +408,7 @@ export default function IntegrationsPage() {
               </DialogHeader>
 
               {/* Tabs */}
-              <div className="flex gap-1 border-b border-border pb-0 -mx-1">
+              <div className="flex gap-1 border-b border-border -mx-1">
                 {(["config", "events"] as const).map((tab) => (
                   <button
                     key={tab}
@@ -367,7 +420,10 @@ export default function IntegrationsPage() {
                         : "text-muted-foreground border-transparent hover:text-foreground",
                     )}
                   >
-                    {tab === "config" ? "Configuración" : `Eventos${selected.events.length > 0 ? ` (${selected.events.length})` : ""}`}
+                    {tab === "config"
+                      ? "Configuración"
+                      : `Eventos${selected.events.length > 0 ? ` (${selected.events.length})` : ""}`
+                    }
                   </button>
                 ))}
               </div>
@@ -376,13 +432,15 @@ export default function IntegrationsPage() {
               {modalTab === "config" && (
                 <div className="space-y-4 pt-1">
 
-                  {/* Connected status */}
+                  {/* Connection status banner */}
                   {selected.connection?.status === "active" && (
                     <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-400">
                       <CheckCircle2 className="w-4 h-4 shrink-0" />
                       <span>
-                        Conectado{selected.connection.displayName ? ` como <strong>${selected.connection.displayName}</strong>` : ""}
-                        {selected.connection.createdAt ? ` · ${new Date(selected.connection.createdAt).toLocaleDateString("es-ES")}` : ""}
+                        Conectado{selected.connection.displayName ? ` como ${selected.connection.displayName}` : ""}
+                        {selected.connection.createdAt
+                          ? ` · ${new Date(selected.connection.createdAt).toLocaleDateString("es-ES")}`
+                          : ""}
                       </span>
                     </div>
                   )}
@@ -399,23 +457,27 @@ export default function IntegrationsPage() {
                     <div className="p-4 rounded-lg bg-muted/30 border border-border text-center space-y-2">
                       <div className="text-sm font-medium text-muted-foreground">OAuth 2.0 — Próximamente</div>
                       <p className="text-xs text-muted-foreground">
-                        La conexión con {selected.name} requiere OAuth y estará disponible en la Fase 2 de integraciones.
+                        La conexión con {selected.name} requiere OAuth y estará disponible en la Fase 3 de integraciones.
                       </p>
                     </div>
                   ) : (
                     <>
-                      {/* Credential fields */}
-                      {(META[selected.slug]?.fields ?? []).length > 0 && (
+                      {/* Credential form */}
+                      {(selectedMeta?.fields ?? []).length > 0 && (
                         <div className="space-y-3">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             Credenciales
                           </div>
-                          {(META[selected.slug]?.fields ?? []).map((field) => (
+                          {(selectedMeta?.fields ?? []).map((field) => (
                             <div key={field.key} className="space-y-1">
                               <label className="text-xs font-medium text-foreground">{field.label}</label>
                               <input
                                 type={field.type === "password" ? "password" : "text"}
-                                placeholder={field.placeholder}
+                                placeholder={
+                                  selected.connection?.credentialKeysPresent.includes(field.key)
+                                    ? "••••••••  (guardado — escribe para cambiar)"
+                                    : field.placeholder
+                                }
                                 value={form[field.key] ?? ""}
                                 onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
                                 className="w-full px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
@@ -437,19 +499,17 @@ export default function IntegrationsPage() {
                       )}
 
                       {/* Webhook URL info */}
-                      {META[selected.slug]?.webhookNote && (
+                      {selectedMeta?.webhookNote && (
                         <div className="space-y-1.5">
-                          <div className="text-xs font-medium text-muted-foreground">{META[selected.slug]!.webhookNote}</div>
+                          <div className="text-xs font-medium text-muted-foreground">{selectedMeta.webhookNote}</div>
                           <div className="flex items-center gap-2 p-2 rounded-md bg-muted/30 border border-border">
-                            <code className="text-[11px] text-primary/80 flex-1 truncate font-mono">
-                              {selected.slug === "whatsapp" ? waWebhookUrl : webhookUrl}
-                            </code>
+                            <code className="text-[11px] text-primary/80 flex-1 truncate font-mono">{webhookUrl}</code>
                             <button
                               onClick={() => {
-                                void navigator.clipboard.writeText(selected.slug === "whatsapp" ? waWebhookUrl : webhookUrl);
-                                toast({ title: "URL copiada" });
+                                void navigator.clipboard.writeText(webhookUrl);
+                                toast({ title: "URL copiada al portapapeles" });
                               }}
-                              className="text-[10px] text-muted-foreground hover:text-foreground shrink-0"
+                              className="text-[10px] text-muted-foreground hover:text-foreground shrink-0 transition-colors"
                             >
                               Copiar
                             </button>
@@ -457,7 +517,7 @@ export default function IntegrationsPage() {
                         </div>
                       )}
 
-                      {/* Actions */}
+                      {/* Main actions */}
                       <div className="flex gap-2 pt-1">
                         <button
                           onClick={() => void handleConnect()}
@@ -473,7 +533,7 @@ export default function IntegrationsPage() {
                             <button
                               onClick={() => void handleTest()}
                               disabled={testing}
-                              title="Probar conexión"
+                              title="Verificar credenciales"
                               className="px-3 py-2 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
                             >
                               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
@@ -481,7 +541,7 @@ export default function IntegrationsPage() {
                             <button
                               onClick={() => void handleDisconnect()}
                               disabled={disconnecting}
-                              title="Desconectar"
+                              title="Desconectar integración"
                               className="px-3 py-2 rounded-md border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
                             >
                               {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unplug className="w-4 h-4" />}
@@ -489,6 +549,45 @@ export default function IntegrationsPage() {
                           </>
                         )}
                       </div>
+
+                      {/* ── WhatsApp test panel — only when connected ──── */}
+                      {selected.slug === "whatsapp" && selected.connected && (
+                        <div className="space-y-3 pt-3 border-t border-border">
+                          <div className="flex items-center gap-1.5">
+                            <Send className="w-3.5 h-3.5 text-green-400" />
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              Panel de prueba
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Envía un mensaje real a un número registrado en tu cuenta de Meta Business para verificar que la integración funciona.
+                          </p>
+                          <div className="flex gap-2">
+                            <input
+                              type="tel"
+                              placeholder="+34612345678"
+                              value={testPhone}
+                              onChange={(e) => setTestPhone(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter" && testPhone.trim()) void handleSendTestMessage(); }}
+                              className="flex-1 px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-green-500/40"
+                            />
+                            <button
+                              onClick={() => void handleSendTestMessage()}
+                              disabled={sendingTest || !testPhone.trim()}
+                              className="px-4 py-2 rounded-md bg-green-600/80 hover:bg-green-600 text-white text-sm font-medium disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+                            >
+                              {sendingTest
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Send className="w-4 h-4" />
+                              }
+                              Enviar
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">
+                            ⚠️ El número debe estar previamente aprobado en Meta Business para recibir mensajes de prueba.
+                          </p>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -497,18 +596,36 @@ export default function IntegrationsPage() {
               {/* ── Events tab ──────────────────────────────────────────── */}
               {modalTab === "events" && (
                 <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-muted-foreground">
+                      {selected.events.length > 0
+                        ? `${selected.events.length} evento${selected.events.length !== 1 ? "s" : ""} recientes`
+                        : "Sin eventos registrados aún"}
+                    </span>
+                    <button
+                      onClick={refreshEvents}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      Actualizar
+                    </button>
+                  </div>
+
                   {selected.events.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      Sin eventos registrados aún.
+                      Los eventos aparecerán aquí cuando se procesen mensajes.
                     </div>
                   ) : (
                     selected.events.map((ev) => (
-                      <div key={ev.id} className={cn(
-                        "flex items-start gap-3 p-2.5 rounded-lg border text-xs",
-                        ev.status === "error"
-                          ? "bg-red-500/5 border-red-500/20"
-                          : "bg-muted/20 border-border/50",
-                      )}>
+                      <div
+                        key={ev.id}
+                        className={cn(
+                          "flex items-start gap-3 p-2.5 rounded-lg border text-xs",
+                          ev.status === "error"
+                            ? "bg-red-500/5 border-red-500/20"
+                            : "bg-muted/20 border-border/50",
+                        )}
+                      >
                         <div className="mt-0.5 shrink-0">
                           {ev.direction === "inbound"
                             ? <ArrowDownLeft className="w-3.5 h-3.5 text-blue-400" />
@@ -517,17 +634,28 @@ export default function IntegrationsPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-foreground truncate">{ev.eventType}</span>
+                            <span className="font-medium text-foreground">
+                              {EVENT_TYPE_LABELS[ev.eventType] ?? ev.eventType}
+                            </span>
                             {ev.status === "error" && (
-                              <span className="text-red-400 text-[10px]">error</span>
+                              <Badge className="bg-red-500/15 text-red-400 border-red-500/20 text-[10px]">error</Badge>
+                            )}
+                            {ev.status === "processed" && ev.eventType.includes("accept") && (
+                              <Badge className="bg-green-500/15 text-green-400 border-green-500/20 text-[10px]">✓</Badge>
                             )}
                           </div>
-                          {ev.summary && <p className="text-muted-foreground mt-0.5 truncate">{ev.summary}</p>}
-                          {ev.error   && <p className="text-red-400 mt-0.5 text-[10px]">{ev.error}</p>}
+                          {ev.summary && (
+                            <p className="text-muted-foreground mt-0.5 line-clamp-2">{ev.summary}</p>
+                          )}
+                          {ev.error && (
+                            <p className="text-red-400 mt-0.5 text-[10px] line-clamp-2">{ev.error}</p>
+                          )}
                         </div>
-                        <div className="text-muted-foreground shrink-0 flex items-center gap-1">
+                        <div className="text-muted-foreground shrink-0 flex items-center gap-1 text-[10px] whitespace-nowrap">
                           <Clock className="w-2.5 h-2.5" />
-                          {new Date(ev.createdAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                          {new Date(ev.createdAt).toLocaleString("es-ES", {
+                            day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+                          })}
                         </div>
                       </div>
                     ))

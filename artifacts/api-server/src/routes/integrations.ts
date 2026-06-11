@@ -1,52 +1,17 @@
 import { Router } from "express";
-import crypto from "node:crypto";
 import {
   db,
   integrationsTable,
   orgIntegrationsTable,
   integrationEventsTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
+import {
+  encryptCredentials,
+  decryptCredentials,
+} from "../utils/integrationCreds";
 
 export const integrationsRouter = Router();
-
-// ── Encryption ────────────────────────────────────────────────────────────────
-const RAW_KEY = process.env.INTEGRATION_ENCRYPTION_KEY;
-const ENC_KEY =
-  RAW_KEY && RAW_KEY.length === 64 ? Buffer.from(RAW_KEY, "hex") : null;
-
-if (!ENC_KEY) {
-  console.warn(
-    "[Integrations] INTEGRATION_ENCRYPTION_KEY not set or invalid — " +
-    "credentials stored as base64 only. Set a 64-char hex key for production.",
-  );
-}
-
-function encryptCredentials(obj: Record<string, string>): string {
-  const json = JSON.stringify(obj);
-  if (!ENC_KEY) return Buffer.from(json).toString("base64");
-  const iv     = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", ENC_KEY, iv);
-  const enc    = Buffer.concat([cipher.update(json, "utf8"), cipher.final()]);
-  const tag    = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, enc]).toString("base64");
-}
-
-function decryptCredentials(stored: string): Record<string, string> {
-  try {
-    if (!ENC_KEY)
-      return JSON.parse(Buffer.from(stored, "base64").toString("utf8")) as Record<string, string>;
-    const buf     = Buffer.from(stored, "base64");
-    const iv      = buf.subarray(0, 12);
-    const tag     = buf.subarray(12, 28);
-    const enc     = buf.subarray(28);
-    const decipher = crypto.createDecipheriv("aes-256-gcm", ENC_KEY, iv);
-    decipher.setAuthTag(tag);
-    return JSON.parse(decipher.update(enc) + decipher.final("utf8")) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
 
 // ── Catálogo estático (fuente de verdad para la UI + seed de DB) ──────────────
 const CATALOG = [
@@ -125,16 +90,6 @@ void (async () => {
   }
 })();
 
-// ── Helper: campos visibles por credencial (sin exponer valores) ──────────────
-function credentialKeys(slug: string): string[] {
-  const map: Record<string, string[]> = {
-    whatsapp:         ["phoneNumberId", "accessToken", "verifyToken"],
-    stripe:           ["apiKey", "webhookSecret"],
-    webhook_outbound: ["url", "secret"],
-  };
-  return map[slug] ?? [];
-}
-
 // ── GET / — catálogo + estado de conexión por org ─────────────────────────────
 integrationsRouter.get("/", async (req, res) => {
   try {
@@ -200,7 +155,7 @@ integrationsRouter.get("/:slug", async (req, res) => {
       .orderBy(desc(integrationEventsTable.createdAt))
       .limit(50);
 
-    // Determinar qué credential keys están presentes (sin exponer valores)
+    // Credential keys present (without exposing values)
     let credentialKeysPresent: string[] = [];
     if (conn?.credentialsEnc) {
       const dec = decryptCredentials(conn.credentialsEnc);
@@ -209,15 +164,15 @@ integrationsRouter.get("/:slug", async (req, res) => {
 
     const connection = conn
       ? {
-          status:              conn.status,
-          displayName:         conn.displayName,
-          config:              conn.config ? (JSON.parse(conn.config) as Record<string, unknown>) : null,
-          lastSyncedAt:        conn.lastSyncedAt?.toISOString() ?? null,
-          expiresAt:           conn.expiresAt?.toISOString() ?? null,
-          errorMessage:        conn.errorMessage,
-          createdAt:           conn.createdAt.toISOString(),
-          updatedAt:           conn.updatedAt.toISOString(),
-          hasCredentials:      !!conn.credentialsEnc,
+          status:                conn.status,
+          displayName:           conn.displayName,
+          config:                conn.config ? (JSON.parse(conn.config) as Record<string, unknown>) : null,
+          lastSyncedAt:          conn.lastSyncedAt?.toISOString() ?? null,
+          expiresAt:             conn.expiresAt?.toISOString() ?? null,
+          errorMessage:          conn.errorMessage,
+          createdAt:             conn.createdAt.toISOString(),
+          updatedAt:             conn.updatedAt.toISOString(),
+          hasCredentials:        !!conn.credentialsEnc,
           credentialKeysPresent,
         }
       : null;
@@ -262,12 +217,10 @@ integrationsRouter.post("/:slug/connect", async (req, res) => {
       displayName?: string;
     };
 
-    // Encrypt credentials
     const credentialsEnc = Object.keys(credentials).length > 0
       ? encryptCredentials(credentials)
       : undefined;
 
-    // Upsert org_integrations
     const now = new Date();
     const existing = await db
       .select()
@@ -307,7 +260,6 @@ integrationsRouter.post("/:slug/connect", async (req, res) => {
       });
     }
 
-    // Log event
     await db.insert(integrationEventsTable).values({
       orgId,
       integrationSlug: slug,
@@ -385,7 +337,7 @@ integrationsRouter.patch("/:slug/config", async (req, res) => {
   }
 });
 
-// ── POST /:slug/test — verificar conexión ─────────────────────────────────────
+// ── POST /:slug/test — verificar credenciales ────────────────────────────────
 integrationsRouter.post("/:slug/test", async (req, res) => {
   try {
     const orgId = req.orgId!;
@@ -407,51 +359,41 @@ integrationsRouter.post("/:slug/test", async (req, res) => {
         ),
       );
 
-    if (!conn || !conn.credentialsEnc) {
+    if (!conn?.credentialsEnc) {
       res.json({ success: false, message: "No hay credenciales guardadas para esta integración." });
       return;
     }
 
-    const creds = decryptCredentials(conn.credentialsEnc);
-    const requiredKeys = credentialKeys(slug);
-    const missingKeys  = requiredKeys.filter((k) => !creds[k]);
+    const requiredKeys: Record<string, string[]> = {
+      whatsapp:         ["phoneNumberId", "accessToken"],
+      stripe:           ["apiKey"],
+      webhook_outbound: ["url"],
+    };
 
-    const t0 = Date.now();
+    const creds      = decryptCredentials(conn.credentialsEnc);
+    const required   = requiredKeys[slug] ?? [];
+    const missing    = required.filter((k) => !creds[k]);
+    const t0         = Date.now();
 
-    if (missingKeys.length > 0) {
+    if (missing.length > 0) {
       await db.insert(integrationEventsTable).values({
-        orgId,
-        integrationSlug: slug,
-        direction:       "outbound",
-        eventType:       "test_failed",
-        status:          "error",
-        summary:         `Test fallido — faltan campos: ${missingKeys.join(", ")}`,
-        errorMessage:    `Campos requeridos faltantes: ${missingKeys.join(", ")}`,
-      }).catch(() => {/* non-critical */});
+        orgId, integrationSlug: slug, direction: "outbound",
+        eventType: "test_failed", status: "error",
+        summary: `Test fallido — faltan campos: ${missing.join(", ")}`,
+        errorMessage: `Campos requeridos faltantes: ${missing.join(", ")}`,
+      }).catch(() => {/**/});
 
-      res.json({
-        success: false,
-        message: `Faltan campos requeridos: ${missingKeys.join(", ")}`,
-        duration_ms: Date.now() - t0,
-      });
+      res.json({ success: false, message: `Faltan campos: ${missing.join(", ")}`, duration_ms: Date.now() - t0 });
       return;
     }
 
-    // Phase 1: credential presence check is the test
     await db.insert(integrationEventsTable).values({
-      orgId,
-      integrationSlug: slug,
-      direction:       "outbound",
-      eventType:       "test_ok",
-      status:          "processed",
-      summary:         `Test OK — credenciales presentes para "${catalogItem.name}"`,
-    }).catch(() => {/* non-critical */});
+      orgId, integrationSlug: slug, direction: "outbound",
+      eventType: "test_ok", status: "processed",
+      summary: `Test OK — credenciales presentes para "${catalogItem.name}"`,
+    }).catch(() => {/**/});
 
-    res.json({
-      success:     true,
-      message:     `Credenciales de ${catalogItem.name} verificadas correctamente.`,
-      duration_ms: Date.now() - t0,
-    });
+    res.json({ success: true, message: `Credenciales de ${catalogItem.name} verificadas.`, duration_ms: Date.now() - t0 });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
