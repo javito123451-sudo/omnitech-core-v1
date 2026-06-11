@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
+import { useAuth } from "@clerk/react";
 import {
   Brain, BookOpen, GitBranch, UserRound, Zap, Building2,
   TrendingUp, Info, FileText, Tag, Search, Plus, Pencil,
@@ -166,6 +167,7 @@ function MemoryModal({
   onSaved: (saved: MemoryEntry) => void;
 }) {
   const isEdit = !!mem;
+  const { getToken } = useAuth();
 
   const [title,    setTitle]    = useState(mem ? resolveTitle(mem) : "");
   const [value,    setValue]    = useState(mem?.memoryVal ?? "");
@@ -182,20 +184,24 @@ function MemoryModal({
     if (!value.trim()) { setError("El contenido es requerido."); return; }
     setSaving(true); setError("");
     try {
+      const token = await getToken();
+      const authHeaders: Record<string, string> = token
+        ? { "Authorization": `Bearer ${token}` }
+        : {};
       const body = { value: value.trim(), title: title.trim() || undefined, category, tags: tags.trim() || undefined };
       let res: Response;
       if (isEdit) {
         res = await fetch(`${API_BASE}/api/memory/${mem.id}`, {
           method: "PUT",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify(body),
         });
       } else {
         res = await fetch(`${API_BASE}/api/memory`, {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify(body),
         });
       }
@@ -429,6 +435,7 @@ function HistoryDrawer({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function MemoryPage() {
+  const { getToken } = useAuth();
   const [memories,      setMemories]      = useState<MemoryEntry[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [searchQuery,   setSearchQuery]   = useState("");
@@ -480,7 +487,15 @@ export default function MemoryPage() {
 
   const handleDelete = async (id: number) => {
     if (!confirm("¿Eliminar este recuerdo?")) return;
-    await fetch(`${API_BASE}/api/memory/${id}`, { method: "DELETE", credentials: "include" });
+    const token = await getToken();
+    const authHeaders: Record<string, string> = token
+      ? { "Authorization": `Bearer ${token}` }
+      : {};
+    await fetch(`${API_BASE}/api/memory/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: authHeaders,
+    });
     setMemories(prev => prev.filter(m => m.id !== id));
     if (searchResults) setSearchResults(prev => prev?.filter(m => m.id !== id) ?? null);
   };
