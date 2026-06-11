@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, RefreshCw, Copy, CheckCheck, ExternalLink, ChevronRight,
@@ -89,7 +89,30 @@ function CharBar({ count }: { count: number }) {
 export function WhatsAppModal({
   clientId, clientName, clientPhone, clientCompany, clientStatus, onClose,
 }: WhatsAppModalProps) {
-  console.log("WhatsAppModal mounted");
+  console.log("WhatsAppModal render");
+  useEffect(() => {
+    console.log("WhatsAppModal useEffect MOUNT");
+    const el = document.querySelector("[data-wa-overlay]");
+    if (el) {
+      const cs = window.getComputedStyle(el);
+      console.log("WA overlay computed style:", {
+        display:    cs.display,
+        visibility: cs.visibility,
+        opacity:    cs.opacity,
+        zIndex:     cs.zIndex,
+        position:   cs.position,
+        inset:      cs.inset,
+        width:      cs.width,
+        height:     cs.height,
+      });
+      console.log("WA overlay offsetParent:", el instanceof HTMLElement ? el.offsetParent : "N/A");
+      console.log("WA overlay getBoundingClientRect:", JSON.stringify((el as HTMLElement).getBoundingClientRect()));
+    } else {
+      console.log("WA overlay DOM node NOT FOUND via querySelector");
+    }
+    return () => { console.log("WhatsAppModal useEffect UNMOUNT"); };
+  }, []);
+
   const [step, setStep]       = useState<"select" | "generating" | "preview">("select");
   const [msgType, setMsgType] = useState<MessageType | null>(null);
   const [result, setResult]   = useState<GenerateResult | null>(null);
@@ -165,6 +188,7 @@ export function WhatsAppModal({
 
   return (
     <div
+      data-wa-overlay="true"
       className="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-6 px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >

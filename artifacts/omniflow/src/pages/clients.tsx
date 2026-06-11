@@ -242,6 +242,8 @@ function ClientProfileDialog({
     });
   };
 
+  console.log("ClientProfileDialog render — showWhatsApp:", showWhatsApp, "showQuote:", showQuote);
+
   return (
     <>
     <Dialog open onOpenChange={onClose}>
@@ -343,7 +345,7 @@ function ClientProfileDialog({
           <div className="space-y-2 pt-2">
             <div className="grid grid-cols-2 gap-2">
               <Button
-                onClick={() => { console.log("WHATSAPP CLICK"); setShowWhatsApp(true); }}
+                onClick={() => { console.log("WHATSAPP CLICK — calling setShowWhatsApp(true)"); setShowWhatsApp(true); console.log("WHATSAPP — setShowWhatsApp called"); }}
                 variant="outline"
                 className="h-9 text-sm border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold"
               >
@@ -404,17 +406,22 @@ function ClientProfileDialog({
       document.body
     )}
 
-    {showWhatsApp && createPortal(
-      <WhatsAppModal
-        clientId={client.id}
-        clientName={client.name}
-        clientPhone={client.phone}
-        clientCompany={client.company}
-        clientStatus={client.status}
-        onClose={() => setShowWhatsApp(false)}
-      />,
-      document.body
-    )}
+    {(() => {
+      console.log("createPortal WhatsApp check — showWhatsApp:", showWhatsApp);
+      if (!showWhatsApp) return null;
+      console.log("createPortal WhatsApp EXECUTING — mounting to document.body");
+      return createPortal(
+        <WhatsAppModal
+          clientId={client.id}
+          clientName={client.name}
+          clientPhone={client.phone}
+          clientCompany={client.company}
+          clientStatus={client.status}
+          onClose={() => { console.log("WhatsApp onClose called"); setShowWhatsApp(false); }}
+        />,
+        document.body
+      );
+    })()}
   </>
   );
 }
