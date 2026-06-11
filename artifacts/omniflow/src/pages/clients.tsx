@@ -246,7 +246,7 @@ function ClientProfileDialog({
 
   return (
     <>
-    <Dialog open onOpenChange={onClose}>
+    <Dialog open onOpenChange={onClose} modal={!showQuote && !showWhatsApp}>
       <DialogContent
         className="bg-card border-border text-white max-w-md w-full max-h-[90dvh] overflow-y-auto"
         onInteractOutside={(e) => { if (showQuote || showWhatsApp) e.preventDefault(); }}
@@ -390,6 +390,7 @@ function ClientProfileDialog({
             </div>
           </div>
         )}
+
       </DialogContent>
     </Dialog>
 
@@ -406,22 +407,17 @@ function ClientProfileDialog({
       document.body
     )}
 
-    {(() => {
-      console.log("createPortal WhatsApp check — showWhatsApp:", showWhatsApp);
-      if (!showWhatsApp) return null;
-      console.log("createPortal WhatsApp EXECUTING — mounting to document.body");
-      return createPortal(
-        <WhatsAppModal
-          clientId={client.id}
-          clientName={client.name}
-          clientPhone={client.phone}
-          clientCompany={client.company}
-          clientStatus={client.status}
-          onClose={() => { console.log("WhatsApp onClose called"); setShowWhatsApp(false); }}
-        />,
-        document.body
-      );
-    })()}
+    {showWhatsApp && createPortal(
+      <WhatsAppModal
+        clientId={client.id}
+        clientName={client.name}
+        clientPhone={client.phone}
+        clientCompany={client.company}
+        clientStatus={client.status}
+        onClose={() => setShowWhatsApp(false)}
+      />,
+      document.body
+    )}
   </>
   );
 }
