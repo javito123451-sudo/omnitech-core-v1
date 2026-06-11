@@ -106,6 +106,7 @@ export function WhatsAppModal({
       const r = await fetch(`${BASE}/api/whatsapp/generate`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body:    JSON.stringify({ clientId, messageType: type }),
       });
       if (!r.ok) { const e = await r.json() as { error?: string }; throw new Error(e.error ?? "Error"); }
@@ -141,6 +142,7 @@ export function WhatsAppModal({
       const r = await fetch(`${BASE}/api/whatsapp/send`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body:    JSON.stringify({ to: clientPhone, message: edited }),
       });
       const data = await r.json() as { success?: boolean; pending?: boolean; fallback?: string; error?: string; reason?: string };
@@ -165,7 +167,7 @@ export function WhatsAppModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-6 px-4"
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-6 px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div

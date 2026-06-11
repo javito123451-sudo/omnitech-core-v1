@@ -176,6 +176,7 @@ export function AIQuoteModal({
       const r = await fetch(`${BASE}/api/quotes/ai-generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           clientId,
           serviceDescription: service,
@@ -200,6 +201,7 @@ export function AIQuoteModal({
       const r = await fetch(`${BASE}/api/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           clientId,
           title:      result.title,
@@ -259,7 +261,7 @@ export function AIQuoteModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-6 px-4"
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-6 px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
