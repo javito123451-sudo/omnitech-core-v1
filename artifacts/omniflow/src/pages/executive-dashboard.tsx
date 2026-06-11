@@ -733,6 +733,231 @@ function ReportModal({ report, onClose }: { report: ExecReport; onClose: () => v
   );
 }
 
+// ── CEO Decision types ────────────────────────────────────────────────────────
+interface CeoDecision {
+  generated_at: string;
+  hacer_hoy: { accion: string; cliente?: string | null; impacto_euros?: number | null; razon: string }[];
+  no_hacer: { accion: string; razon: string }[];
+  cliente_prioritario: { nombre: string; empresa?: string | null; valor_potencial?: number | null; por_que: string; accion_concreta: string };
+  oportunidad_cerrar: { titulo: string; cliente: string; valor?: number | null; probabilidad: string; siguiente_paso: string; plazo: string };
+  riesgo_eliminar: { titulo: string; dinero_en_juego?: number | null; impacto_si_ignoras: string; accion_hoy: string };
+}
+
+// ── CEO Modal ─────────────────────────────────────────────────────────────────
+function CeoBlock({
+  number, label, color, children,
+}: { number: string; label: string; color: "green" | "red" | "blue" | "amber" | "violet"; children: React.ReactNode }) {
+  const palette = {
+    green:  { num: "text-emerald-400",  border: "border-emerald-500/20", bg: "bg-emerald-500/5",  tag: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"  },
+    red:    { num: "text-red-400",       border: "border-red-500/20",     bg: "bg-red-500/5",      tag: "bg-red-500/10 text-red-400 border-red-500/20"              },
+    blue:   { num: "text-blue-400",      border: "border-blue-500/20",    bg: "bg-blue-500/5",     tag: "bg-blue-500/10 text-blue-400 border-blue-500/20"           },
+    amber:  { num: "text-amber-400",     border: "border-amber-500/20",   bg: "bg-amber-500/5",    tag: "bg-amber-500/10 text-amber-400 border-amber-500/20"        },
+    violet: { num: "text-violet-400",    border: "border-violet-500/20",  bg: "bg-violet-500/5",   tag: "bg-violet-500/10 text-violet-400 border-violet-500/20"     },
+  };
+  const p = palette[color];
+  return (
+    <div className={cn("rounded-2xl border overflow-hidden", p.border, p.bg)}>
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-white/[0.05]">
+        <span className={cn("text-2xl font-black tabular-nums leading-none", p.num)}>{number}</span>
+        <span className="text-xs font-black uppercase tracking-[0.15em] text-foreground/70">{label}</span>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
+
+function CeoModal({ decision, onClose, onRefresh, loading }: {
+  decision: CeoDecision; onClose: () => void; onRefresh: () => void; loading: boolean;
+}) {
+  const genTime = new Date(decision.generated_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 backdrop-blur-sm overflow-y-auto py-6 px-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 10, scale: 0.97 }}
+        transition={{ duration: 0.28, ease: "easeOut" }}
+        className="w-full max-w-2xl bg-[#09090f] border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="relative px-6 pt-6 pb-5 border-b border-white/[0.07] bg-gradient-to-r from-slate-950 to-violet-950/30">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(139,92,246,0.08),_transparent_60%)] pointer-events-none" />
+          <div className="flex items-start justify-between gap-4 relative">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/25 to-orange-500/15 border border-amber-500/25 flex items-center justify-center">
+                  <span className="text-base leading-none">👔</span>
+                </div>
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-500/70">Decisión Ejecutiva</div>
+                  <div className="text-[10px] text-muted-foreground/60">{genTime} · Ordenado por impacto económico</div>
+                </div>
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-foreground">¿Qué haría un CEO?</h2>
+              <p className="text-[12px] text-muted-foreground mt-1">Análisis de tus datos reales. Sin filtros.</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 mt-1">
+              <button
+                onClick={onRefresh}
+                disabled={loading}
+                className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+              >
+                <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
+                {loading ? "Analizando…" : "Regenerar"}
+              </button>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-3">
+
+          {/* 01 — Hacer hoy */}
+          <CeoBlock number="01" label="Qué hacer HOY" color="green">
+            <div className="space-y-3">
+              {decision.hacer_hoy.map((item, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.06 }}
+                  className="flex items-start gap-3"
+                >
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-[10px] font-black text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                      <span className="text-sm font-bold text-foreground">{item.accion}</span>
+                      {item.cliente && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">{item.cliente}</span>
+                      )}
+                      {item.impacto_euros && item.impacto_euros > 0 && (
+                        <span className="text-[10px] font-bold text-emerald-300">+€{item.impacto_euros.toLocaleString("es-ES")}</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-snug">{item.razon}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </CeoBlock>
+
+          {/* 02 — No hacer */}
+          <CeoBlock number="02" label="Qué NO hacer" color="red">
+            <div className="space-y-2.5">
+              {decision.no_hacer.map((item, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <span className="text-red-500 text-lg leading-none shrink-0 mt-0.5">✕</span>
+                  <div>
+                    <div className="text-sm font-bold text-foreground/90 line-through decoration-red-500/50">{item.accion}</div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{item.razon}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CeoBlock>
+
+          {/* 03 + 04 side by side on md+ */}
+          <div className="grid md:grid-cols-2 gap-3">
+            {/* 03 — Cliente prioritario */}
+            <CeoBlock number="03" label="Cliente a priorizar" color="blue">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center text-lg shrink-0">🔥</div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="text-sm font-black text-foreground">{decision.cliente_prioritario.nombre}</span>
+                    {decision.cliente_prioritario.empresa && (
+                      <span className="text-[10px] text-muted-foreground">{decision.cliente_prioritario.empresa}</span>
+                    )}
+                    {decision.cliente_prioritario.valor_potencial && decision.cliente_prioritario.valor_potencial > 0 && (
+                      <span className="text-[11px] font-bold text-blue-300">€{decision.cliente_prioritario.valor_potencial.toLocaleString("es-ES")}</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mb-2 leading-snug">{decision.cliente_prioritario.por_que}</p>
+                  <div className="text-[11px] text-blue-300 font-semibold bg-blue-500/10 border border-blue-500/20 rounded-lg px-2.5 py-1.5 leading-snug">
+                    → {decision.cliente_prioritario.accion_concreta}
+                  </div>
+                </div>
+              </div>
+            </CeoBlock>
+
+            {/* 04 — Oportunidad a cerrar */}
+            <CeoBlock number="04" label="Oportunidad a cerrar" color="amber">
+              <div className="space-y-2">
+                <div className="flex items-start gap-2 flex-wrap">
+                  <span className="text-sm font-black text-foreground">{decision.oportunidad_cerrar.titulo}</span>
+                  <span className="text-[10px] text-muted-foreground">· {decision.oportunidad_cerrar.cliente}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {decision.oportunidad_cerrar.valor && decision.oportunidad_cerrar.valor > 0 && (
+                    <span className="text-base font-black text-amber-300">€{decision.oportunidad_cerrar.valor.toLocaleString("es-ES")}</span>
+                  )}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 font-semibold">
+                    {decision.oportunidad_cerrar.probabilidad}
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 text-muted-foreground">
+                    {decision.oportunidad_cerrar.plazo}
+                  </span>
+                </div>
+                <div className="text-[11px] text-amber-300 font-semibold bg-amber-500/8 border border-amber-500/20 rounded-lg px-2.5 py-1.5 leading-snug">
+                  → {decision.oportunidad_cerrar.siguiente_paso}
+                </div>
+              </div>
+            </CeoBlock>
+          </div>
+
+          {/* 05 — Riesgo a eliminar */}
+          <CeoBlock number="05" label="Riesgo a eliminar HOY" color="violet">
+            <div className="flex items-start gap-4 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="text-sm font-black text-foreground">{decision.riesgo_eliminar.titulo}</span>
+                  {decision.riesgo_eliminar.dinero_en_juego && decision.riesgo_eliminar.dinero_en_juego > 0 && (
+                    <span className="text-[11px] font-bold text-red-400">€{decision.riesgo_eliminar.dinero_en_juego.toLocaleString("es-ES")} en juego</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
+                  Si no actúas: <span className="text-orange-400">{decision.riesgo_eliminar.impacto_si_ignoras}</span>
+                </p>
+                <div className="text-[11px] text-violet-300 font-semibold bg-violet-500/8 border border-violet-500/20 rounded-lg px-2.5 py-1.5 leading-snug">
+                  → {decision.riesgo_eliminar.accion_hoy}
+                </div>
+              </div>
+            </div>
+          </CeoBlock>
+
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/[0.05] bg-white/[0.01] flex items-center justify-between">
+          <div className="text-[10px] text-muted-foreground/50">Basado en tus datos reales · OmniTech AI</div>
+          <button
+            onClick={onClose}
+            className="text-xs px-4 py-2 rounded-xl border border-border bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cerrar
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Chart Tooltip ─────────────────────────────────────────────────────────────
 function ChartTip({ active, payload, label }: {
   active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string;
@@ -934,6 +1159,27 @@ export default function ExecutiveDashboardPage() {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError]   = useState<string | null>(null);
 
+  const [showCeo, setShowCeo]         = useState(false);
+  const [ceoData, setCeoData]         = useState<CeoDecision | null>(null);
+  const [ceoLoading, setCeoLoading]   = useState(false);
+  const [ceoError, setCeoError]       = useState<string | null>(null);
+
+  const generateCeo = useCallback(async () => {
+    setCeoLoading(true);
+    setCeoError(null);
+    try {
+      const r = await fetch(`${BASE}/api/executive/ceo`, { method: "POST" });
+      if (!r.ok) throw new Error("Error al generar análisis CEO");
+      const json = await r.json() as CeoDecision;
+      setCeoData(json);
+      setShowCeo(true);
+    } catch (e) {
+      setCeoError(e instanceof Error ? e.message : "Error desconocido");
+    } finally {
+      setCeoLoading(false);
+    }
+  }, []);
+
   const generateReport = useCallback(async () => {
     setReportLoading(true);
     setReportError(null);
@@ -1007,6 +1253,31 @@ export default function ExecutiveDashboardPage() {
               <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />
               Actualizar
             </button>
+
+            {/* ── ¿Qué haría un CEO? ── */}
+            <button
+              onClick={() => { if (ceoData) { setShowCeo(true); } else { void generateCeo(); } }}
+              disabled={ceoLoading}
+              className={cn(
+                "relative flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl border font-semibold transition-all overflow-hidden",
+                ceoLoading
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-400/60 cursor-wait"
+                  : "border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-orange-500/10 text-amber-400 hover:from-amber-500/25 hover:to-orange-500/20 hover:border-amber-500/50 shadow-sm shadow-amber-500/5",
+              )}
+            >
+              {ceoLoading ? (
+                <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Analizando…</>
+              ) : (
+                <>
+                  <span className="text-sm leading-none">👔</span>
+                  ¿Qué haría un CEO?
+                  {ceoData && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
+                </>
+              )}
+            </button>
+            {ceoError && (
+              <span className="text-[11px] text-red-400 border border-red-500/20 bg-red-500/10 px-2 py-1 rounded-lg">{ceoError}</span>
+            )}
 
             {/* ── Generar Informe Ejecutivo ── */}
             <button
@@ -1393,6 +1664,18 @@ export default function ExecutiveDashboardPage() {
       <AnimatePresence>
         {showReport && reportData && (
           <ReportModal report={reportData} onClose={() => setShowReport(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* ── CEO Modal ────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showCeo && ceoData && (
+          <CeoModal
+            decision={ceoData}
+            onClose={() => setShowCeo(false)}
+            onRefresh={() => void generateCeo()}
+            loading={ceoLoading}
+          />
         )}
       </AnimatePresence>
     </div>

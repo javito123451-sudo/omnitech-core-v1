@@ -469,3 +469,122 @@ Máximo 3 clientes prioritarios y 3 bloqueadores. Sé directo y accionable. Sin 
 
   res.json({ generated_at: now.toISOString(), ...report });
 });
+
+// ── POST /ceo — ¿Qué haría un CEO? ───────────────────────────────────────────
+executiveRouter.post("/ceo", async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
+
+  const orgId = (req as Request & { orgId?: number }).orgId ?? 1;
+  const now = new Date();
+  const thirtyAgo    = new Date(now.getTime() - 30 * 86_400_000);
+  const sevenFromNow = new Date(now.getTime() + 7  * 86_400_000);
+
+  const [allClients, allQuotes, allAppointments, recentActivity] = await Promise.all([
+    db.select().from(clientsTable).where(eq(clientsTable.orgId, orgId)),
+    db.select().from(quotesTable).where(eq(quotesTable.orgId, orgId)),
+    db.select().from(appointmentsTable).where(eq(appointmentsTable.orgId, orgId)).orderBy(desc(appointmentsTable.startTime)),
+    db.select().from(activityTable).where(and(eq(activityTable.orgId, orgId), gte(activityTable.createdAt, thirtyAgo))).orderBy(desc(activityTable.createdAt)).limit(20),
+  ]);
+
+  const pipelineQuotes  = allQuotes.filter(q => ["draft", "sent"].includes(q.status));
+  const acceptedQuotes  = allQuotes.filter(q => q.status === "accepted");
+  const pipelineValue   = pipelineQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  const confirmedValue  = acceptedQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  const inactiveClients = allClients.filter(c => ["inactive", "churned"].includes(c.status));
+  const leads           = allClients.filter(c => c.status === "lead");
+  const overdueAppts    = allAppointments.filter(a => a.status === "pending" && a.startTime < now);
+  const expiringQuotes  = allQuotes.filter(q => q.validUntil && ["draft","sent"].includes(q.status) && q.validUntil <= sevenFromNow && q.validUntil >= now);
+  const upcomingAppts   = allAppointments.filter(a => a.startTime >= now && a.startTime <= sevenFromNow);
+
+  const clientLines = allClients.slice(0, 15).map(c => {
+    const cq = allQuotes.filter(q => q.clientId === c.id);
+    const ca = allAppointments.filter(a => a.clientId === c.id);
+    const val = cq.reduce((s, q) => s + (q.total ?? 0), 0);
+    return `${c.name}${c.company ? " (" + c.company + ")" : ""}: ${c.status}, €${val} pipeline, ${cq.length} presupuestos, ${ca.length} citas`;
+  }).join("\n");
+
+  const quoteLines = pipelineQuotes.slice(0, 6).map(q => {
+    const c = allClients.find(cl => cl.id === q.clientId);
+    const days = q.validUntil ? Math.ceil((q.validUntil.getTime() - now.getTime()) / 86400000) : null;
+    return `"${q.title}" · ${c?.name ?? "?"} · €${q.total?.toLocaleString("es-ES")} · ${q.status}${days !== null ? " · vence en " + days + "d" : ""}`;
+  }).join("\n");
+
+  const context = [
+    "HOY: " + fmtDate(now),
+    "",
+    "RESUMEN NEGOCIO:",
+    `Pipeline: €${pipelineValue.toLocaleString("es-ES")} | Confirmado: €${confirmedValue.toLocaleString("es-ES")}`,
+    `Clientes totales: ${allClients.length} | Activos: ${allClients.filter(c => c.status === "active").length} | Leads: ${leads.length} | En riesgo: ${inactiveClients.length}`,
+    `Citas vencidas: ${overdueAppts.length} | Presupuestos expirando esta semana: ${expiringQuotes.length}`,
+    `Actividad 30d: ${recentActivity.length} registros`,
+    "",
+    "CLIENTES:",
+    clientLines || "Sin clientes",
+    "",
+    "PRESUPUESTOS ACTIVOS:",
+    quoteLines || "Sin presupuestos activos",
+    "",
+    "PRÓXIMAS CITAS (7 días):",
+    upcomingAppts.length > 0
+      ? upcomingAppts.slice(0, 5).map(a => {
+          const c = allClients.find(cl => cl.id === a.clientId);
+          return `${fmtDate(a.startTime)} ${fmtTime(a.startTime)}: ${a.title} con ${c?.name ?? "?"}`;
+        }).join("\n")
+      : "Ninguna",
+  ].join("\n");
+
+  const openai = new OpenAI({ apiKey });
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.25,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Eres un CEO experimentado con mentalidad de máximo retorno económico. Analiza los datos del negocio y da instrucciones directas, sin rodeos.
+
+Devuelve SOLO este JSON (sin texto fuera):
+{
+  "hacer_hoy": [
+    { "accion": "<acción concreta>", "cliente": "<nombre o null>", "impacto_euros": <número o null>, "razon": "<por qué hoy, en 1 frase>" }
+  ],
+  "no_hacer": [
+    { "accion": "<qué evitar>", "razon": "<por qué es una pérdida de tiempo/dinero>" }
+  ],
+  "cliente_prioritario": {
+    "nombre": "<nombre>", "empresa": "<empresa o null>", "valor_potencial": <número o null>,
+    "por_que": "<razón en 1 frase directa>", "accion_concreta": "<exactamente qué decirle o hacer>"
+  },
+  "oportunidad_cerrar": {
+    "titulo": "<presupuesto o servicio>", "cliente": "<nombre>", "valor": <número o null>,
+    "probabilidad": "muy alta|alta|media", "siguiente_paso": "<acción específica para cerrar>",
+    "plazo": "<hoy|esta semana|este mes>"
+  },
+  "riesgo_eliminar": {
+    "titulo": "<riesgo>", "dinero_en_juego": <número o null>,
+    "impacto_si_ignoras": "<consecuencia directa>", "accion_hoy": "<qué hacer exactamente>"
+  }
+}
+
+Reglas:
+- hacer_hoy: exactamente 3 acciones, ordenadas de mayor a menor impacto económico
+- no_hacer: exactamente 2 cosas
+- Sé brutal y directo como un CEO. Sin frases corporativas vacías.
+- Todo ordenado por impacto económico real.`,
+      },
+      { role: "user", content: context },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  let decision: Record<string, unknown>;
+  try {
+    decision = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    res.status(500).json({ error: "Error al parsear respuesta AI" });
+    return;
+  }
+
+  res.json({ generated_at: now.toISOString(), ...decision });
+});
