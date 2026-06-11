@@ -89,6 +89,7 @@ function CharBar({ count }: { count: number }) {
 export function WhatsAppModal({
   clientId, clientName, clientPhone, clientCompany, clientStatus, onClose,
 }: WhatsAppModalProps) {
+  console.log("WhatsAppModal mounted");
   const [step, setStep]       = useState<"select" | "generating" | "preview">("select");
   const [msgType, setMsgType] = useState<MessageType | null>(null);
   const [result, setResult]   = useState<GenerateResult | null>(null);

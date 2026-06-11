@@ -159,6 +159,7 @@ export function AIQuoteModal({
   clientId, clientName, clientEmail, clientPhone, clientCompany,
   defaultValue, onClose, onSaved,
 }: AIQuoteModalProps) {
+  console.log("AIQuoteModal mounted");
   const [step, setStep]             = useState<"input" | "generating" | "preview" | "saving" | "saved">("input");
   const [service, setService]       = useState("");
   const [estValue, setEstValue]     = useState(defaultValue ? String(defaultValue) : "");
