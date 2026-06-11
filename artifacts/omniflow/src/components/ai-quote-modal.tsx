@@ -251,38 +251,49 @@ export function AIQuoteModal({
   const quoteNum = saved ? String(saved.id).padStart(5, "0") : "PREV";
 
   const generate = useCallback(async () => {
-    console.log("START GENERATION — service:", service, "estValue:", estValue, "clientId:", clientId);
+    console.log("STEP 1 - start", { service, estValue, clientId });
     if (!service.trim()) {
       setError("Describe el servicio a presupuestar");
-      console.log("START GENERATION — aborted: service empty");
       return;
     }
     setError(null);
     setStep("generating");
-    console.log("CALLING API — URL:", BASE + "/api/quotes/ai-generate");
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log("STEP 2b - TIMEOUT after 10s, aborting fetch");
+      controller.abort();
+    }, 10000);
+
+    console.log("STEP 2 - calling fetch", BASE + "/api/quotes/ai-generate");
     try {
       const r = await fetch(`${BASE}/api/quotes/ai-generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        signal: controller.signal,
         body: JSON.stringify({
           clientId,
           serviceDescription: service,
           estimatedValue: estValue ? parseFloat(estValue) : null,
         }),
       });
-      console.log("API RESPONSE", { status: r.status, ok: r.ok, statusText: r.statusText });
+      clearTimeout(timeoutId);
+      console.log("STEP 3 - fetch completed", { status: r.status, ok: r.ok });
       if (!r.ok) {
         const e = (await r.json()) as { error?: string };
-        console.log("API ERROR BODY", e);
+        console.log("STEP 3b - error body", e);
         throw new Error(e.error ?? "Error");
       }
+      console.log("STEP 4 - parsing JSON");
       const data = (await r.json()) as AIQuoteResult;
-      console.log("SETTING RESULT", { title: data.title, items: data.items?.length });
+      console.log("STEP 5 - json parsed", { title: data.title, items: data.items?.length });
       setResult(data);
+      console.log("STEP 6 - result set, moving to preview");
       setStep("preview");
     } catch (e) {
-      console.log("ERROR", e);
+      clearTimeout(timeoutId);
+      console.log("ERROR", e instanceof Error ? e.message : e);
       setError(e instanceof Error ? e.message : "Error al generar");
       setStep("input");
     }
