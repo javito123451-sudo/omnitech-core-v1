@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AIQuoteModal } from "@/components/ai-quote-modal";
 import { WhatsAppModal } from "@/components/whatsapp-modal";
@@ -390,7 +391,7 @@ function ClientProfileDialog({
       </DialogContent>
     </Dialog>
 
-    {showQuote && (
+    {showQuote && createPortal(
       <AIQuoteModal
         clientId={client.id}
         clientName={client.name}
@@ -399,10 +400,11 @@ function ClientProfileDialog({
         clientCompany={client.company}
         defaultValue={client.value ? Number(client.value) : null}
         onClose={() => setShowQuote(false)}
-      />
+      />,
+      document.body
     )}
 
-    {showWhatsApp && (
+    {showWhatsApp && createPortal(
       <WhatsAppModal
         clientId={client.id}
         clientName={client.name}
@@ -410,7 +412,8 @@ function ClientProfileDialog({
         clientCompany={client.company}
         clientStatus={client.status}
         onClose={() => setShowWhatsApp(false)}
-      />
+      />,
+      document.body
     )}
   </>
   );
