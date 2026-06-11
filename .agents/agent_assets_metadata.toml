@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "1BXpGyWItq6TAq_LZSF8h"
+uri = "file://presupuesto-miguel-perez.pdf"
+type = "pdf"
+title = "Presupuesto · miguel perez · 5.445,00 €"
