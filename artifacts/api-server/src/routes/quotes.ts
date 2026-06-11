@@ -226,7 +226,7 @@ quotesRouter.patch("/:id/status", async (req, res) => {
     if (isNaN(quoteId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
     const { status } = req.body as { status: string };
-    const VALID = ["draft", "sent", "accepted", "rejected", "expired"];
+    const VALID = ["draft", "sent", "pending", "accepted", "rejected"];
     if (!VALID.includes(status)) {
       res.status(400).json({ error: `Estado inválido. Valores permitidos: ${VALID.join(", ")}` });
       return;
@@ -292,6 +292,111 @@ quotesRouter.get("/:id/pdf", async (req, res) => {
     console.error("[Quotes PDF]", err);
     res.status(500).json({ error: String(err) });
   }
+});
+
+// ── POST /ai-prioritize — ¿Qué presupuesto perseguir hoy? ────────────────────
+quotesRouter.post("/ai-prioritize", async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
+
+  const orgId = req.orgId!;
+
+  const rows = await db
+    .select({
+      id:            quotesTable.id,
+      title:         quotesTable.title,
+      status:        quotesTable.status,
+      total:         quotesTable.total,
+      updatedAt:     quotesTable.updatedAt,
+      createdAt:     quotesTable.createdAt,
+      validUntil:    quotesTable.validUntil,
+      notes:         quotesTable.notes,
+      clientId:      quotesTable.clientId,
+      clientName:    clientsTable.name,
+      clientCompany: clientsTable.company,
+    })
+    .from(quotesTable)
+    .leftJoin(clientsTable, eq(quotesTable.clientId, clientsTable.id))
+    .where(and(eq(quotesTable.orgId, orgId)))
+    .orderBy(desc(quotesTable.createdAt));
+
+  const active = rows.filter(r => ["sent", "pending", "draft"].includes(r.status));
+  if (active.length === 0) {
+    res.json({ ranked: [], summary: "No hay presupuestos activos para analizar." });
+    return;
+  }
+
+  const now = new Date();
+  const PROB: Record<string, number> = { draft: 0.10, sent: 0.40, pending: 0.65 };
+
+  const scored = active.map(q => {
+    const daysSince = Math.max(1, Math.round((now.getTime() - new Date(q.updatedAt).getTime()) / 86_400_000));
+    const cappedDays = Math.min(daysSince, 30);
+    const prob = PROB[q.status] ?? 0.1;
+    const score = Math.round((q.total ?? 0) * prob * cappedDays);
+    return { ...q, score, daysSince, prob };
+  }).sort((a, b) => b.score - a.score);
+
+  const top5 = scored.slice(0, 5);
+
+  const listForAI = top5.map((q, i) =>
+    (i + 1) + ". #" + q.id + " - " + q.title +
+    " | Cliente: " + (q.clientName ?? "Desconocido") +
+    (q.clientCompany ? " (" + q.clientCompany + ")" : "") +
+    " | Total: " + (q.total ?? 0) + " EUR" +
+    " | Estado: " + q.status +
+    " | Dias sin cambio: " + q.daysSince +
+    " | Score: " + q.score
+  ).join("\n");
+
+  const openai = new OpenAI({ apiKey });
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.3,
+    response_format: { type: "json_object" },
+    max_tokens: 600,
+    messages: [
+      {
+        role: "system",
+        content: `Eres un consultor comercial senior. Analiza los presupuestos ordenados por score (valor x probabilidad x dias sin respuesta).
+Devuelve SOLO este JSON:
+{
+  "top_id": <id del presupuesto 1>,
+  "summary": "<1-2 frases: por qué este presupuesto merece atención hoy>",
+  "actions": [
+    { "id": <quote_id>, "action": "<acción concreta a tomar>", "reason": "<por qué ahora>" }
+  ]
+}
+El array actions debe tener exactamente los mismos IDs en el mismo orden. Solo JSON.`,
+      },
+      { role: "user", content: "Presupuestos a analizar (ordenados por score):\n" + listForAI },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  let ai: { top_id?: number; summary?: string; actions?: { id: number; action: string; reason: string }[] };
+  try { ai = JSON.parse(raw) as typeof ai; } catch { ai = {}; }
+
+  const actionMap = new Map((ai.actions ?? []).map(a => [a.id, a]));
+
+  res.json({
+    ranked: top5.map(q => ({
+      id:          q.id,
+      title:       q.title,
+      status:      q.status,
+      total:       q.total,
+      clientName:  q.clientName,
+      clientCompany: q.clientCompany,
+      daysSince:   q.daysSince,
+      score:       q.score,
+      prob:        q.prob,
+      isTop:       q.id === ai.top_id,
+      action:      actionMap.get(q.id)?.action ?? null,
+      reason:      actionMap.get(q.id)?.reason ?? null,
+    })),
+    summary: ai.summary ?? null,
+    generated_at: now.toISOString(),
+  });
 });
 
 // ── POST /ai-generate — AI Quote Generator ────────────────────────────────────

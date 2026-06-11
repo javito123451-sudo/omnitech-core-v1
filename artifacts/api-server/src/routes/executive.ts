@@ -90,11 +90,15 @@ executiveRouter.get("/", async (req, res) => {
   ]);
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
-  const pipelineQuotes  = allQuotes.filter(q => ["draft", "sent"].includes(q.status));
+  const pipelineQuotes  = allQuotes.filter(q => ["draft", "sent", "pending"].includes(q.status));
   const acceptedQuotes  = allQuotes.filter(q => q.status === "accepted");
-  const closedQuotes    = allQuotes.filter(q => ["accepted","rejected","expired"].includes(q.status));
+  const closedQuotes    = allQuotes.filter(q => ["accepted", "rejected"].includes(q.status));
+  const sentQuotes      = allQuotes.filter(q => q.status === "sent");
+  const pendingQuotes   = allQuotes.filter(q => q.status === "pending");
   const pipelineValue   = pipelineQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
   const confirmedValue  = acceptedQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  const totalSent       = sentQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  const totalPendingVal = pendingQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
   const activeClients   = allClients.filter(c => c.status === "active").length;
   const leadsCount      = allClients.filter(c => c.status === "lead").length;
   const atRiskCount     = allClients.filter(c => ["inactive","churned"].includes(c.status)).length;
@@ -103,15 +107,19 @@ executiveRouter.get("/", async (req, res) => {
     : null;
 
   const kpis = {
-    pipeline_value:  Math.round(pipelineValue),
-    confirmed_value: Math.round(confirmedValue),
-    active_clients:  activeClients,
-    leads:           leadsCount,
-    at_risk:         atRiskCount,
-    total_clients:   allClients.length,
-    conversion_rate: conversionRate,
-    total_quotes:    allQuotes.length,
-    activity_30d:    recentActivity.length,
+    pipeline_value:   Math.round(pipelineValue),
+    confirmed_value:  Math.round(confirmedValue),
+    active_clients:   activeClients,
+    leads:            leadsCount,
+    at_risk:          atRiskCount,
+    total_clients:    allClients.length,
+    conversion_rate:  conversionRate,
+    total_quotes:     allQuotes.length,
+    activity_30d:     recentActivity.length,
+    total_sent:       Math.round(totalSent),
+    total_accepted:   Math.round(confirmedValue),
+    total_pending:    Math.round(totalPendingVal),
+    closing_rate:     conversionRate,
   };
 
   // ── Revenue Forecast ──────────────────────────────────────────────────────

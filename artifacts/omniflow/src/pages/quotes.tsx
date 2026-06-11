@@ -15,6 +15,8 @@ import { useToast }  from "@/hooks/use-toast";
 import {
   Plus, FileText, Download, Trash2, Pencil, Search, X,
   ChevronRight, Euro, Calendar, User, Package,
+  Brain, Sparkles, TrendingUp, CheckCircle2, Clock,
+  Target, Send, AlertCircle, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -60,19 +62,38 @@ interface QuoteDetail extends QuoteRow {
   items:  QuoteItem[];
   client: Client | null;
 }
+interface PriorityQuote {
+  id:            number;
+  title:         string;
+  status:        string;
+  total:         number;
+  clientName:    string | null;
+  clientCompany: string | null;
+  daysSince:     number;
+  score:         number;
+  prob:          number;
+  isTop:         boolean;
+  action:        string | null;
+  reason:        string | null;
+}
+interface PriorityResult {
+  ranked:       PriorityQuote[];
+  summary:      string | null;
+  generated_at: string;
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const STATUS_META: Record<string, { label: string; cls: string }> = {
-  draft:    { label: "Borrador",   cls: "bg-muted text-muted-foreground" },
-  sent:     { label: "Enviado",    cls: "bg-blue-500/15 text-blue-400 border-blue-500/20" },
-  accepted: { label: "Aceptado",   cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20" },
-  rejected: { label: "Rechazado",  cls: "bg-red-500/15 text-red-400 border-red-500/20" },
-  expired:  { label: "Expirado",   cls: "bg-amber-500/15 text-amber-400 border-amber-500/20" },
+const STATUS_META: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
+  draft:    { label: "Borrador",  cls: "bg-muted text-muted-foreground",                            icon: FileText },
+  sent:     { label: "Enviado",   cls: "bg-blue-500/15 text-blue-400 border-blue-500/20",           icon: Send },
+  pending:  { label: "Pendiente", cls: "bg-amber-500/15 text-amber-400 border-amber-500/20",        icon: Clock },
+  accepted: { label: "Aceptado",  cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",  icon: CheckCircle2 },
+  rejected: { label: "Rechazado", cls: "bg-red-500/15 text-red-400 border-red-500/20",              icon: X },
 };
-const TABS = ["todos", "draft", "sent", "accepted", "rejected", "expired"] as const;
+const TABS = ["todos", "draft", "sent", "pending", "accepted", "rejected"] as const;
 const TAB_LABELS: Record<string, string> = {
   todos: "Todos", draft: "Borrador", sent: "Enviado",
-  accepted: "Aceptado", rejected: "Rechazado", expired: "Expirado",
+  pending: "Pendiente", accepted: "Aceptado", rejected: "Rechazado",
 };
 
 const eur = (n: number) =>
@@ -101,6 +122,182 @@ async function fetchQuote(id: number): Promise<QuoteDetail> {
 // ── Empty line-item ───────────────────────────────────────────────────────────
 function emptyItem(): QuoteItem {
   return { description: "", quantity: 1, unitPrice: 0, total: 0, orderIndex: 0 };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AI Priority Panel
+// ═════════════════════════════════════════════════════════════════════════════
+function AIPriorityPanel({ onViewQuote }: { onViewQuote: (id: number) => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<PriorityResult | null>(null);
+
+  const prioritize = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(api("/api/quotes/ai-prioritize"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json() as Promise<PriorityResult>;
+    },
+    onSuccess: (data) => { setResult(data); setOpen(true); },
+    onError: (e: Error) => toast({ title: "Error IA", description: e.message, variant: "destructive" }),
+  });
+
+  const scoreColor = (score: number, max: number) => {
+    const pct = max > 0 ? score / max : 0;
+    if (pct >= 0.7) return "text-red-400";
+    if (pct >= 0.4) return "text-amber-400";
+    return "text-blue-400";
+  };
+
+  const maxScore = result ? Math.max(...result.ranked.map(r => r.score), 1) : 1;
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        onClick={() => prioritize.mutate()}
+        disabled={prioritize.isPending}
+        className="gap-2 border-primary/30 text-primary hover:bg-primary/10"
+      >
+        {prioritize.isPending
+          ? <Loader2 className="w-4 h-4 animate-spin" />
+          : <Brain className="w-4 h-4" />}
+        ¿Qué presupuesto perseguir hoy?
+      </Button>
+
+      {open && result && (
+        <Dialog open onOpenChange={v => !v && setOpen(false)}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Brain className="w-5 h-5 text-primary" />
+                Priorización IA — Presupuestos
+              </DialogTitle>
+            </DialogHeader>
+
+            {result.summary && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex gap-3">
+                <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <p className="text-sm text-foreground leading-relaxed">{result.summary}</p>
+              </div>
+            )}
+
+            {result.ranked.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                <Target className="w-8 h-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No hay presupuestos activos para priorizar.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Ordenados por: valor × probabilidad × días sin respuesta
+                </p>
+                {result.ranked.map((q, idx) => {
+                  const sm = STATUS_META[q.status] ?? STATUS_META["draft"];
+                  const ScoreIcon = sm.icon;
+                  return (
+                    <div
+                      key={q.id}
+                      className={cn(
+                        "rounded-xl border p-4 space-y-2.5 transition-all",
+                        q.isTop
+                          ? "border-primary/40 bg-primary/5"
+                          : "border-border bg-card",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={cn(
+                            "w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0",
+                            q.isTop ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                          )}>
+                            {idx + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm truncate">{q.title}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {q.clientName}{q.clientCompany ? ` · ${q.clientCompany}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {q.isTop && (
+                            <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                              HOY
+                            </span>
+                          )}
+                          <Badge className={cn("text-xs border", sm.cls)}>
+                            {sm.label}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                          <p className="text-[10px] text-muted-foreground">Valor</p>
+                          <p className="text-xs font-bold text-foreground">{eur(q.total ?? 0)}</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                          <p className="text-[10px] text-muted-foreground">Probabilidad</p>
+                          <p className="text-xs font-bold text-foreground">{Math.round(q.prob * 100)}%</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                          <p className="text-[10px] text-muted-foreground">Sin respuesta</p>
+                          <p className={cn("text-xs font-bold", scoreColor(q.score, maxScore))}>
+                            {q.daysSince}d
+                          </p>
+                        </div>
+                      </div>
+
+                      {q.action && (
+                        <div className="flex items-start gap-2 rounded-lg bg-muted/30 p-2.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-semibold text-foreground">{q.action}</p>
+                            {q.reason && <p className="text-[11px] text-muted-foreground">{q.reason}</p>}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-muted-foreground">Score:</span>
+                          <span className={cn("text-[11px] font-bold tabular-nums", scoreColor(q.score, maxScore))}>
+                            {q.score.toLocaleString("es-ES")}
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={q.isTop ? "default" : "outline"}
+                          className="h-7 text-xs"
+                          onClick={() => { setOpen(false); onViewQuote(q.id); }}
+                        >
+                          Ver presupuesto <ChevronRight className="w-3 h-3 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-border">
+              <p className="text-[10px] text-muted-foreground">
+                Generado {new Date(result.generated_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+              </p>
+              <Button size="sm" variant="outline" onClick={() => { setResult(null); prioritize.mutate(); }}>
+                <Brain className="w-3.5 h-3.5 mr-1.5" /> Regenerar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -499,7 +696,7 @@ function QuoteDetailModal({
               Cambiar estado
             </p>
             <div className="flex flex-wrap gap-2">
-              {(["draft", "sent", "accepted", "rejected", "expired"] as const).map(s => {
+              {(["draft", "sent", "pending", "accepted", "rejected"] as const).map(s => {
                 const m = STATUS_META[s];
                 return (
                   <Button
@@ -545,6 +742,30 @@ function QuoteDetailModal({
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Metric Card
+// ═════════════════════════════════════════════════════════════════════════════
+function MetricCard({
+  label, value, sub, icon: Icon, accentClass,
+}: {
+  label: string; value: string; sub?: string;
+  icon: React.ElementType; accentClass: string;
+}) {
+  return (
+    <div className={cn(
+      "rounded-xl border p-4 flex flex-col gap-1.5",
+      "bg-card", accentClass,
+    )}>
+      <div className="flex items-center gap-1.5">
+        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
+      </div>
+      <p className="text-2xl font-bold text-foreground leading-none">{value}</p>
+      {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Main Quotes Page
 // ═════════════════════════════════════════════════════════════════════════════
 export default function Quotes() {
@@ -571,11 +792,13 @@ export default function Quotes() {
     return rows;
   }, [quotes, tab, search]);
 
-  // Stats
-  const totalAll      = quotes.length;
-  const totalValue    = quotes.filter(q => q.status !== "rejected" && q.status !== "expired")
-    .reduce((a, q) => a + q.total, 0);
+  // ── Metrics ──────────────────────────────────────────────────────────────
+  const totalSent     = quotes.filter(q => q.status === "sent").reduce((a, q) => a + q.total, 0);
+  const totalAccepted = quotes.filter(q => q.status === "accepted").reduce((a, q) => a + q.total, 0);
+  const totalPending  = quotes.filter(q => q.status === "pending").reduce((a, q) => a + q.total, 0);
+  const closedCount   = quotes.filter(q => ["accepted", "rejected"].includes(q.status)).length;
   const acceptedCount = quotes.filter(q => q.status === "accepted").length;
+  const closingRate   = closedCount > 0 ? Math.round((acceptedCount / closedCount) * 100) : null;
 
   const openView = (id: number) => { setSelectedId(id); setModal("view"); };
   const openEdit = async (id: number) => {
@@ -588,28 +811,65 @@ export default function Quotes() {
     <div className="flex flex-col h-full">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-border bg-card px-6 py-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
               Presupuestos
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {totalAll} presupuestos · Cartera activa {eur(totalValue)}
+              {quotes.length} presupuestos
               {acceptedCount > 0 && ` · ${acceptedCount} aceptado${acceptedCount > 1 ? "s" : ""}`}
             </p>
           </div>
-          <Button onClick={() => { setEditQuote(null); setModal("create"); }}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo presupuesto
-          </Button>
+          <div className="flex items-center gap-2">
+            <AIPriorityPanel onViewQuote={openView} />
+            <Button onClick={() => { setEditQuote(null); setModal("create"); }}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo presupuesto
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Metric Cards ────────────────────────────────────────────────────── */}
+      <div className="shrink-0 px-6 pt-4 pb-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <MetricCard
+            label="Total Enviado"
+            value={new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(totalSent)}
+            sub={`${quotes.filter(q => q.status === "sent").length} presupuesto${quotes.filter(q => q.status === "sent").length !== 1 ? "s" : ""}`}
+            icon={Send}
+            accentClass="border-blue-500/20"
+          />
+          <MetricCard
+            label="Total Aceptado"
+            value={new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(totalAccepted)}
+            sub={`${acceptedCount} cerrado${acceptedCount !== 1 ? "s" : ""}`}
+            icon={CheckCircle2}
+            accentClass="border-emerald-500/20"
+          />
+          <MetricCard
+            label="Total Pendiente"
+            value={new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(totalPending)}
+            sub={`${quotes.filter(q => q.status === "pending").length} en negociación`}
+            icon={Clock}
+            accentClass="border-amber-500/20"
+          />
+          <MetricCard
+            label="Tasa de Cierre"
+            value={closingRate !== null ? `${closingRate}%` : "—"}
+            sub={closedCount > 0 ? `${acceptedCount} de ${closedCount} cerrados` : "Sin datos aún"}
+            icon={TrendingUp}
+            accentClass="border-primary/20"
+          />
         </div>
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-border bg-card px-6 py-3 flex items-center gap-4">
         {/* Tabs */}
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
           {TABS.map(t => (
             <button
               key={t}

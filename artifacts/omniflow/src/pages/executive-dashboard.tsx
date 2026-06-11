@@ -26,6 +26,8 @@ interface Kpis {
   active_clients: number; leads: number; at_risk: number;
   total_clients: number; conversion_rate: number | null;
   total_quotes: number; activity_30d: number;
+  total_sent: number; total_accepted: number;
+  total_pending: number; closing_rate: number | null;
 }
 interface MonthPoint { label: string; actual: number | null; forecast: number | null; type: string; }
 interface Forecast {
@@ -1352,27 +1354,51 @@ export default function ExecutiveDashboardPage() {
                 {[...Array(4)].map((_, i) => <Sk key={i} className="h-24" />)}
               </div>
             ) : kpi && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KpiCard
-                  label="Pipeline Total" icon={TrendingUp} accent="border-amber-500/20"
-                  value={fmt(kpi.pipeline_value)}
-                  sub={`${kpi.total_quotes} presupuesto${kpi.total_quotes !== 1 ? "s" : ""} activos`}
-                />
-                <KpiCard
-                  label="Ingresos Confirmados" icon={DollarSign} accent="border-emerald-500/20"
-                  value={fmt(kpi.confirmed_value)}
-                  sub="Cerrado y confirmado" pulse
-                />
-                <KpiCard
-                  label="Clientes Activos" icon={Users} accent="border-blue-500/20"
-                  value={String(kpi.active_clients)}
-                  sub={`${kpi.leads} leads en pipeline`}
-                />
-                <KpiCard
-                  label="En Riesgo" icon={ShieldAlert} accent="border-red-500/20"
-                  value={String(kpi.at_risk)}
-                  sub={`de ${kpi.total_clients} clientes totales`}
-                />
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <KpiCard
+                    label="Pipeline Total" icon={TrendingUp} accent="border-amber-500/20"
+                    value={fmt(kpi.pipeline_value)}
+                    sub={`${kpi.total_quotes} presupuesto${kpi.total_quotes !== 1 ? "s" : ""} activos`}
+                  />
+                  <KpiCard
+                    label="Ingresos Confirmados" icon={DollarSign} accent="border-emerald-500/20"
+                    value={fmt(kpi.confirmed_value)}
+                    sub="Cerrado y confirmado" pulse
+                  />
+                  <KpiCard
+                    label="Clientes Activos" icon={Users} accent="border-blue-500/20"
+                    value={String(kpi.active_clients)}
+                    sub={`${kpi.leads} leads en pipeline`}
+                  />
+                  <KpiCard
+                    label="En Riesgo" icon={ShieldAlert} accent="border-red-500/20"
+                    value={String(kpi.at_risk)}
+                    sub={`de ${kpi.total_clients} clientes totales`}
+                  />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <KpiCard
+                    label="Total Enviado" icon={Send} accent="border-blue-500/15"
+                    value={fmt(kpi.total_sent ?? 0)}
+                    sub="Presupuestos enviados"
+                  />
+                  <KpiCard
+                    label="Total Aceptado" icon={CheckCircle2} accent="border-emerald-500/15"
+                    value={fmt(kpi.total_accepted ?? 0)}
+                    sub="Valor ganado" pulse
+                  />
+                  <KpiCard
+                    label="Total Pendiente" icon={Clock} accent="border-amber-500/15"
+                    value={fmt(kpi.total_pending ?? 0)}
+                    sub="En negociación"
+                  />
+                  <KpiCard
+                    label="Tasa de Cierre" icon={Target} accent="border-primary/15"
+                    value={kpi.closing_rate !== null ? `${kpi.closing_rate}%` : "—"}
+                    sub="Aceptados vs cerrados"
+                  />
+                </div>
               </div>
             )}
 
