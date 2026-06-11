@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useOrg } from "@/lib/orgContext";
 import { cn } from "@/lib/utils";
+import { authFetch } from "@/lib/authFetch";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -94,8 +95,8 @@ export default function Settings() {
     setTeamLoading(true);
     try {
       const [mRes, iRes] = await Promise.all([
-        fetch(`${BASE_URL}/api/organizations/members`, { credentials: "include" }),
-        fetch(`${BASE_URL}/api/organizations/invitations`, { credentials: "include" }),
+        authFetch(`${BASE_URL}/api/organizations/members`),
+        authFetch(`${BASE_URL}/api/organizations/invitations`),
       ]);
       if (mRes.ok) setMembers(await mRes.json());
       if (iRes.ok) setInvitations(await iRes.json());
@@ -114,10 +115,9 @@ export default function Settings() {
     setSaveErr(null);
     setSaveMsg(null);
     try {
-      const res = await fetch(`${BASE_URL}/api/organizations/me`, {
+      const res = await authFetch(`${BASE_URL}/api/organizations/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ name: orgName.trim() }),
       });
       const body = await res.json();
@@ -137,10 +137,9 @@ export default function Settings() {
     setInviting(true);
     setInviteErr(null);
     try {
-      const res = await fetch(`${BASE_URL}/api/organizations/invitations`, {
+      const res = await authFetch(`${BASE_URL}/api/organizations/invitations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
       });
       const body = await res.json();
@@ -157,14 +156,14 @@ export default function Settings() {
 
   const handleCancelInvitation = async (id: number) => {
     try {
-      await fetch(`${BASE_URL}/api/organizations/invitations/${id}`, { method: "DELETE", credentials: "include" });
+      await authFetch(`${BASE_URL}/api/organizations/invitations/${id}`, { method: "DELETE" });
       setInvitations((prev) => prev.filter((i) => i.id !== id));
     } catch {}
   };
 
   const handleRemoveMember = async (userId: number) => {
     try {
-      await fetch(`${BASE_URL}/api/organizations/members/${userId}`, { method: "DELETE", credentials: "include" });
+      await authFetch(`${BASE_URL}/api/organizations/members/${userId}`, { method: "DELETE" });
       setMembers((prev) => prev.filter((m) => m.userId !== userId));
     } catch {}
   };

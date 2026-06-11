@@ -26,6 +26,7 @@ import type { Appointment } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { authFetch } from "@/lib/authFetch";
 
 // ─── Extended type for new fields ─────────────────────────────────────────────
 
@@ -417,7 +418,7 @@ function AiPanel({ onClose, onFillForm, selectedAppt }: {
     setResultJson(null);
     setError("");
     try {
-      const r = await fetch(`${BASE}/api/calendar-ai`, {
+      const r = await authFetch(`${BASE}/api/calendar-ai`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, context }),

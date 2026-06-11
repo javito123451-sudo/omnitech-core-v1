@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { authFetch } from "@/lib/authFetch";
+
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -127,10 +129,9 @@ export function WhatsAppModal({
     setStep("generating");
     setError(null);
     try {
-      const r = await fetch(`${BASE}/api/whatsapp/generate`, {
+      const r = await authFetch(`${BASE}/api/whatsapp/generate`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body:    JSON.stringify({ clientId, messageType: type }),
       });
       if (!r.ok) { const e = await r.json() as { error?: string }; throw new Error(e.error ?? "Error"); }
@@ -163,10 +164,9 @@ export function WhatsAppModal({
     setSending(true);
     setError(null);
     try {
-      const r = await fetch(`${BASE}/api/whatsapp/send`, {
+      const r = await authFetch(`${BASE}/api/whatsapp/send`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body:    JSON.stringify({ to: clientPhone, message: edited }),
       });
       const data = await r.json() as { success?: boolean; pending?: boolean; fallback?: string; error?: string; reason?: string };

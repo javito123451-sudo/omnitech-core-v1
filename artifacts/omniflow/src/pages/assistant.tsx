@@ -22,6 +22,7 @@ import {
 } from "@workspace/api-client-react";
 import type { Client, Appointment } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { authFetch } from "@/lib/authFetch";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Role = "user" | "ai";
@@ -707,7 +708,7 @@ export default function Assistant() {
   // ── Organizational memory ─────────────────────────────────────────────────
   const fetchMemories = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/memory`, { credentials: "include" });
+      const res = await authFetch(`${API_BASE}/api/memory`);
       if (res.ok) setMemories(await res.json() as AgentMemory[]);
     } catch { /* ignore */ }
   }, []);
@@ -716,7 +717,7 @@ export default function Assistant() {
   // ── Sync sessions from DB on mount (restores after page reload) ────────────
   const syncSessionsFromDB = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/chat/sessions`, { credentials: "include" });
+      const res = await authFetch(`${API_BASE}/api/chat/sessions`);
       if (!res.ok) return;
       const dbSessions = await res.json() as Array<{
         id: string; title: string | null; clientId: number | null; updatedAt: string;
@@ -882,10 +883,9 @@ export default function Assistant() {
 
     try {
       const currentDbSessionId = sessionsRef.current.find(s => s.id === targetId)?.dbSessionId;
-      const res = await fetch(`${API_BASE}/api/chat`, {
-        method:      "POST",
-        headers:     { "Content-Type": "application/json" },
-        credentials: "include",
+      const res = await authFetch(`${API_BASE}/api/chat`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages:      history,
           clientContext: currentApiContext,
@@ -1151,7 +1151,7 @@ export default function Assistant() {
                 onAddSubmit={async () => {
                   if (!addMemKey.trim() || !addMemVal.trim()) return;
                   try {
-                    const res = await fetch(`${API_BASE}/api/memory`, {
+                    const res = await authFetch(`${API_BASE}/api/memory`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ key: addMemKey, value: addMemVal }),
@@ -1170,7 +1170,7 @@ export default function Assistant() {
                   } catch { /* ignore */ }
                 }}
                 onDelete={async (id) => {
-                  await fetch(`${API_BASE}/api/memory/${id}`, { method: "DELETE" });
+                  await authFetch(`${API_BASE}/api/memory/${id}`, { method: "DELETE" });
                   setMemories(prev => prev.filter(m => m.id !== id));
                 }}
                 onClose={() => setMemoryPanelOpen(false)}

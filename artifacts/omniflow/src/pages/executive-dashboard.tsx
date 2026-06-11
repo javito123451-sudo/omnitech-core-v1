@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { authFetch } from "@/lib/authFetch";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -76,13 +77,13 @@ interface ChatMessage { role: "user" | "assistant"; content: string; }
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 async function fetchIntelligence(): Promise<IntelligenceData> {
-  const r = await fetch(`${BASE}/api/executive`);
+  const r = await authFetch(`${BASE}/api/executive`);
   if (!r.ok) throw new Error("Error");
   return r.json() as Promise<IntelligenceData>;
 }
 
 async function fetchStrategicBrief(): Promise<StrategicBrief> {
-  const r = await fetch(`${BASE}/api/executive`);
+  const r = await authFetch(`${BASE}/api/executive`);
   if (!r.ok) throw new Error("Error");
   const d = await r.json() as IntelligenceData;
   return {
@@ -1012,7 +1013,7 @@ function InlineChat({ onClose }: { onClose: () => void }) {
     setMessages(prev => [...prev, { role: "assistant", content: "" }]);
 
     try {
-      const resp = await fetch(`${BASE}/api/chat`, {
+      const resp = await authFetch(`${BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: allMsgs.map(m => ({ role: m.role, content: m.content })), sessionId }),
@@ -1175,7 +1176,7 @@ export default function ExecutiveDashboardPage() {
     setCeoLoading(true);
     setCeoError(null);
     try {
-      const r = await fetch(`${BASE}/api/executive/ceo`, { method: "POST" });
+      const r = await authFetch(`${BASE}/api/executive/ceo`, { method: "POST" });
       if (!r.ok) throw new Error("Error al generar análisis CEO");
       const json = await r.json() as CeoDecision;
       setCeoData(json);
@@ -1191,7 +1192,7 @@ export default function ExecutiveDashboardPage() {
     setReportLoading(true);
     setReportError(null);
     try {
-      const r = await fetch(`${BASE}/api/executive/report`, { method: "POST" });
+      const r = await authFetch(`${BASE}/api/executive/report`, { method: "POST" });
       if (!r.ok) throw new Error("Error al generar el informe");
       const json = await r.json() as ExecReport;
       setReportData(json);
@@ -1212,7 +1213,7 @@ export default function ExecutiveDashboardPage() {
 
   const { data: allClients } = useQuery<{ id: number; name: string; email: string; phone?: string | null; company?: string | null; value?: string | null }[]>({
     queryKey: ["clients-lookup"],
-    queryFn: () => fetch(BASE + "/api/clients").then(r => r.json()) as Promise<{ id: number; name: string; email: string; phone?: string | null; company?: string | null; value?: string | null }[]>,
+    queryFn: () => authFetch(BASE + "/api/clients").then(r => r.json()) as Promise<{ id: number; name: string; email: string; phone?: string | null; company?: string | null; value?: string | null }[]>,
     staleTime: 300_000,
     enabled: true,
   });

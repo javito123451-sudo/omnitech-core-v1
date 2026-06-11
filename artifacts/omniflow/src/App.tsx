@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
-import { ClerkProvider, SignIn, SignUp, Show, useClerk } from "@clerk/react";
+import { ClerkProvider, SignIn, SignUp, Show, useClerk, useAuth } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { registerTokenGetter } from "@/lib/authFetch";
 import { shadcn } from "@clerk/themes";
 import { Switch, Route, useLocation, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -266,6 +268,20 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
+function ClerkTokenSync() {
+  const { getToken } = useAuth();
+  useEffect(() => {
+    const getter = () => getToken();
+    setAuthTokenGetter(getter);
+    registerTokenGetter(getter);
+    return () => {
+      setAuthTokenGetter(null);
+      registerTokenGetter(null);
+    };
+  }, [getToken]);
+  return null;
+}
+
 function ClerkProviderWithRoutes() {
   const [, setLocation] = useLocation();
 
@@ -297,6 +313,7 @@ function ClerkProviderWithRoutes() {
     >
       <QueryClientProvider client={queryClient}>
         <ClerkQueryClientCacheInvalidator />
+        <ClerkTokenSync />
         <OrgProvider>
           <TooltipProvider>
             <AppRoutes />

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { authFetch } from "@/lib/authFetch";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, Legend,
@@ -49,7 +50,7 @@ interface IntelligenceData {
 
 // ── Fetch ────────────────────────────────────────────────────────────────────
 async function fetchIntelligence(): Promise<IntelligenceData> {
-  const r = await fetch(`${BASE}/api/executive`);
+  const r = await authFetch(`${BASE}/api/executive`);
   if (!r.ok) throw new Error("Error cargando intelligence layer");
   return r.json() as Promise<IntelligenceData>;
 }

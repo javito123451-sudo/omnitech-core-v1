@@ -3,6 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { Hexagon, Loader2, CheckCircle2, AlertCircle, Users } from "lucide-react";
 import { useUser } from "@clerk/react";
 import { useOrg } from "@/lib/orgContext";
+import { authFetch } from "@/lib/authFetch";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -32,7 +33,7 @@ export default function InvitePage() {
 
   useEffect(() => {
     if (!token) { setFetchError("Token no válido."); return; }
-    fetch(`${BASE_URL}/api/invitations/${token}`)
+    authFetch(`${BASE_URL}/api/invitations/${token}`)
       .then(async (res) => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? `Error ${res.status}`);
@@ -45,9 +46,8 @@ export default function InvitePage() {
     setAccepting(true);
     setAcceptError(null);
     try {
-      const res = await fetch(`${BASE_URL}/api/invitations/${token}/accept`, {
+      const res = await authFetch(`${BASE_URL}/api/invitations/${token}/accept`, {
         method: "POST",
-        credentials: "include",
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `Error ${res.status}`);

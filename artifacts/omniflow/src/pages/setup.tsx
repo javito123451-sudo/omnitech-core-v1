@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useOrg } from "@/lib/orgContext";
+import { authFetch } from "@/lib/authFetch";
 import { useLocation } from "wouter";
 import { Hexagon, Building2, ArrowRight, Loader2 } from "lucide-react";
 
@@ -32,10 +33,9 @@ export default function Setup() {
     setError(null);
 
     try {
-      const res = await fetch(`${BASE_URL}/api/auth/setup-org`, {
+      const res = await authFetch(`${BASE_URL}/api/auth/setup-org`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ orgName: orgName.trim() }),
       });
 

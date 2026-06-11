@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useUser } from "@clerk/react";
+import { useUser, useAuth } from "@clerk/react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -48,6 +48,7 @@ export function useOrg() {
 
 export function OrgProvider({ children }: { children: ReactNode }) {
   const { isSignedIn, isLoaded } = useUser();
+  const { getToken } = useAuth();
   const [org, setOrg] = useState<OrgInfo | null>(null);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,7 +69,11 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(true);
-    fetch(`${BASE_URL}/api/auth/me`, { credentials: "include" })
+    getToken()
+      .then(token => {
+        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+        return fetch(`${BASE_URL}/api/auth/me`, { credentials: "include", headers });
+      })
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
         return res.json() as Promise<{ user: UserInfo; organization: OrgInfo | null }>;

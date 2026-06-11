@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { authFetch } from "@/lib/authFetch";
+
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const api  = (path: string) => `${BASE}${path}`;
 
@@ -104,17 +106,17 @@ const fmt = (iso: string) =>
 
 // ── Fetchers ──────────────────────────────────────────────────────────────────
 async function fetchQuotes(): Promise<QuoteRow[]> {
-  const r = await fetch(api("/api/quotes"), { credentials: "include" });
+  const r = await authFetch(api("/api/quotes"));
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
 async function fetchClients(): Promise<Client[]> {
-  const r = await fetch(api("/api/clients"), { credentials: "include" });
+  const r = await authFetch(api("/api/clients"));
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
 async function fetchQuote(id: number): Promise<QuoteDetail> {
-  const r = await fetch(api(`/api/quotes/${id}`), { credentials: "include" });
+  const r = await authFetch(api(`/api/quotes/${id}`));
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -134,10 +136,9 @@ function AIPriorityPanel({ onViewQuote }: { onViewQuote: (id: number) => void })
 
   const prioritize = useMutation({
     mutationFn: async () => {
-      const r = await fetch(api("/api/quotes/ai-prioritize"), {
+      const r = await authFetch(api("/api/quotes/ai-prioritize"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json() as Promise<PriorityResult>;
@@ -359,11 +360,10 @@ function QuoteFormModal({
       };
       const url    = editQuote ? api(`/api/quotes/${editQuote.id}`) : api("/api/quotes");
       const method = editQuote ? "PATCH" : "POST";
-      const r = await fetch(url, {
+      const r = await authFetch(url, {
         method,
-        headers:     { "Content-Type": "application/json" },
-        credentials: "include",
-        body:        JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(body),
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -550,11 +550,10 @@ function QuoteDetailModal({
 
   const changeStatus = useMutation({
     mutationFn: async (status: string) => {
-      const r = await fetch(api(`/api/quotes/${quoteId}/status`), {
-        method:      "PATCH",
-        headers:     { "Content-Type": "application/json" },
-        credentials: "include",
-        body:        JSON.stringify({ status }),
+      const r = await authFetch(api(`/api/quotes/${quoteId}/status`), {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ status }),
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -568,9 +567,7 @@ function QuoteDetailModal({
 
   const deleteQuote = useMutation({
     mutationFn: async () => {
-      const r = await fetch(api(`/api/quotes/${quoteId}`), {
-        method: "DELETE", credentials: "include",
-      });
+      const r = await authFetch(api(`/api/quotes/${quoteId}`), { method: "DELETE" });
       if (!r.ok) throw new Error(await r.text());
     },
     onSuccess: () => {
@@ -802,7 +799,7 @@ export default function Quotes() {
 
   const openView = (id: number) => { setSelectedId(id); setModal("view"); };
   const openEdit = async (id: number) => {
-    const r = await fetch(api(`/api/quotes/${id}`), { credentials: "include" });
+    const r = await authFetch(api(`/api/quotes/${id}`));
     const q = await r.json() as QuoteDetail;
     setEditQuote(q); setSelectedId(id); setModal("edit");
   };

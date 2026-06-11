@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { authFetch } from "@/lib/authFetch";
+
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -267,10 +269,9 @@ export function AIQuoteModal({
 
     console.log("STEP 2 - calling fetch", BASE + "/api/quotes/ai-generate");
     try {
-      const r = await fetch(`${BASE}/api/quotes/ai-generate`, {
+      const r = await authFetch(`${BASE}/api/quotes/ai-generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         signal: controller.signal,
         body: JSON.stringify({
           clientId,
@@ -304,10 +305,9 @@ export function AIQuoteModal({
     setStep("saving");
     setError(null);
     try {
-      const r = await fetch(`${BASE}/api/quotes`, {
+      const r = await authFetch(`${BASE}/api/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           clientId,
           title: result.title,
