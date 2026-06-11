@@ -5,3 +5,4 @@ export * from "./messages";
 export * from "./activity";
 export * from "./ai-memory";
 export * from "./quotes";
+export * from "./integrations";

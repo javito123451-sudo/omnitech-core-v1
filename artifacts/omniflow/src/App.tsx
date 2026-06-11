@@ -24,6 +24,7 @@ import MemoryPage from "@/pages/memory";
 import Quotes from "@/pages/quotes";
 import ExecutivePage from "@/pages/executive";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
+import IntegrationsPage from "@/pages/integrations";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -238,6 +239,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <ExecutiveDashboardPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/integrations">
+        <ProtectedRoute>
+          <MainLayout>
+            <IntegrationsPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>
