@@ -14,6 +14,7 @@ import { invitationsRouter } from "./invitations";
 import { memoryRouter } from "./memory";
 import { quotesRouter } from "./quotes";
 import { executiveRouter } from "./executive";
+import { whatsappRouter } from "./whatsapp";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -53,5 +54,6 @@ router.use("/calendar-ai", calendarAiRouter);
 router.use("/memory", memoryRouter);
 router.use("/quotes", quotesRouter);
 router.use("/executive", executiveRouter);
+router.use("/whatsapp", whatsappRouter);
 
 export default router;

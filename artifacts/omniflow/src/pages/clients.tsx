@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AIQuoteModal } from "@/components/ai-quote-modal";
+import { WhatsAppModal } from "@/components/whatsapp-modal";
 import {
   useListClients, useCreateClient, useUpdateClient, useDeleteClient,
   getListClientsQueryKey,
@@ -228,6 +229,7 @@ function ClientProfileDialog({
   const deleteClient = useDeleteClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showQuote, setShowQuote]         = useState(false);
+  const [showWhatsApp, setShowWhatsApp]   = useState(false);
   const tags = parseTags(client.tags);
 
   const handleDelete = () => {
@@ -335,14 +337,23 @@ function ClientProfileDialog({
         {/* Actions */}
         {!confirmDelete ? (
           <div className="space-y-2 pt-2">
-            <Button
-              onClick={() => setShowQuote(true)}
-              className="w-full h-9 text-sm bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-500 shadow-md shadow-primary/20 font-bold"
-            >
-              <span className="mr-1.5">📄</span> Generar Presupuesto IA
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => setShowWhatsApp(true)}
+                variant="outline"
+                className="h-9 text-sm border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold"
+              >
+                <span className="mr-1.5">📲</span> WhatsApp IA
+              </Button>
+              <Button
+                onClick={() => setShowQuote(true)}
+                className="h-9 text-sm bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-500 font-bold"
+              >
+                <span className="mr-1.5">📄</span> Presupuesto IA
+              </Button>
+            </div>
             <div className="flex gap-2">
-              <Button onClick={onEdit} className="flex-1 bg-primary/10 hover:bg-primary/20 border border-primary/25 text-primary h-9 text-sm" variant="outline">
+              <Button onClick={onEdit} className="flex-1 bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-muted-foreground hover:text-foreground h-9 text-sm" variant="outline">
                 <Pencil className="w-3.5 h-3.5 mr-1.5" /> Editar
               </Button>
               <Button
@@ -385,6 +396,17 @@ function ClientProfileDialog({
         clientCompany={client.company}
         defaultValue={client.value ? Number(client.value) : null}
         onClose={() => setShowQuote(false)}
+      />
+    )}
+
+    {showWhatsApp && (
+      <WhatsAppModal
+        clientId={client.id}
+        clientName={client.name}
+        clientPhone={client.phone}
+        clientCompany={client.company}
+        clientStatus={client.status}
+        onClose={() => setShowWhatsApp(false)}
       />
     )}
   </>
