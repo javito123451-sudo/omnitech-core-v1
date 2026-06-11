@@ -14,7 +14,7 @@ import { invitationsRouter } from "./invitations";
 import { memoryRouter } from "./memory";
 import { quotesRouter } from "./quotes";
 import { executiveRouter } from "./executive";
-import { whatsappRouter } from "./whatsapp";
+import { whatsappRouter, whatsappWebhookRouter } from "./whatsapp";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -22,6 +22,9 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use("/auth", authRouter);
 router.use("/invitations", invitationsRouter);
+
+// ── WhatsApp webhook — public (Meta calls this without auth) ──────────────────
+router.use("/whatsapp", whatsappWebhookRouter);
 
 router.use(requireAuth, resolveOrg);
 

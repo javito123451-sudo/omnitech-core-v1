@@ -238,6 +238,26 @@ quotesRouter.patch("/:id/status", async (req, res) => {
       .returning();
     if (!updated) { res.status(404).json({ error: "Presupuesto no encontrado" }); return; }
 
+    // Log status changes to activity feed
+    if (status === "accepted" || status === "rejected") {
+      const [client] = await db.select({ name: clientsTable.name })
+        .from(clientsTable)
+        .where(eq(clientsTable.id, updated.clientId));
+
+      const totalFormatted = new Intl.NumberFormat("es-ES", {
+        style: "currency", currency: updated.currency ?? "EUR",
+      }).format(updated.total ?? 0);
+      const verb = status === "accepted" ? "ACEPTADO" : "RECHAZADO";
+
+      await db.insert(activityTable).values({
+        orgId,
+        type:        status === "accepted" ? "quote_accepted" : "quote_rejected",
+        description: `Presupuesto "${updated.title}" ${verb} — ${totalFormatted}`,
+        clientName:  client?.name ?? null,
+        userId:      req.userId,
+      }).catch(() => {/* non-critical */});
+    }
+
     res.json({ ...updated, createdAt: updated.createdAt.toISOString(), updatedAt: updated.updatedAt.toISOString() });
   } catch (err) {
     res.status(500).json({ error: String(err) });

@@ -1,9 +1,185 @@
 import { Router } from "express";
-import { db, clientsTable, activityTable, appointmentsTable } from "@workspace/db";
-import { eq, and, desc, gt } from "drizzle-orm";
+import { db, clientsTable, activityTable, appointmentsTable, messagesTable, quotesTable } from "@workspace/db";
+import { eq, and, desc, gt, isNotNull, inArray } from "drizzle-orm";
 import OpenAI from "openai";
 
 export const whatsappRouter = Router();
+export const whatsappWebhookRouter = Router();
+
+// ── Meta webhook payload types ────────────────────────────────────────────────
+interface MetaWebhookPayload {
+  object: string;
+  entry?: Array<{
+    id: string;
+    changes?: Array<{
+      field: string;
+      value: {
+        messaging_product?: string;
+        contacts?: Array<{ profile: { name: string }; wa_id: string }>;
+        messages?: Array<{
+          from: string;
+          id: string;
+          timestamp: string;
+          type: string;
+          text?: { body: string };
+        }>;
+      };
+    }>;
+  }>;
+}
+
+// ── Acceptance / rejection keyword detection ──────────────────────────────────
+const ACCEPTANCE_RE =
+  /\b(acepto|aprobado?|apruebo|lo apruebo|aceptamos|lo acepto|s[ií] acepto|s[ií] confirmo|s[ií] quiero|de acuerdo|confirmado?|confirmamos|adelante|perfecto|estupendo|fenomenal|trato hecho|dale|ok|vale|por supuesto|claro que s[ií]|me parece bien|me va bien|lo quiero|lo tomamos|quiero seguir|acepto el presupuesto|apruebo el presupuesto|confirmo el presupuesto)\b/i;
+
+const REJECTION_RE =
+  /\b(rechazo|rechazado?|no acepto|no (lo )?quiero|cancelar?|cancelo|no me interesa|no por ahora|declin[oa]r?|denegado?|no procede|no gracias|lo descarto|no vamos a seguir|no seguimos)\b/i;
+
+// ── Phone normalization — compare last 9 digits ───────────────────────────────
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "").slice(-9);
+}
+
+// ── Core: process one incoming WhatsApp message ───────────────────────────────
+async function processIncomingMessage(payload: {
+  fromPhone:   string;
+  text:        string;
+  waMessageId: string;
+}): Promise<void> {
+  const { fromPhone, text } = payload;
+  const normalizedIncoming  = normalizePhone(fromPhone);
+
+  // 1. Find client by phone (across all orgs — normalize & compare last 9 digits)
+  const allWithPhone = await db.select()
+    .from(clientsTable)
+    .where(isNotNull(clientsTable.phone));
+
+  const client = allWithPhone.find(c =>
+    c.phone ? normalizePhone(c.phone) === normalizedIncoming : false,
+  );
+
+  if (!client) {
+    console.log(`[WhatsApp Webhook] No client found for +${fromPhone}`);
+    return;
+  }
+
+  const orgId = client.orgId;
+
+  // 2. Store the inbound message
+  await db.insert(messagesTable).values({
+    orgId,
+    clientId:  client.id,
+    content:   text,
+    direction: "inbound",
+    isAi:      false,
+    status:    "received",
+  }).catch(err => console.error("[WhatsApp Webhook] Message save failed:", err));
+
+  // 3. Log incoming WhatsApp activity
+  await db.insert(activityTable).values({
+    orgId,
+    type:        "whatsapp_received",
+    description: `Mensaje de ${client.name} vía WhatsApp: "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
+    clientName:  client.name,
+  }).catch(() => {/* non-critical */});
+
+  const trimmed = text.trim();
+
+  // 4. Check for acceptance / rejection keywords
+  const isAccepted  = ACCEPTANCE_RE.test(trimmed);
+  const isRejected  = !isAccepted && REJECTION_RE.test(trimmed);
+  if (!isAccepted && !isRejected) return;
+
+  // 5. Find the most recent sent/pending quote for this client
+  const [quote] = await db.select()
+    .from(quotesTable)
+    .where(and(
+      eq(quotesTable.orgId,    orgId),
+      eq(quotesTable.clientId, client.id),
+      inArray(quotesTable.status, ["sent", "pending"]),
+    ))
+    .orderBy(desc(quotesTable.updatedAt))
+    .limit(1);
+
+  if (!quote) {
+    console.log(`[WhatsApp Webhook] ${client.name} sent keyword but no sent/pending quote found.`);
+    return;
+  }
+
+  const newQuoteStatus = isAccepted ? "accepted" : "rejected";
+  const activityType   = isAccepted ? "quote_accepted" : "quote_rejected";
+
+  // 6. Update quote status
+  await db.update(quotesTable)
+    .set({ status: newQuoteStatus, updatedAt: new Date() })
+    .where(eq(quotesTable.id, quote.id));
+
+  // 7. Promote client to "active" on acceptance (never demote)
+  if (isAccepted && client.status !== "active") {
+    await db.update(clientsTable)
+      .set({ status: "active" })
+      .where(eq(clientsTable.id, client.id));
+  }
+
+  // 8. Log quote_accepted / quote_rejected to activity feed
+  const totalFormatted = new Intl.NumberFormat("es-ES", {
+    style: "currency", currency: quote.currency ?? "EUR",
+  }).format(quote.total ?? 0);
+  const verb = isAccepted ? "ACEPTADO" : "RECHAZADO";
+
+  await db.insert(activityTable).values({
+    orgId,
+    type:        activityType,
+    description: `Presupuesto "${quote.title}" ${verb} por ${client.name} vía WhatsApp — ${totalFormatted}`,
+    clientName:  client.name,
+  });
+
+  console.log(`[WhatsApp Webhook] ✅ Quote #${quote.id} "${quote.title}" ${newQuoteStatus} by ${client.name}`);
+}
+
+// ── GET /whatsapp/webhook — Meta hub verification (PUBLIC, no auth) ────────────
+whatsappWebhookRouter.get("/webhook", (req, res) => {
+  const mode      = req.query["hub.mode"];
+  const token     = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "omnitech-webhook";
+
+  if (mode === "subscribe" && token === verifyToken) {
+    console.log("[WhatsApp Webhook] ✅ Verified by Meta");
+    res.status(200).send(String(challenge));
+  } else {
+    console.warn("[WhatsApp Webhook] ❌ Verification failed — check WHATSAPP_WEBHOOK_VERIFY_TOKEN env var");
+    res.sendStatus(403);
+  }
+});
+
+// ── POST /whatsapp/webhook — Incoming messages (PUBLIC, no auth) ──────────────
+whatsappWebhookRouter.post("/webhook", (req, res) => {
+  // Meta requires an immediate 200 — process asynchronously
+  res.sendStatus(200);
+
+  const body = req.body as MetaWebhookPayload;
+  if (!body || body.object !== "whatsapp_business_account") return;
+
+  void (async () => {
+    for (const entry of body.entry ?? []) {
+      for (const change of entry.changes ?? []) {
+        if (change.field !== "messages") continue;
+        for (const msg of change.value.messages ?? []) {
+          if (msg.type !== "text") continue;
+          await processIncomingMessage({
+            fromPhone:   msg.from,
+            text:        msg.text?.body ?? "",
+            waMessageId: msg.id,
+          }).catch(err =>
+            console.error("[WhatsApp Webhook] Processing error:", err),
+          );
+        }
+      }
+    }
+  })();
+});
 
 // ── Message type definitions ──────────────────────────────────────────────────
 type MessageType = "seguimiento" | "cita" | "recuperar";
