@@ -240,7 +240,7 @@ function MessagesTab({ clientId }: { clientId: number }) {
       <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
         <MessageCircle className="w-8 h-8 mb-2 opacity-20" />
         <p className="text-sm">Sin mensajes todavía</p>
-        <p className="text-xs mt-1 text-center">Los mensajes de Telegram aparecerán aquí automáticamente.</p>
+        <p className="text-xs mt-1 text-center">Los mensajes de WhatsApp y Telegram aparecerán aquí automáticamente.</p>
       </div>
     );
   }
