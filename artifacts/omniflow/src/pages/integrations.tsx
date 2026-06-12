@@ -161,10 +161,13 @@ export default function IntegrationsPage() {
   const [testPhone,     setTestPhone]     = useState("");
   const [sendingTest,   setSendingTest]   = useState(false);
   // Telegram panel
-  const [tgVerifying,   setTgVerifying]   = useState(false);
-  const [tgBotInfo,     setTgBotInfo]     = useState<string | null>(null);
-  const [tgChatId,      setTgChatId]      = useState("");
-  const [tgSending,     setTgSending]     = useState(false);
+  const [tgVerifying,      setTgVerifying]      = useState(false);
+  const [tgBotInfo,        setTgBotInfo]        = useState<string | null>(null);
+  const [tgChatId,         setTgChatId]         = useState("");
+  const [tgSending,        setTgSending]        = useState(false);
+  const [tgSettingWebhook, setTgSettingWebhook] = useState(false);
+  const [tgWebhookUrl,     setTgWebhookUrl]     = useState<string | null>(null);
+  const [tgWebhookError,   setTgWebhookError]   = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -201,7 +204,19 @@ export default function IntegrationsPage() {
     setTestPhone("");
     setTgBotInfo(null);
     setTgChatId("");
+    setTgWebhookUrl(null);
+    setTgWebhookError(null);
     void openDetail(slug);
+    if (slug === "telegram") {
+      void authFetch(`${BASE_URL}/api/telegram/webhook-info`)
+        .then((r) => r.json())
+        .then((d: unknown) => {
+          const data = d as { registered: boolean; url: string | null; lastError: string | null };
+          if (data.registered && data.url) setTgWebhookUrl(data.url);
+          if (data.lastError) setTgWebhookError(data.lastError);
+        })
+        .catch(() => {/**/});
+    }
   };
 
   const refreshEvents = () => {
@@ -259,6 +274,26 @@ export default function IntegrationsPage() {
       toast({ title: "Error en el test", variant: "destructive" });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleTelegramSetWebhook = async () => {
+    setTgSettingWebhook(true);
+    try {
+      const res  = await authFetch(`${BASE_URL}/api/telegram/set-webhook`, { method: "POST" });
+      const data = await res.json() as { success: boolean; message: string; webhookUrl?: string };
+      if (data.success && data.webhookUrl) {
+        setTgWebhookUrl(data.webhookUrl);
+        setTgWebhookError(null);
+        toast({ title: "✅ Webhook registrado", description: "Telegram enviará los mensajes a OmniTech." });
+      } else {
+        toast({ title: "⚠️ Error registrando webhook", description: data.message, variant: "destructive" });
+      }
+      void openDetail("telegram");
+    } catch {
+      toast({ title: "Error al registrar webhook", variant: "destructive" });
+    } finally {
+      setTgSettingWebhook(false);
     }
   };
 
@@ -626,62 +661,101 @@ export default function IntegrationsPage() {
 
                       {/* ── Telegram panel — only when connected ─────── */}
                       {selected.slug === "telegram" && selected.connected && (
-                        <div className="space-y-3 pt-3 border-t border-border">
-                          {/* Verify bot */}
-                          <div className="flex items-center gap-1.5">
-                            <Bot className="w-3.5 h-3.5 text-sky-400" />
-                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              Verificar bot
-                            </span>
-                          </div>
-                          {tgBotInfo && (
-                            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300">
-                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                              <span>Bot activo: <strong>{tgBotInfo}</strong></span>
-                            </div>
-                          )}
-                          <button
-                            onClick={() => void handleTelegramVerify()}
-                            disabled={tgVerifying}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-sky-600/80 hover:bg-sky-600 text-white text-sm font-medium disabled:opacity-50 transition-colors"
-                          >
-                            {tgVerifying
-                              ? <Loader2 className="w-4 h-4 animate-spin" />
-                              : <Bot className="w-4 h-4" />
-                            }
-                            Verificar Bot Token
-                          </button>
+                        <div className="space-y-4 pt-3 border-t border-border">
 
-                          {/* Test send */}
-                          <div className="flex items-center gap-1.5 pt-1">
-                            <Send className="w-3.5 h-3.5 text-sky-400" />
-                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              Mensaje de prueba
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Escribe tu Chat ID para recibir un mensaje de prueba. Obtén tu ID enviando <code className="bg-muted px-1 rounded text-[10px]">/start</code> a <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer" className="text-sky-400 underline">@userinfobot</a>.
-                          </p>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              placeholder="123456789"
-                              value={tgChatId}
-                              onChange={(e) => setTgChatId(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === "Enter" && tgChatId.trim()) void handleTelegramTestSend(); }}
-                              className="flex-1 px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-sky-500/40"
-                            />
+                          {/* ── 1. Verify bot ── */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <Bot className="w-3.5 h-3.5 text-sky-400" />
+                              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Verificar bot
+                              </span>
+                            </div>
+                            {tgBotInfo && (
+                              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300">
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                <span>Bot activo: <strong>{tgBotInfo}</strong></span>
+                              </div>
+                            )}
                             <button
-                              onClick={() => void handleTelegramTestSend()}
-                              disabled={tgSending || !tgChatId.trim()}
-                              className="px-4 py-2 rounded-md bg-sky-600/80 hover:bg-sky-600 text-white text-sm font-medium disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+                              onClick={() => void handleTelegramVerify()}
+                              disabled={tgVerifying}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-sky-600/80 hover:bg-sky-600 text-white text-sm font-medium disabled:opacity-50 transition-colors"
                             >
-                              {tgSending
-                                ? <Loader2 className="w-4 h-4 animate-spin" />
-                                : <Send className="w-4 h-4" />
-                              }
-                              Enviar
+                              {tgVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
+                              Verificar Bot Token
                             </button>
+                          </div>
+
+                          {/* ── 2. Register webhook ── */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <Globe className="w-3.5 h-3.5 text-sky-400" />
+                              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Webhook de entrada
+                              </span>
+                            </div>
+                            {tgWebhookUrl ? (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-300">
+                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="font-medium">Webhook activo — recibiendo mensajes</span>
+                                </div>
+                                <div className="px-3 py-2 rounded-lg bg-muted/20 border border-border/50 text-[10px] text-muted-foreground break-all font-mono">
+                                  {tgWebhookUrl}
+                                </div>
+                                {tgWebhookError && (
+                                  <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-300">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                    <span>Último error: {tgWebhookError}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                Registra el webhook para que Telegram envíe los mensajes entrantes a OmniTech. Sin esto el bot no responde.
+                              </p>
+                            )}
+                            <button
+                              onClick={() => void handleTelegramSetWebhook()}
+                              disabled={tgSettingWebhook}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 text-sm font-medium disabled:opacity-50 transition-colors"
+                            >
+                              {tgSettingWebhook ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                              {tgWebhookUrl ? "Volver a registrar webhook" : "Registrar webhook"}
+                            </button>
+                          </div>
+
+                          {/* ── 3. Test send ── */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <Send className="w-3.5 h-3.5 text-sky-400" />
+                              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Mensaje de prueba
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Envía tu Chat ID para recibir un mensaje de prueba. Consíguelo enviando <code className="bg-muted px-1 rounded text-[10px]">/start</code> a{" "}
+                              <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer" className="text-sky-400 underline">@userinfobot</a>.
+                            </p>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="123456789"
+                                value={tgChatId}
+                                onChange={(e) => setTgChatId(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter" && tgChatId.trim()) void handleTelegramTestSend(); }}
+                                className="flex-1 px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-sky-500/40"
+                              />
+                              <button
+                                onClick={() => void handleTelegramTestSend()}
+                                disabled={tgSending || !tgChatId.trim()}
+                                className="px-4 py-2 rounded-md bg-sky-600/80 hover:bg-sky-600 text-white text-sm font-medium disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+                              >
+                                {tgSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                Enviar
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}

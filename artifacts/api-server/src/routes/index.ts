@@ -15,7 +15,7 @@ import { memoryRouter } from "./memory";
 import { quotesRouter } from "./quotes";
 import { executiveRouter } from "./executive";
 import { whatsappRouter, whatsappWebhookRouter } from "./whatsapp";
-import { telegramRouter } from "./telegram";
+import { telegramRouter, telegramWebhookRouter } from "./telegram";
 import { integrationsRouter } from "./integrations";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 
@@ -27,6 +27,9 @@ router.use("/invitations", invitationsRouter);
 
 // ── WhatsApp webhook — public (Meta calls this without auth) ──────────────────
 router.use("/whatsapp", whatsappWebhookRouter);
+
+// ── Telegram webhook — public (Telegram calls this without auth) ──────────────
+router.use("/telegram", telegramWebhookRouter);
 
 router.use(requireAuth, resolveOrg);
 
