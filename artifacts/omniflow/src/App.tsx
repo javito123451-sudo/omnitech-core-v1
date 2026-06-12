@@ -25,6 +25,7 @@ import Quotes from "@/pages/quotes";
 import ExecutivePage from "@/pages/executive";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 import IntegrationsPage from "@/pages/integrations";
+import WhatsAppLogsPage from "@/pages/whatsapp-logs";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -246,6 +247,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <IntegrationsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/integrations/whatsapp/logs">
+        <ProtectedRoute>
+          <MainLayout>
+            <WhatsAppLogsPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>

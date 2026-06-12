@@ -40,14 +40,14 @@ export const orgIntegrationsTable = pgTable(
 // ── Log de eventos por integración ────────────────────────────────────────────
 export const integrationEventsTable = pgTable("integration_events", {
   id:              serial("id").primaryKey(),
-  orgId:           integer("org_id").notNull()
-                     .references(() => organizationsTable.id, { onDelete: "cascade" }),
+  orgId:           integer("org_id").notNull(),
   integrationSlug: text("integration_slug").notNull(),
   direction:       text("direction").notNull().default("inbound"),
   eventType:       text("event_type").notNull(),
   status:          text("status").notNull().default("processed"),
   summary:         text("summary"),
   errorMessage:    text("error_message"),
+  payloadJson:     text("payload_json"),
   createdAt:       timestamp("created_at").defaultNow().notNull(),
 });
 

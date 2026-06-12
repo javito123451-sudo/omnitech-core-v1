@@ -420,13 +420,14 @@ integrationsRouter.get("/:slug/events", async (req, res) => {
 
     res.json(
       events.map((e) => ({
-        id:        e.id,
-        direction: e.direction,
-        eventType: e.eventType,
-        status:    e.status,
-        summary:   e.summary,
-        error:     e.errorMessage,
-        createdAt: e.createdAt.toISOString(),
+        id:          e.id,
+        direction:   e.direction,
+        eventType:   e.eventType,
+        status:      e.status,
+        summary:     e.summary,
+        error:       e.errorMessage,
+        payloadJson: e.payloadJson ? (() => { try { return JSON.parse(e.payloadJson as string); } catch { return null; } })() : null,
+        createdAt:   e.createdAt.toISOString(),
       })),
     );
   } catch (err) {

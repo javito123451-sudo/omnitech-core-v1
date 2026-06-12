@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation } from "wouter";
 import {
   MessageCircle, CreditCard, Globe, Mail, CalendarDays, Hash,
   CheckCircle2, AlertCircle, Loader2, Plug, Unplug, FlaskConical,
   ChevronRight, Clock, ArrowDownLeft, ArrowUpRight, Puzzle,
-  Send, RefreshCw,
+  Send, RefreshCw, ClipboardList,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -137,6 +138,7 @@ function StatusBadge({ status }: { status: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function IntegrationsPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const [items,         setItems]         = useState<IntegrationItem[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -549,6 +551,22 @@ export default function IntegrationsPage() {
                           </>
                         )}
                       </div>
+
+                      {/* ── WhatsApp audit link ──────────────────────── */}
+                      {selected.slug === "whatsapp" && (
+                        <div className="pt-2">
+                          <button
+                            onClick={() => { setSelected(null); setLocation("/integrations/whatsapp/logs"); }}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-border bg-muted/20 hover:bg-muted/40 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              <ClipboardList className="w-3.5 h-3.5 text-primary/70" />
+                              <span>Ver auditoría de mensajes</span>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
 
                       {/* ── WhatsApp test panel — only when connected ──── */}
                       {selected.slug === "whatsapp" && selected.connected && (

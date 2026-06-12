@@ -128,6 +128,7 @@ export function logIntegrationEvent(params: {
   status?:         string;
   summary?:        string;
   errorMessage?:   string;
+  payloadJson?:    Record<string, unknown>;
 }): void {
   db.insert(integrationEventsTable)
     .values({
@@ -138,6 +139,7 @@ export function logIntegrationEvent(params: {
       status:          params.status ?? "processed",
       summary:         params.summary ?? null,
       errorMessage:    params.errorMessage ?? null,
+      payloadJson:     params.payloadJson ? JSON.stringify(params.payloadJson) : null,
     })
     .catch((err) => console.error("[IntegrationEvent] log failed:", err));
 }

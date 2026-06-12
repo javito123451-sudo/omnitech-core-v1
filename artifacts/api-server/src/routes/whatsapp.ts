@@ -6,6 +6,8 @@ import {
   appointmentsTable,
   messagesTable,
   quotesTable,
+  agentMemoryTable,
+  integrationEventsTable,
 } from "@workspace/db";
 import { eq, and, desc, gt, isNotNull, inArray } from "drizzle-orm";
 import OpenAI from "openai";
@@ -52,6 +54,31 @@ function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, "").slice(-9);
 }
 
+// ── Send WhatsApp auto-reply (fire-and-forget) ────────────────────────────────
+async function sendAutoReply(orgId: number, toPhone: string, message: string): Promise<boolean> {
+  try {
+    const creds = await getWhatsAppCreds(orgId);
+    if (!creds) return false;
+
+    const r = await fetch(
+      "https://graph.facebook.com/v19.0/" + creds.phoneNumberId + "/messages",
+      {
+        method:  "POST",
+        headers: { "Authorization": "Bearer " + creds.accessToken, "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          messaging_product: "whatsapp",
+          to:   toPhone.replace(/\D/g, ""),
+          type: "text",
+          text: { body: message },
+        }),
+      },
+    );
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ── Core: process one incoming WhatsApp message ───────────────────────────────
 async function processIncomingMessage(payload: {
   fromPhone:   string;
@@ -71,8 +98,18 @@ async function processIncomingMessage(payload: {
     c.phone ? normalizePhone(c.phone) === normalizedIncoming : false,
   );
 
+  // Log message_received with structured payload
+  const basePayload: Record<string, unknown> = {
+    phone:       fromPhone,
+    phoneNorm:   normalizedIncoming,
+    messageText: text.slice(0, 200),
+    clientFound: !!client,
+    clientId:    client?.id ?? null,
+    clientName:  client?.name ?? null,
+  };
+
   if (!client) {
-    console.log(`[WhatsApp Webhook] No client found for +${fromPhone}`);
+    console.log(`[WhatsApp Webhook] No client found for +${fromPhone} — message not stored (no org match)`);
     return;
   }
 
@@ -96,24 +133,13 @@ async function processIncomingMessage(payload: {
     clientName:  client.name,
   }).catch(() => {/* non-critical */});
 
-  // 4. Log integration event — message received
-  logIntegrationEvent({
-    orgId,
-    integrationSlug: "whatsapp",
-    direction:       "inbound",
-    eventType:       "message_received",
-    status:          "processed",
-    summary:         `Mensaje de ${client.name} (+${fromPhone.slice(-9)}): "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
-  });
-
   const trimmed = text.trim();
 
-  // 5. Check for acceptance / rejection keywords
+  // 4. Check for acceptance / rejection keywords
   const isAccepted = ACCEPTANCE_RE.test(trimmed);
   const isRejected = !isAccepted && REJECTION_RE.test(trimmed);
-  if (!isAccepted && !isRejected) return;
 
-  // 6. Find the most recent sent/pending quote for this client
+  // 5. Find the most recent sent/pending quote for this client (needed for payload)
   const [quote] = await db
     .select()
     .from(quotesTable)
@@ -127,6 +153,32 @@ async function processIncomingMessage(payload: {
     .orderBy(desc(quotesTable.updatedAt))
     .limit(1);
 
+  const quotePayload = {
+    quoteFound:  !!quote,
+    quoteId:     quote?.id ?? null,
+    quoteTitle:  quote?.title ?? null,
+    quoteTotal:  quote?.total ?? null,
+    quoteCurrency: quote?.currency ?? "EUR",
+  };
+
+  // 6. Log integration event — message received (with full structured payload)
+  logIntegrationEvent({
+    orgId,
+    integrationSlug: "whatsapp",
+    direction:       "inbound",
+    eventType:       "message_received",
+    status:          "processed",
+    summary:         `Mensaje de ${client.name} (+${fromPhone.slice(-9)}): "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
+    payloadJson:     {
+      ...basePayload,
+      ...quotePayload,
+      isAcceptanceKeyword: isAccepted,
+      isRejectionKeyword:  isRejected,
+      result: isAccepted ? "keyword_accepted" : isRejected ? "keyword_rejected" : "no_keyword",
+    },
+  });
+
+  if (!isAccepted && !isRejected) return;
   if (!quote) {
     console.log(`[WhatsApp Webhook] ${client.name} sent keyword but no sent/pending quote found.`);
     return;
@@ -134,6 +186,10 @@ async function processIncomingMessage(payload: {
 
   const newQuoteStatus = isAccepted ? "accepted" : "rejected";
   const activityType   = isAccepted ? "quote_accepted" : "quote_rejected";
+  const totalFormatted = new Intl.NumberFormat("es-ES", {
+    style: "currency", currency: quote.currency ?? "EUR",
+  }).format(quote.total ?? 0);
+  const verb = isAccepted ? "ACEPTADO" : "RECHAZADO";
 
   // 7. Update quote status
   await db
@@ -142,19 +198,16 @@ async function processIncomingMessage(payload: {
     .where(eq(quotesTable.id, quote.id));
 
   // 8. Promote client to "active" on acceptance (never demote)
+  let clientPromoted = false;
   if (isAccepted && client.status !== "active") {
     await db
       .update(clientsTable)
       .set({ status: "active" })
       .where(eq(clientsTable.id, client.id));
+    clientPromoted = true;
   }
 
   // 9. Log activity feed
-  const totalFormatted = new Intl.NumberFormat("es-ES", {
-    style: "currency", currency: quote.currency ?? "EUR",
-  }).format(quote.total ?? 0);
-  const verb = isAccepted ? "ACEPTADO" : "RECHAZADO";
-
   await db.insert(activityTable).values({
     orgId,
     type:        activityType,
@@ -162,7 +215,40 @@ async function processIncomingMessage(payload: {
     clientName:  client.name,
   });
 
-  // 10. Log integration event — quote accepted/rejected
+  // 10. Create memory entry (only on acceptance)
+  let memoryCreated = false;
+  if (isAccepted) {
+    const memKey = `ventas:presupuesto_aceptado_${quote.id}`;
+    const memVal = `Presupuesto "${quote.title}" ACEPTADO por ${client.name} vía WhatsApp el ${new Date().toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}. Importe: ${totalFormatted}. Cliente ascendido a activo automáticamente.`;
+    await db
+      .insert(agentMemoryTable)
+      .values({
+        orgId,
+        agentSlug: "crm-assistant",
+        memoryKey: memKey,
+        memoryVal: memVal,
+        title:     `Venta cerrada — ${client.name}`,
+        category:  "ventas",
+        tags:      "presupuesto,aceptado,whatsapp,automático",
+        source:    "whatsapp_webhook",
+      })
+      .onConflictDoUpdate({
+        target: [agentMemoryTable.orgId, agentMemoryTable.agentSlug, agentMemoryTable.memoryKey],
+        set: { memoryVal: memVal, updatedAt: new Date() },
+      })
+      .catch((err) => console.error("[WhatsApp Webhook] Memory insert failed:", err));
+    memoryCreated = true;
+  }
+
+  // 11. Send auto-reply WhatsApp message
+  let autoReplySent = false;
+  const autoReplyText = isAccepted
+    ? `¡Hola ${client.name.split(" ")[0]}! ✅ Hemos registrado tu confirmación del presupuesto "${quote.title}" por ${totalFormatted}. Nos pondremos en contacto contigo muy pronto para coordinar los próximos pasos. ¡Muchas gracias!`
+    : `Hola ${client.name.split(" ")[0]}, hemos recibido tu respuesta sobre el presupuesto "${quote.title}". Si tienes alguna duda o quieres hablar sobre alternativas, estamos a tu disposición. ¡Gracias por considerarnos!`;
+
+  autoReplySent = await sendAutoReply(orgId, fromPhone, autoReplyText);
+
+  // 12. Log integration event — quote accepted/rejected (with full audit payload)
   logIntegrationEvent({
     orgId,
     integrationSlug: "whatsapp",
@@ -170,9 +256,33 @@ async function processIncomingMessage(payload: {
     eventType:       isAccepted ? "quote_accepted" : "quote_rejected",
     status:          "processed",
     summary:         `Presupuesto "${quote.title}" ${verb} por ${client.name} — ${totalFormatted}`,
+    payloadJson:     {
+      phone:          fromPhone,
+      phoneNorm:      normalizedIncoming,
+      clientId:       client.id,
+      clientName:     client.name,
+      clientPromoted,
+      quoteId:        quote.id,
+      quoteTitle:     quote.title,
+      quoteTotal:     quote.total,
+      quoteCurrency:  quote.currency ?? "EUR",
+      totalFormatted,
+      result:         newQuoteStatus,
+      memoryCreated,
+      autoReplySent,
+    },
   });
 
-  console.log(`[WhatsApp Webhook] ✅ Quote #${quote.id} "${quote.title}" ${newQuoteStatus} by ${client.name}`);
+  if (autoReplySent) {
+    await db.insert(activityTable).values({
+      orgId,
+      type:        "whatsapp_sent",
+      description: `Respuesta automática enviada a ${client.name} tras ${verb.toLowerCase()} presupuesto "${quote.title}"`,
+      clientName:  client.name,
+    }).catch(() => {});
+  }
+
+  console.log(`[WhatsApp Webhook] ✅ Quote #${quote.id} "${quote.title}" ${newQuoteStatus} by ${client.name} | memory=${memoryCreated} | autoReply=${autoReplySent}`);
 }
 
 // ── GET /whatsapp/webhook — Meta hub verification (PUBLIC, no auth) ────────────
@@ -545,5 +655,59 @@ whatsappRouter.post("/test-send", async (req, res) => {
       errorMessage:    String(err),
     });
     res.status(500).json({ error: String(err), success: false });
+  }
+});
+
+// ── GET /audit — Auditoría detallada de mensajes WhatsApp (Fase E) ─────────────
+whatsappRouter.get("/audit", async (req, res) => {
+  const orgId = req.orgId!;
+  const limit = Math.min(Number(req.query["limit"] ?? 100), 500);
+
+  try {
+    const events = await db
+      .select()
+      .from(integrationEventsTable)
+      .where(eq(integrationEventsTable.integrationSlug, "whatsapp"))
+      .orderBy(desc(integrationEventsTable.createdAt))
+      .limit(limit);
+
+    const parsed = events.map((e) => {
+      let payload: Record<string, unknown> | null = null;
+      try {
+        payload = e.payloadJson ? JSON.parse(e.payloadJson as string) as Record<string, unknown> : null;
+      } catch { payload = null; }
+
+      return {
+        id:          e.id,
+        orgId:       e.orgId,
+        direction:   e.direction,
+        eventType:   e.eventType,
+        status:      e.status,
+        summary:     e.summary,
+        error:       e.errorMessage,
+        createdAt:   e.createdAt.toISOString(),
+        phone:       (payload?.["phone"] as string | null) ?? (payload?.["phoneNorm"] as string | null) ?? null,
+        clientFound: (payload?.["clientFound"] as boolean | null) ?? null,
+        clientName:  (payload?.["clientName"] as string | null) ?? null,
+        clientId:    (payload?.["clientId"] as number | null) ?? null,
+        quoteFound:  (payload?.["quoteFound"] as boolean | null) ?? null,
+        quoteTitle:  (payload?.["quoteTitle"] as string | null) ?? null,
+        quoteId:     (payload?.["quoteId"] as number | null) ?? null,
+        quoteTotal:  (payload?.["quoteTotal"] as number | null) ?? null,
+        quoteCurrency: (payload?.["quoteCurrency"] as string | null) ?? "EUR",
+        result:      (payload?.["result"] as string | null) ?? null,
+        memoryCreated:  (payload?.["memoryCreated"] as boolean | null) ?? null,
+        autoReplySent:  (payload?.["autoReplySent"] as boolean | null) ?? null,
+        clientPromoted: (payload?.["clientPromoted"] as boolean | null) ?? null,
+        messageText: (payload?.["messageText"] as string | null) ?? null,
+      };
+    });
+
+    // Filter to org's own events (orgId 0 = unmatched messages, include those too for audit)
+    const filtered = parsed.filter((e) => e.orgId === orgId || e.orgId === 0);
+
+    res.json(filtered);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
