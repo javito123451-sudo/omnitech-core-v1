@@ -15,18 +15,19 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 // ── Nav structure ────────────────────────────────────────────────────────────
 
 const primaryNav = [
-  { icon: LayoutDashboard, label: "Panel",        href: "/dashboard" },
-  { icon: Users,           label: "Clientes",     href: "/clients" },
-  { icon: FileText,        label: "Presupuestos", href: "/quotes" },
+  { icon: Cpu,      label: "Dashboard",    href: "/executive-dashboard" },
+  { icon: Users,    label: "Clientes",     href: "/clients" },
+  { icon: FileText, label: "Presupuestos", href: "/quotes" },
 ];
 
 const sidebarGroups = [
   {
     label: "Principal",
     items: [
-      { icon: LayoutDashboard, label: "Panel",        href: "/dashboard" },
-      { icon: Users,           label: "Clientes",     href: "/clients" },
-      { icon: FileText,        label: "Presupuestos", href: "/quotes" },
+      { icon: Cpu,             label: "Dashboard",      href: "/executive-dashboard" },
+      { icon: LayoutDashboard, label: "Panel",          href: "/dashboard" },
+      { icon: Users,           label: "Clientes",       href: "/clients" },
+      { icon: FileText,        label: "Presupuestos",   href: "/quotes" },
     ],
   },
   {
@@ -39,29 +40,28 @@ const sidebarGroups = [
   {
     label: "Análisis",
     items: [
-      { icon: Cpu,      label: "Exec Dashboard", href: "/executive-dashboard" },
-      { icon: Zap,      label: "Intelligence",   href: "/executive" },
+      { icon: Zap,       label: "Intelligence",  href: "/executive" },
       { icon: BarChart3, label: "Estadísticas",  href: "/statistics" },
     ],
   },
   {
     label: "Sistema",
     items: [
-      { icon: Brain,   label: "Memoria",       href: "/memory" },
-      { icon: Puzzle,  label: "Integraciones", href: "/integrations" },
+      { icon: Brain,  label: "Memoria",       href: "/memory" },
+      { icon: Puzzle, label: "Integraciones", href: "/integrations" },
     ],
   },
 ];
 
 const moreItems = [
-  { icon: MessageSquare, label: "Asistente",       href: "/assistant",            group: "Trabajo" },
-  { icon: CalendarDays,  label: "Calendario",      href: "/calendar",             group: "Trabajo" },
-  { icon: Cpu,           label: "Exec Dashboard",  href: "/executive-dashboard",  group: "Análisis" },
-  { icon: Zap,           label: "Intelligence",    href: "/executive",            group: "Análisis" },
-  { icon: BarChart3,     label: "Estadísticas",    href: "/statistics",           group: "Análisis" },
-  { icon: Brain,         label: "Memoria",         href: "/memory",               group: "Sistema" },
-  { icon: Puzzle,        label: "Integraciones",   href: "/integrations",         group: "Sistema" },
-  { icon: Settings,      label: "Configuración",   href: "/settings",             group: "Sistema" },
+  { icon: LayoutDashboard, label: "Panel",          href: "/dashboard",            group: "Principal" },
+  { icon: MessageSquare,   label: "Asistente",      href: "/assistant",            group: "Trabajo" },
+  { icon: CalendarDays,    label: "Calendario",     href: "/calendar",             group: "Trabajo" },
+  { icon: Zap,             label: "Intelligence",   href: "/executive",            group: "Análisis" },
+  { icon: BarChart3,       label: "Estadísticas",   href: "/statistics",           group: "Análisis" },
+  { icon: Brain,           label: "Memoria",        href: "/memory",               group: "Sistema" },
+  { icon: Puzzle,          label: "Integraciones",  href: "/integrations",         group: "Sistema" },
+  { icon: Settings,        label: "Configuración",  href: "/settings",             group: "Sistema" },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
