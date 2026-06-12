@@ -4,7 +4,7 @@ import {
   MessageCircle, CreditCard, Globe, Mail, CalendarDays, Hash,
   CheckCircle2, AlertCircle, Loader2, Plug, Unplug, FlaskConical,
   ChevronRight, Clock, ArrowDownLeft, ArrowUpRight, Puzzle,
-  Send, RefreshCw, ClipboardList,
+  Send, RefreshCw, ClipboardList, Bot,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -105,6 +105,12 @@ const META: Record<string, {
     Icon: Hash, color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20",
     fields: [],
   },
+  telegram: {
+    Icon: Bot, color: "text-sky-400", bg: "bg-sky-400/10", border: "border-sky-400/20",
+    fields: [
+      { key: "botToken", label: "Bot Token", type: "password", placeholder: "123456789:AABBccDD...", hint: "Créalo en @BotFather → /newbot" },
+    ],
+  },
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -154,6 +160,11 @@ export default function IntegrationsPage() {
   // WhatsApp test panel
   const [testPhone,     setTestPhone]     = useState("");
   const [sendingTest,   setSendingTest]   = useState(false);
+  // Telegram panel
+  const [tgVerifying,   setTgVerifying]   = useState(false);
+  const [tgBotInfo,     setTgBotInfo]     = useState<string | null>(null);
+  const [tgChatId,      setTgChatId]      = useState("");
+  const [tgSending,     setTgSending]     = useState(false);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -188,6 +199,8 @@ export default function IntegrationsPage() {
     setForm({});
     setDisplayName("");
     setTestPhone("");
+    setTgBotInfo(null);
+    setTgChatId("");
     void openDetail(slug);
   };
 
@@ -246,6 +259,49 @@ export default function IntegrationsPage() {
       toast({ title: "Error en el test", variant: "destructive" });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleTelegramVerify = async () => {
+    setTgVerifying(true);
+    try {
+      const res  = await authFetch(`${BASE_URL}/api/telegram/verify`, { method: "POST" });
+      const data = await res.json() as { success: boolean; message: string; botName?: string; botUser?: string };
+      if (data.success) {
+        setTgBotInfo(`${data.botName ?? ""} ${data.botUser ?? ""}`.trim());
+        toast({ title: "✅ Bot verificado", description: data.message });
+      } else {
+        toast({ title: "⚠️ Verificación fallida", description: data.message, variant: "destructive" });
+      }
+      void openDetail("telegram");
+    } catch {
+      toast({ title: "Error verificando bot", variant: "destructive" });
+    } finally {
+      setTgVerifying(false);
+    }
+  };
+
+  const handleTelegramTestSend = async () => {
+    if (!tgChatId.trim()) return;
+    setTgSending(true);
+    try {
+      const res  = await authFetch(`${BASE_URL}/api/telegram/test-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId: tgChatId }),
+      });
+      const data = await res.json() as { success: boolean; message: string };
+      toast({
+        title:       data.success ? "✅ Mensaje enviado" : "⚠️ Error al enviar",
+        description: data.message,
+        variant:     data.success ? "default" : "destructive",
+      });
+      void openDetail("telegram");
+      if (data.success) setModalTab("events");
+    } catch {
+      toast({ title: "Error al enviar prueba", variant: "destructive" });
+    } finally {
+      setTgSending(false);
     }
   };
 
@@ -565,6 +621,68 @@ export default function IntegrationsPage() {
                             </div>
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
+                        </div>
+                      )}
+
+                      {/* ── Telegram panel — only when connected ─────── */}
+                      {selected.slug === "telegram" && selected.connected && (
+                        <div className="space-y-3 pt-3 border-t border-border">
+                          {/* Verify bot */}
+                          <div className="flex items-center gap-1.5">
+                            <Bot className="w-3.5 h-3.5 text-sky-400" />
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              Verificar bot
+                            </span>
+                          </div>
+                          {tgBotInfo && (
+                            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300">
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>Bot activo: <strong>{tgBotInfo}</strong></span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => void handleTelegramVerify()}
+                            disabled={tgVerifying}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-sky-600/80 hover:bg-sky-600 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+                          >
+                            {tgVerifying
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : <Bot className="w-4 h-4" />
+                            }
+                            Verificar Bot Token
+                          </button>
+
+                          {/* Test send */}
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <Send className="w-3.5 h-3.5 text-sky-400" />
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              Mensaje de prueba
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Escribe tu Chat ID para recibir un mensaje de prueba. Obtén tu ID enviando <code className="bg-muted px-1 rounded text-[10px]">/start</code> a <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer" className="text-sky-400 underline">@userinfobot</a>.
+                          </p>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="123456789"
+                              value={tgChatId}
+                              onChange={(e) => setTgChatId(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter" && tgChatId.trim()) void handleTelegramTestSend(); }}
+                              className="flex-1 px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-sky-500/40"
+                            />
+                            <button
+                              onClick={() => void handleTelegramTestSend()}
+                              disabled={tgSending || !tgChatId.trim()}
+                              className="px-4 py-2 rounded-md bg-sky-600/80 hover:bg-sky-600 text-white text-sm font-medium disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+                            >
+                              {tgSending
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Send className="w-4 h-4" />
+                              }
+                              Enviar
+                            </button>
+                          </div>
                         </div>
                       )}
 

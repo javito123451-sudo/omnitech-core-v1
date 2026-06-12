@@ -75,6 +75,16 @@ const CATALOG = [
     iconSlug:     "Hash",
     sortOrder:    5,
   },
+  {
+    slug:         "telegram",
+    name:         "Telegram Bot",
+    category:     "communication",
+    authType:     "api_key",
+    planRequired: "free",
+    description:  "Envía notificaciones y mensajes a clientes vía Telegram usando tu propio bot.",
+    iconSlug:     "Send",
+    sortOrder:    6,
+  },
 ] as const;
 
 // Seed catalog on startup (idempotent)
@@ -368,6 +378,7 @@ integrationsRouter.post("/:slug/test", async (req, res) => {
       whatsapp:         ["phoneNumberId", "accessToken"],
       stripe:           ["apiKey"],
       webhook_outbound: ["url"],
+      telegram:         ["botToken"],
     };
 
     const creds      = decryptCredentials(conn.credentialsEnc);

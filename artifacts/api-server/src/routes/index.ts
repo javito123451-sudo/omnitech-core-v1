@@ -15,6 +15,7 @@ import { memoryRouter } from "./memory";
 import { quotesRouter } from "./quotes";
 import { executiveRouter } from "./executive";
 import { whatsappRouter, whatsappWebhookRouter } from "./whatsapp";
+import { telegramRouter } from "./telegram";
 import { integrationsRouter } from "./integrations";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 
@@ -59,6 +60,7 @@ router.use("/memory", memoryRouter);
 router.use("/quotes", quotesRouter);
 router.use("/executive", executiveRouter);
 router.use("/whatsapp", whatsappRouter);
+router.use("/telegram", telegramRouter);
 router.use("/integrations", integrationsRouter);
 
 export default router;
