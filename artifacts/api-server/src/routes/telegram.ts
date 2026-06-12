@@ -27,16 +27,28 @@ interface TgUser { id: number; first_name: string; last_name?: string; username?
 interface TgMessage { message_id: number; from?: TgUser; chat: { id: number }; text?: string; }
 interface TgUpdate { update_id: number; message?: TgMessage; }
 
-// ── Helper: send a Telegram message (fire-and-forget safe) ───────────────────
+// ── Helper: send a Telegram message ──────────────────────────────────────────
+// Returns true on success. Logs every failure with full Telegram error detail.
 async function tgSend(token: string, chatId: number, text: string): Promise<boolean> {
+  const url = TG(token, "sendMessage");
+  console.log(`[tgSend] → chat_id=${chatId} | text="${text.slice(0, 60)}..."`);
+
+  // 1st attempt: plain text (no parse_mode) — safest, never fails on special chars
   try {
-    const r = await fetch(TG(token, "sendMessage"), {
+    const r = await fetch(url, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
+      body:    JSON.stringify({ chat_id: chatId, text }),
     });
-    return r.ok;
-  } catch {
+    const body = await r.json() as { ok: boolean; description?: string; error_code?: number };
+    if (body.ok) {
+      console.log(`[tgSend] ✅ sent to chat_id=${chatId}`);
+      return true;
+    }
+    console.error(`[tgSend] ❌ Telegram error ${body.error_code}: ${body.description} | chat_id=${chatId}`);
+    return false;
+  } catch (err) {
+    console.error(`[tgSend] ❌ fetch exception for chat_id=${chatId}:`, err);
     return false;
   }
 }
@@ -200,10 +212,16 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
 
   // 4. Get token once — needed for both AI reply and quote flows
   const token = await getTelegramToken(orgId);
+  console.log(`[Telegram] token available=${!!token} | orgId=${orgId} | chatId=${chatId}`);
 
   // 5. Plain message (no keyword) → Telegram → IA → Respuesta
   //    This is the main conversational flow for general questions.
   if (!isAccepted && !isRejected) {
+    if (!token) {
+      console.warn(`[Telegram AI] No token for orgId=${orgId} — cannot reply`);
+      return;
+    }
+
     // Get org name for bot persona
     const [org] = await db
       .select({ name: organizationsTable.name })
@@ -220,33 +238,32 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
       client: client ?? null,
     });
 
-    if (token) {
-      if (aiReply) {
-        await tgSend(token, chatId, aiReply);
-        // Save AI reply to messages table
-        if (client) {
-          await db.insert(messagesTable).values({
-            orgId,
-            clientId: client.id,
-            content:  aiReply.slice(0, 2000),
-            direction: "outbound",
-            isAi:     true,
-            status:   "sent",
-          });
-        }
-        await logIntegrationEvent({
-          orgId, integrationSlug: "telegram", direction: "outbound",
-          eventType: "ai_reply_sent", status: "processed",
-          summary: `IA respondió a ${senderName || chatIdStr}: "${aiReply.slice(0, 80)}"`,
-          payloadJson: JSON.stringify({ ...basePayload, aiReply: aiReply.slice(0, 300) }),
+    console.log(`[Telegram AI] reply generated=${!!aiReply} | len=${aiReply?.length ?? 0}`);
+
+    const replyText = aiReply
+      ?? `👋 ¡Hola${senderName ? `, ${senderName}` : ""}! Gracias por escribirnos. En breve un miembro de nuestro equipo te atenderá. ¿Podemos ayudarte en algo más?`;
+
+    const sent = await tgSend(token, chatId, replyText);
+
+    if (aiReply) {
+      // Save AI reply to messages table (only when client is known)
+      if (client) {
+        await db.insert(messagesTable).values({
+          orgId,
+          clientId:  client.id,
+          content:   aiReply.slice(0, 2000),
+          direction: "outbound",
+          isAi:      true,
+          status:    sent ? "sent" : "failed",
         });
-        console.log(`[Telegram AI] ✅ Replied to chat_id ${chatId} (${senderName}): "${aiReply.slice(0, 80)}"`);
-      } else {
-        // OpenAI not available — send a polite fallback
-        await tgSend(token, chatId,
-          `👋 ¡Hola${senderName ? `, ${senderName}` : ""}! Gracias por escribirnos. En breve un miembro de nuestro equipo te atenderá. ¿Podemos ayudarte en algo más?`,
-        );
       }
+      logIntegrationEvent({
+        orgId, integrationSlug: "telegram", direction: "outbound",
+        eventType: sent ? "ai_reply_sent" : "ai_reply_failed",
+        status:    sent ? "processed" : "error",
+        summary:   `IA ${sent ? "respondió" : "NO enviada"} a ${senderName || chatIdStr}: "${aiReply.slice(0, 80)}"`,
+        payloadJson: JSON.stringify({ ...basePayload, aiReply: aiReply.slice(0, 300), sent }),
+      });
     }
     return;
   }
