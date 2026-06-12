@@ -33,13 +33,40 @@ app.use(
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-// Development: accept all origins.
-// Production:  only origins listed in ALLOWED_ORIGINS (comma-separated env var).
-const rawOrigins = process.env["ALLOWED_ORIGINS"] ?? "";
-const allowedOrigins = rawOrigins
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
+// Allowed origins are built from three sources (union, deduplicated):
+//   1. ALLOWED_ORIGINS env var — explicit comma-separated list (optional)
+//   2. REPLIT_DOMAINS env var  — comma-separated hostnames injected by Replit runtime
+//   3. REPLIT_DEV_DOMAIN env var — single dev-preview hostname injected by Replit
+// In addition, any origin matching *.replit.app or *.replit.dev is always allowed
+// so that Replit preview iframes and deployed apps work without extra configuration.
+function buildAllowedOrigins(): Set<string> {
+  const set = new Set<string>();
+  const add = (raw: string | undefined) => {
+    if (!raw) return;
+    for (const part of raw.split(",")) {
+      const host = part.trim();
+      if (!host) continue;
+      // Accept bare hostnames (REPLIT_DOMAINS) and full origins (ALLOWED_ORIGINS)
+      set.add(host.startsWith("http") ? host : `https://${host}`);
+    }
+  };
+  add(process.env["ALLOWED_ORIGINS"]);
+  add(process.env["REPLIT_DOMAINS"]);
+  add(process.env["REPLIT_DEV_DOMAIN"]);
+  return set;
+}
+
+const allowedOrigins = buildAllowedOrigins();
+
+/** Returns true for any *.replit.app or *.replit.dev origin. */
+function isReplitOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname.endsWith(".replit.app") || hostname.endsWith(".replit.dev");
+  } catch {
+    return false;
+  }
+}
 
 app.use(
   cors({
@@ -49,13 +76,10 @@ app.use(
       if (!origin) return callback(null, true);
       // Development: unrestricted
       if (process.env["NODE_ENV"] !== "production") return callback(null, true);
-      // Production: enforce allowlist
-      if (allowedOrigins.length === 0) {
-        // No allowlist configured → log and deny
-        logger.warn({ origin }, "CORS: ALLOWED_ORIGINS not set — request denied in production");
-        return callback(new Error("CORS policy: no allowed origins configured"));
-      }
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Always allow any Replit-platform origin (dev previews + deployed apps)
+      if (isReplitOrigin(origin)) return callback(null, true);
+      // Explicit allowlist from env vars
+      if (allowedOrigins.has(origin)) return callback(null, true);
       logger.warn({ origin }, "CORS: origin not in allowlist — request denied");
       callback(new Error(`CORS policy: origin ${origin} not allowed`));
     },
