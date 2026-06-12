@@ -39,11 +39,28 @@ invitationsRouter.post("/:token/accept", requireAuth, async (req, res) => {
 
     let [user] = await db.select().from(usersTable).where(eq(usersTable.clerkId, clerkUserId));
     if (!user) {
-      const clerkUser = await clerkClient().users.getUser(clerkUserId);
-      const email = clerkUser.emailAddresses[0]?.emailAddress ?? "unknown@example.com";
-      const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
-      const avatarUrl = clerkUser.imageUrl ?? null;
+      // @clerk/express v2: clerkClient is a pre-instantiated object, not a factory function
+      let email: string | null = null;
+      let name: string | null = null;
+      let avatarUrl: string | null = null;
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkUserId);
+        email     = clerkUser.emailAddresses[0]?.emailAddress ?? null;
+        name      = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
+        avatarUrl = clerkUser.imageUrl ?? null;
+      } catch (err) {
+        console.warn("[Clerk] getUser failed during invitation accept:", String(err));
+      }
       [user] = await db.insert(usersTable).values({ clerkId: clerkUserId, email, name, avatarUrl }).returning();
+    } else if (!user.email) {
+      // Existing user with missing email — attempt to fill it in
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkUserId);
+        const email = clerkUser.emailAddresses[0]?.emailAddress ?? null;
+        if (email) {
+          [user] = await db.update(usersTable).set({ email }).where(eq(usersTable.clerkId, clerkUserId)).returning();
+        }
+      } catch { /* non-fatal */ }
     }
 
     const existing = await db.select({ id: orgMembersTable.id }).from(orgMembersTable).where(eq(orgMembersTable.userId, user.id));

@@ -6,49 +6,75 @@ import { requireAuth } from "../middlewares/auth";
 
 export const authRouter = Router();
 
+// ── Helper: fetch real Clerk profile (v2 SDK — clerkClient is an instance, not a factory) ──
+async function fetchClerkProfile(clerkUserId: string): Promise<{
+  email: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+} | null> {
+  try {
+    // @clerk/express v2: clerkClient is already a pre-instantiated object
+    const clerkUser = await clerkClient.users.getUser(clerkUserId);
+    const email = clerkUser.emailAddresses[0]?.emailAddress ?? null;
+    const name  = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
+    const avatarUrl = clerkUser.imageUrl ?? null;
+    return { email, name, avatarUrl };
+  } catch (err) {
+    console.warn("[Clerk] getUser failed — keeping existing profile:", String(err));
+    return null;
+  }
+}
+
+// ── GET /me — provision user on first login, refresh Clerk profile ────────────
 authRouter.get("/me", requireAuth, async (req, res) => {
   const clerkUserId = req.clerkUserId!;
 
   try {
-    // Fetch Clerk profile — non-fatal if Clerk API is unavailable
-    let clerkEmail = "unknown@example.com";
-    let clerkName: string | null = null;
-    let clerkAvatar: string | null = null;
-    try {
-      const clerkUser = await clerkClient().users.getUser(clerkUserId);
-      clerkEmail = clerkUser.emailAddresses[0]?.emailAddress ?? clerkEmail;
-      clerkName  = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || null;
-      clerkAvatar = clerkUser.imageUrl ?? null;
-    } catch (clerkErr) {
-      // Proceed with fallback values so provisioning never blocks on Clerk API errors
-      console.warn("Clerk API unavailable — provisioning with fallback profile:", String(clerkErr));
-    }
-
     let [user] = await db
       .select()
       .from(usersTable)
       .where(eq(usersTable.clerkId, clerkUserId));
 
+    // Fetch Clerk profile — only trust result if the API succeeded
+    const clerkProfile = await fetchClerkProfile(clerkUserId);
+
     if (!user) {
+      // First-ever login: insert with whatever Clerk returned (null if unavailable)
       [user] = await db
         .insert(usersTable)
-        .values({ clerkId: clerkUserId, email: clerkEmail, name: clerkName, avatarUrl: clerkAvatar })
+        .values({
+          clerkId:   clerkUserId,
+          email:     clerkProfile?.email     ?? null,
+          name:      clerkProfile?.name      ?? null,
+          avatarUrl: clerkProfile?.avatarUrl ?? null,
+        })
         .returning();
     } else {
-      [user] = await db
-        .update(usersTable)
-        .set({ email: clerkEmail, name: clerkName, avatarUrl: clerkAvatar })
-        .where(eq(usersTable.clerkId, clerkUserId))
-        .returning();
+      // Returning user: only overwrite DB fields if Clerk returned real data.
+      // NEVER overwrite a real email with null or a placeholder.
+      if (clerkProfile) {
+        const updates: Partial<typeof user> = {};
+        if (clerkProfile.email     && clerkProfile.email !== user.email)         updates.email     = clerkProfile.email;
+        if (clerkProfile.name      !== undefined && clerkProfile.name !== user.name) updates.name  = clerkProfile.name;
+        if (clerkProfile.avatarUrl !== undefined)                                 updates.avatarUrl = clerkProfile.avatarUrl;
+
+        if (Object.keys(updates).length > 0) {
+          [user] = await db
+            .update(usersTable)
+            .set(updates)
+            .where(eq(usersTable.clerkId, clerkUserId))
+            .returning();
+        }
+      }
     }
 
     const [membership] = await db
       .select({
-        orgId: orgMembersTable.orgId,
-        role: orgMembersTable.role,
-        orgName: organizationsTable.name,
-        orgSlug: organizationsTable.slug,
-        orgPlan: organizationsTable.plan,
+        orgId:      orgMembersTable.orgId,
+        role:       orgMembersTable.role,
+        orgName:    organizationsTable.name,
+        orgSlug:    organizationsTable.slug,
+        orgPlan:    organizationsTable.plan,
         orgLogoUrl: organizationsTable.logoUrl,
       })
       .from(orgMembersTable)
@@ -57,20 +83,20 @@ authRouter.get("/me", requireAuth, async (req, res) => {
 
     res.json({
       user: {
-        id: user.id,
-        clerkId: user.clerkId,
-        email: user.email,
-        name: user.name,
+        id:        user.id,
+        clerkId:   user.clerkId,
+        email:     user.email,
+        name:      user.name,
         avatarUrl: user.avatarUrl,
       },
       organization: membership
         ? {
-            id: membership.orgId,
-            name: membership.orgName,
-            slug: membership.orgSlug,
-            plan: membership.orgPlan,
+            id:      membership.orgId,
+            name:    membership.orgName,
+            slug:    membership.orgSlug,
+            plan:    membership.orgPlan,
             logoUrl: membership.orgLogoUrl,
-            role: membership.role,
+            role:    membership.role,
           }
         : null,
     });
@@ -79,6 +105,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
   }
 });
 
+// ── POST /setup-org — create the user's first organization ───────────────────
 authRouter.post("/setup-org", requireAuth, async (req, res) => {
   const clerkUserId = req.clerkUserId!;
   const { orgName } = req.body as { orgName?: string };
@@ -125,19 +152,19 @@ authRouter.post("/setup-org", requireAuth, async (req, res) => {
       .returning();
 
     await db.insert(orgMembersTable).values({
-      orgId: org.id,
+      orgId:  org.id,
       userId: user.id,
-      role: "owner",
+      role:   "owner",
     });
 
     res.status(201).json({
       organization: {
-        id: org.id,
-        name: org.name,
-        slug: org.slug,
-        plan: org.plan,
+        id:      org.id,
+        name:    org.name,
+        slug:    org.slug,
+        plan:    org.plan,
         logoUrl: org.logoUrl,
-        role: "owner",
+        role:    "owner",
       },
     });
   } catch (err) {
