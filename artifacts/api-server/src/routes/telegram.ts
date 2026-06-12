@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { randomBytes } from "crypto";
+import OpenAI from "openai";
 import {
   db, orgIntegrationsTable, integrationEventsTable,
-  clientsTable, quotesTable,
+  clientsTable, quotesTable, agentMemoryTable, organizationsTable,
 } from "@workspace/db";
 import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
@@ -52,6 +53,76 @@ async function getTelegramToken(orgId: number): Promise<string | null> {
   if (!conn?.credentialsEnc) return null;
   const creds = decryptCredentials(conn.credentialsEnc);
   return (creds.botToken as string | undefined) ?? null;
+}
+
+// ── AI reply for general Telegram messages ────────────────────────────────────
+// This is the "Telegram → IA → Respuesta" flow.
+// Called for every message that is NOT a quote acceptance/rejection keyword.
+async function generateTelegramAIReply(params: {
+  orgId:      number;
+  orgName:    string;
+  text:       string;
+  senderName: string;
+  client:     { name: string; status: string; company?: string | null; tags?: string | null; notes?: string | null } | null;
+}): Promise<string | null> {
+  const apiKey = process.env["OPENAI_API_KEY"];
+  if (!apiKey) return null;
+
+  const { orgName, text, senderName, client } = params;
+
+  // Load org agent memory (last 10 entries) for business context
+  const memories = await db
+    .select()
+    .from(agentMemoryTable)
+    .where(and(
+      eq(agentMemoryTable.orgId, params.orgId),
+      eq(agentMemoryTable.agentSlug, "operator"),
+    ))
+    .orderBy(desc(agentMemoryTable.updatedAt))
+    .limit(10);
+
+  const memoryBlock = memories.length > 0
+    ? "\n\nCONOCIMIENTO DEL NEGOCIO:\n" +
+      memories.map((m) => `- ${m.memoryKey}: ${String(m.content ?? "").slice(0, 120)}`).join("\n")
+    : "";
+
+  const clientBlock = client
+    ? `\n\nCLIENTE IDENTIFICADO:\n- Nombre: ${client.name}\n- Estado: ${client.status}${client.company ? `\n- Empresa: ${client.company}` : ""}${client.tags ? `\n- Etiquetas: ${client.tags}` : ""}${client.notes ? `\n- Notas: ${String(client.notes).slice(0, 200)}` : ""}`
+    : "";
+
+  const systemPrompt =
+    `Eres el asistente virtual de *${orgName}* en Telegram. Respondes en nombre del negocio de forma profesional, cálida y concisa.
+
+REGLAS OBLIGATORIAS:
+- Responde SIEMPRE en español
+- Máximo 3-4 frases por respuesta (Telegram = mensajes cortos)
+- Tono cercano pero profesional. Tutea al cliente (tú/te)
+- Usa emojis con moderación (1-2 máximo)
+- Si preguntan por servicios/precios que no conoces → ofrece ponerte en contacto
+- Termina siempre con una pregunta o invitación a continuar
+- NO menciones que eres IA ni GPT — eres el asistente del negocio
+- NO inventes precios ni datos concretos que no te han dado${memoryBlock}${clientBlock}`;
+
+  const userMessage = client
+    ? `El cliente ${client.name} dice: "${text}"`
+    : `Una persona llamada ${senderName || "un usuario"} escribe: "${text}"`;
+
+  try {
+    const openai = new OpenAI({ apiKey });
+    const completion = await openai.chat.completions.create({
+      model:       "gpt-4o-mini",
+      temperature: 0.7,
+      max_tokens:  200,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user",   content: userMessage },
+      ],
+    });
+    return (completion.choices[0]?.message?.content ?? "").trim() || null;
+  } catch (err) {
+    console.error("[Telegram AI] OpenAI error:", err);
+    return null;
+  }
 }
 
 // ── Core: process one incoming Telegram message ───────────────────────────────
@@ -108,11 +179,49 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     payloadJson: JSON.stringify({ ...basePayload, quoteFound: false }),
   });
 
-  // 3. If no acceptance/rejection keyword — just log (no auto-reply for plain messages)
-  if (!isAccepted && !isRejected) return;
-
-  // 4. Find pending quote for this client
+  // 3. Get token once — needed for both AI reply and quote flows
   const token = await getTelegramToken(orgId);
+
+  // 4. Plain message (no keyword) → Telegram → IA → Respuesta
+  //    This is the main conversational flow for general questions.
+  if (!isAccepted && !isRejected) {
+    // Get org name for bot persona
+    const [org] = await db
+      .select({ name: organizationsTable.name })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, orgId));
+
+    const orgName = org?.name ?? "nuestro negocio";
+
+    const aiReply = await generateTelegramAIReply({
+      orgId,
+      orgName,
+      text,
+      senderName,
+      client: client ?? null,
+    });
+
+    if (token) {
+      if (aiReply) {
+        await tgSend(token, chatId, aiReply);
+        await logIntegrationEvent({
+          orgId, integrationSlug: "telegram", direction: "outbound",
+          eventType: "ai_reply_sent", status: "processed",
+          summary: `IA respondió a ${senderName || chatIdStr}: "${aiReply.slice(0, 80)}"`,
+          payloadJson: JSON.stringify({ ...basePayload, aiReply: aiReply.slice(0, 300) }),
+        });
+        console.log(`[Telegram AI] ✅ Replied to chat_id ${chatId} (${senderName}): "${aiReply.slice(0, 80)}"`);
+      } else {
+        // OpenAI not available — send a polite fallback
+        await tgSend(token, chatId,
+          `👋 ¡Hola${senderName ? `, ${senderName}` : ""}! Gracias por escribirnos. En breve un miembro de nuestro equipo te atenderá. ¿Podemos ayudarte en algo más?`,
+        );
+      }
+    }
+    return;
+  }
+
+  // 5. Acceptance/rejection keyword flow
 
   if (!client) {
     await logIntegrationEvent({
