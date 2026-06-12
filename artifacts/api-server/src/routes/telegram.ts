@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import OpenAI from "openai";
 import {
   db, orgIntegrationsTable, integrationEventsTable,
-  clientsTable, quotesTable, agentMemoryTable, organizationsTable,
+  clientsTable, quotesTable, agentMemoryTable, organizationsTable, messagesTable,
 } from "@workspace/db";
 import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
@@ -168,7 +168,26 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     isRejected,
   };
 
-  // 2. Log message_received
+  // 2. If client found, link telegram_chat_id and save inbound message to messages table
+  if (client) {
+    // Persist chat_id on client if not already set
+    if (!client.telegramChatId || client.telegramChatId !== chatIdStr) {
+      await db.update(clientsTable)
+        .set({ telegramChatId: chatIdStr })
+        .where(eq(clientsTable.id, client.id));
+    }
+    // Save inbound message
+    await db.insert(messagesTable).values({
+      orgId,
+      clientId: client.id,
+      content:  text.slice(0, 2000),
+      direction: "inbound",
+      isAi:     false,
+      status:   "received",
+    });
+  }
+
+  // 3. Log message_received
   await logIntegrationEvent({
     orgId,
     integrationSlug: "telegram",
@@ -179,10 +198,10 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     payloadJson: JSON.stringify({ ...basePayload, quoteFound: false }),
   });
 
-  // 3. Get token once — needed for both AI reply and quote flows
+  // 4. Get token once — needed for both AI reply and quote flows
   const token = await getTelegramToken(orgId);
 
-  // 4. Plain message (no keyword) → Telegram → IA → Respuesta
+  // 5. Plain message (no keyword) → Telegram → IA → Respuesta
   //    This is the main conversational flow for general questions.
   if (!isAccepted && !isRejected) {
     // Get org name for bot persona
@@ -204,6 +223,17 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     if (token) {
       if (aiReply) {
         await tgSend(token, chatId, aiReply);
+        // Save AI reply to messages table
+        if (client) {
+          await db.insert(messagesTable).values({
+            orgId,
+            clientId: client.id,
+            content:  aiReply.slice(0, 2000),
+            direction: "outbound",
+            isAi:     true,
+            status:   "sent",
+          });
+        }
         await logIntegrationEvent({
           orgId, integrationSlug: "telegram", direction: "outbound",
           eventType: "ai_reply_sent", status: "processed",

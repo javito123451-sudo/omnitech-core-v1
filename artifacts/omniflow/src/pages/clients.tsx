@@ -5,7 +5,7 @@ import { AIQuoteModal } from "@/components/ai-quote-modal";
 import { WhatsAppModal } from "@/components/whatsapp-modal";
 import {
   useListClients, useCreateClient, useUpdateClient, useDeleteClient,
-  getListClientsQueryKey,
+  getListClientsQueryKey, useListMessages,
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
 import {
   Search, Plus, Phone, Mail, Building2, Tag, FileText,
   DollarSign, X, Pencil, Trash2, ChevronRight, Clock, User,
+  MessageCircle, Bot, Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -220,6 +221,72 @@ function ClientFormModal({
   );
 }
 
+// ── Messages Tab ─────────────────────────────────────────────────────────────
+function MessagesTab({ clientId }: { clientId: number }) {
+  const { data: messages, isLoading } = useListMessages({ clientId });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2 pt-1">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-12 bg-background/40 rounded-lg animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!messages || messages.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+        <MessageCircle className="w-8 h-8 mb-2 opacity-20" />
+        <p className="text-sm">Sin mensajes todavía</p>
+        <p className="text-xs mt-1 text-center">Los mensajes de Telegram aparecerán aquí automáticamente.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+      {messages.map((msg) => {
+        const isInbound = msg.direction === "inbound";
+        return (
+          <div key={msg.id} className={cn("flex gap-2", isInbound ? "justify-start" : "justify-end")}>
+            {isInbound && (
+              <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                <Send className="w-3 h-3 text-blue-400" />
+              </div>
+            )}
+            <div className={cn(
+              "max-w-[80%] rounded-xl px-3 py-2 text-sm",
+              isInbound
+                ? "bg-background/60 border border-border/60 text-slate-200"
+                : msg.isAi
+                  ? "bg-primary/15 border border-primary/30 text-primary"
+                  : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-300"
+            )}>
+              {!isInbound && msg.isAi && (
+                <div className="flex items-center gap-1 mb-1">
+                  <Bot className="w-3 h-3 text-primary/70" />
+                  <span className="text-[10px] text-primary/70 font-medium">Respuesta IA</span>
+                </div>
+              )}
+              <p className="leading-snug">{msg.content}</p>
+              <p className={cn("text-[10px] mt-1", isInbound ? "text-muted-foreground" : "text-primary/50")}>
+                {new Date(msg.createdAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+            {!isInbound && (
+              <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                {msg.isAi ? <Bot className="w-3 h-3 text-primary" /> : <Send className="w-3 h-3 text-primary" />}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Client Profile Dialog ───────────────────────────────────────────────────
 function ClientProfileDialog({
   client, onEdit, onClose,
@@ -231,6 +298,7 @@ function ClientProfileDialog({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showQuote, setShowQuote]         = useState(false);
   const [showWhatsApp, setShowWhatsApp]   = useState(false);
+  const [activeTab, setActiveTab]         = useState<"info" | "messages">("info");
   const tags = parseTags(client.tags);
 
   const handleDelete = () => {
@@ -268,6 +336,42 @@ function ClientProfileDialog({
             </Badge>
           </div>
         </div>
+
+        {/* Tab selector */}
+        <div className="flex gap-1 mt-3 bg-background/30 p-1 rounded-lg border border-border/50">
+          <button
+            onClick={() => setActiveTab("info")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all",
+              activeTab === "info"
+                ? "bg-card text-white shadow-sm"
+                : "text-muted-foreground hover:text-white"
+            )}
+          >
+            <User className="w-3 h-3" /> Info
+          </button>
+          <button
+            onClick={() => setActiveTab("messages")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all",
+              activeTab === "messages"
+                ? "bg-card text-white shadow-sm"
+                : "text-muted-foreground hover:text-white"
+            )}
+          >
+            <MessageCircle className="w-3 h-3" /> Mensajes
+          </button>
+        </div>
+
+        {/* ── TAB: Messages ── */}
+        {activeTab === "messages" && (
+          <div className="mt-3">
+            <MessagesTab clientId={client.id} />
+          </div>
+        )}
+
+        {/* ── TAB: Info ── */}
+        {activeTab === "info" && <>
 
         {/* Contact info */}
         <div className="space-y-2 mt-2">
@@ -390,6 +494,8 @@ function ClientProfileDialog({
             </div>
           </div>
         )}
+
+        </>}
 
       </DialogContent>
     </Dialog>

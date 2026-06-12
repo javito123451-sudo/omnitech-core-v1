@@ -17,6 +17,7 @@ export const clientsTable = pgTable("clients", {
   tags: text("tags"),
   notes: text("notes"),
   value: real("value"),
+  telegramChatId: text("telegram_chat_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
