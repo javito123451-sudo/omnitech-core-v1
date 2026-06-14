@@ -39,7 +39,6 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
   const clerkUserId = req.clerkUserId;
 
   if (!clerkUserId) {
-    console.warn(`[resolveOrg] 401 — clerkUserId missing on req (requireAuth bypassed?)`);
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -51,11 +50,16 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
       .where(eq(usersTable.clerkId, clerkUserId));
 
     if (!user) {
-      console.warn(
-        `[resolveOrg] 403 — clerkUserId=${clerkUserId} not found in usersTable` +
-        ` | method=${req.method} url=${req.url}`,
-      );
       res.status(403).json({ error: "User not provisioned. Call /api/auth/me first." });
+      return;
+    }
+
+    // ── Check if user account is suspended ────────────────────────────────────
+    if (user.status === "suspended") {
+      res.status(403).json({
+        error:   "account_suspended",
+        message: user.suspendedReason ?? "Tu cuenta ha sido suspendida. Contacta con soporte.",
+      });
       return;
     }
 
@@ -65,16 +69,26 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
       .where(eq(orgMembersTable.userId, user.id));
 
     if (!membership) {
-      console.warn(
-        `[resolveOrg] 403 no_org — userId=${user.id} clerkUserId=${clerkUserId}` +
-        ` | method=${req.method} url=${req.url}`,
-      );
       res.status(403).json({ error: "no_org", message: "User has no organization." });
       return;
     }
 
-    req.userId = user.id;
-    req.orgId  = membership.orgId;
+    // ── Check if workspace is suspended ───────────────────────────────────────
+    const [org] = await db
+      .select({ status: organizationsTable.status, name: organizationsTable.name })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, membership.orgId));
+
+    if (org?.status === "suspended") {
+      res.status(403).json({
+        error:   "workspace_suspended",
+        message: `El workspace "${org.name}" está suspendido. Contacta con soporte en support@omnitechcore.com`,
+      });
+      return;
+    }
+
+    req.userId  = user.id;
+    req.orgId   = membership.orgId;
     req.orgRole = membership.role;
     next();
   } catch (err) {

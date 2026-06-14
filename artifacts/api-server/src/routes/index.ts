@@ -20,6 +20,7 @@ import { integrationsRouter } from "./integrations";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 import { controlCenterRouter } from "./control-center";
 import { importAiRouter } from "./import-ai";
+import { requireModule } from "../middlewares/requireModule";
 
 const router: IRouter = Router();
 

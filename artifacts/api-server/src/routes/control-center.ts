@@ -1,11 +1,14 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
-import { platformRolesTable, moduleConfigsTable, licensePlansTable, auditLogsTable } from "@workspace/db";
-import { organizationsTable, usersTable, orgMembersTable, clientsTable, messagesTable, quotesTable } from "@workspace/db";
-import { eq, desc, count, and, sql } from "drizzle-orm";
+import {
+  platformRolesTable, moduleConfigsTable, licensePlansTable, auditLogsTable,
+  organizationsTable, usersTable, orgMembersTable, clientsTable, messagesTable, quotesTable,
+} from "@workspace/db";
+import { eq, desc, count, and, sql, gte, lte, ilike, or, lt } from "drizzle-orm";
 import { requireSuperAdmin, hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
 import { aiCenterRouter } from "./ai-center-routes";
+import { clearModuleCache } from "../middlewares/requireModule";
 
 export const controlCenterRouter = Router();
 
@@ -13,7 +16,7 @@ export const controlCenterRouter = Router();
 controlCenterRouter.use("/ai-center", aiCenterRouter);
 
 // ── Helper: log audit event ───────────────────────────────────────────────────
-async function logAudit(params: {
+export async function logAudit(params: {
   actorClerkId: string;
   actorEmail?: string;
   action: string;
@@ -38,204 +41,380 @@ async function logAudit(params: {
   }).catch(() => {});
 }
 
-// ── GET /check — public (no super admin required, just auth) ──────────────────
+// ── GET /check — public ───────────────────────────────────────────────────────
 controlCenterRouter.get("/check", async (req, res) => {
   const auth = getAuth(req);
   const clerkUserId = auth?.userId;
   if (!clerkUserId) { res.json({ isSuperAdmin: false, role: null }); return; }
   const role = await hasPlatformRole(clerkUserId);
+  res.json({ isSuperAdmin: role === "SUPER_ADMIN", role });
+});
+
+// ── All routes below require SUPER_ADMIN or STAFF_OMNITECH ───────────────────
+controlCenterRouter.use(requireSuperAdmin);
+
+// ── GET /health — real health check ──────────────────────────────────────────
+controlCenterRouter.get("/health", async (_req, res) => {
+  const services: Record<string, { status: string; latencyMs?: number; message: string }> = {};
+  let overallStatus = "operational";
+
+  // DB check
+  const dbStart = Date.now();
+  try {
+    await db.execute(sql`SELECT 1`);
+    services.database = { status: "ok", latencyMs: Date.now() - dbStart, message: "Conectado" };
+  } catch (e) {
+    services.database = { status: "error", latencyMs: Date.now() - dbStart, message: String(e) };
+    overallStatus = "down";
+  }
+
+  // OpenAI check
+  const openaiKey = process.env["OPENAI_API_KEY"];
+  if (openaiKey && openaiKey.startsWith("sk-")) {
+    services.openai = { status: "ok", message: "API Key configurada" };
+  } else {
+    services.openai = { status: "warning", message: "API Key no configurada o inválida" };
+    if (overallStatus === "operational") overallStatus = "degraded";
+  }
+
+  // WhatsApp check
+  const waToken = process.env["META_WHATSAPP_TOKEN"] ?? process.env["WHATSAPP_TOKEN"];
+  services.whatsapp = waToken
+    ? { status: "ok",      message: "Token configurado" }
+    : { status: "warning", message: "Token no configurado" };
+
+  // Clerk check
+  const clerkKey = process.env["CLERK_SECRET_KEY"];
+  if (clerkKey && clerkKey.startsWith("sk_")) {
+    services.clerk = { status: "ok", message: "Secret Key configurada" };
+  } else {
+    services.clerk = { status: "error", message: "Secret Key no configurada" };
+    if (overallStatus !== "down") overallStatus = "degraded";
+  }
+
+  const mem = process.memoryUsage();
   res.json({
-    isSuperAdmin: role === "SUPER_ADMIN",
-    role,
+    status: overallStatus,
+    services,
+    system: {
+      uptimeSeconds: Math.round(process.uptime()),
+      memoryMb:      Math.round(mem.rss / 1024 / 1024),
+      heapMb:        Math.round(mem.heapUsed / 1024 / 1024),
+      nodeVersion:   process.version,
+    },
+    checkedAt: new Date().toISOString(),
   });
 });
 
-// All routes below require SUPER_ADMIN or STAFF_OMNITECH
-controlCenterRouter.use(requireSuperAdmin);
-
-// ── GET /metrics — global platform metrics ─────────────────────────────────────
-controlCenterRouter.get("/metrics", async (req, res) => {
+// ── GET /metrics ──────────────────────────────────────────────────────────────
+controlCenterRouter.get("/metrics", async (_req, res) => {
   const [orgs]     = await db.select({ count: count() }).from(organizationsTable);
   const [users]    = await db.select({ count: count() }).from(usersTable);
   const [clients]  = await db.select({ count: count() }).from(clientsTable);
   const [messages] = await db.select({ count: count() }).from(messagesTable);
   const [quotes]   = await db.select({ count: count() }).from(quotesTable);
   const [admins]   = await db.select({ count: count() }).from(platformRolesTable).where(eq(platformRolesTable.isActive, true));
+  const [suspended] = await db.select({ count: count() }).from(organizationsTable).where(eq(organizationsTable.status, "suspended"));
+
+  // Real AI agents / automations from modules
+  const aiModules = await db.select({ count: count() }).from(moduleConfigsTable)
+    .where(and(eq(moduleConfigsTable.moduleSlug, "ai_agents"), eq(moduleConfigsTable.isEnabled, true)));
+  const autoModules = await db.select({ count: count() }).from(moduleConfigsTable)
+    .where(and(eq(moduleConfigsTable.moduleSlug, "automations"), eq(moduleConfigsTable.isEnabled, true)));
 
   res.json({
-    workspaces:     Number(orgs?.count    ?? 0),
-    users:          Number(users?.count   ?? 0),
-    clients:        Number(clients?.count ?? 0),
-    messages:       Number(messages?.count ?? 0),
-    quotes:         Number(quotes?.count  ?? 0),
-    superAdmins:    Number(admins?.count  ?? 0),
-    // Simulated metrics (for future modules)
-    aiAgents:       3,
-    automations:    12,
-    storageUsedMb:  Math.round(Number(messages?.count ?? 0) * 0.5 + Number(clients?.count ?? 0) * 0.2),
-    systemStatus:   "operational",
+    workspaces:       Number(orgs?.count      ?? 0),
+    workspacesSusp:   Number(suspended?.[0]?.count ?? 0),
+    users:            Number(users?.count     ?? 0),
+    clients:          Number(clients?.count   ?? 0),
+    messages:         Number(messages?.count  ?? 0),
+    quotes:           Number(quotes?.count    ?? 0),
+    superAdmins:      Number(admins?.count    ?? 0),
+    aiAgents:         Number(aiModules?.[0]?.count  ?? 0),
+    automations:      Number(autoModules?.[0]?.count ?? 0),
+    storageUsedMb:    Math.round(Number(messages?.count ?? 0) * 0.5 + Number(clients?.count ?? 0) * 0.2),
+    systemStatus:     "operational",
   });
 });
 
-// ── GET /workspaces — list all workspaces ─────────────────────────────────────
-controlCenterRouter.get("/workspaces", async (req, res) => {
+// ── GET /workspaces ───────────────────────────────────────────────────────────
+controlCenterRouter.get("/workspaces", async (_req, res) => {
   const orgs = await db.select().from(organizationsTable).orderBy(desc(organizationsTable.createdAt));
-
   const enriched = await Promise.all(orgs.map(async (org) => {
     const [userCount]   = await db.select({ count: count() }).from(orgMembersTable).where(eq(orgMembersTable.orgId, org.id));
     const [clientCount] = await db.select({ count: count() }).from(clientsTable).where(eq(clientsTable.orgId, org.id));
     const [license]     = await db.select().from(licensePlansTable).where(eq(licensePlansTable.orgId, org.id));
     return {
-      id:          org.id,
-      name:        org.name,
-      slug:        org.slug,
-      plan:        license?.plan ?? org.plan ?? "starter",
-      status:      "active",
-      users:       Number(userCount?.count ?? 0),
-      clients:     Number(clientCount?.count ?? 0),
-      createdAt:   org.createdAt,
+      id:       org.id, name: org.name, slug: org.slug,
+      plan:     license?.plan ?? org.plan ?? "starter",
+      status:   org.status ?? "active",
+      users:    Number(userCount?.count   ?? 0),
+      clients:  Number(clientCount?.count ?? 0),
+      createdAt: org.createdAt,
     };
   }));
-
   res.json(enriched);
 });
 
-// ── POST /workspaces — create workspace ───────────────────────────────────────
+// ── POST /workspaces ──────────────────────────────────────────────────────────
 controlCenterRouter.post("/workspaces", async (req, res) => {
   const { name } = req.body as { name: string };
   if (!name?.trim()) { res.status(400).json({ error: "name required" }); return; }
   const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") + "-" + Math.random().toString(36).slice(2, 6);
   const [org] = await db.insert(organizationsTable).values({ name: name.trim(), slug }).returning();
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_created", resource: "workspace", resourceId: String(org.id), details: { name }, req });
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_created", resource: "workspace", resourceId: String(org!.id), details: { name }, req });
   res.json(org);
 });
 
-// ── PATCH /workspaces/:id — update workspace ──────────────────────────────────
+// ── PATCH /workspaces/:id ─────────────────────────────────────────────────────
 controlCenterRouter.patch("/workspaces/:id", async (req, res) => {
-  const id   = Number(req.params.id);
-  const { name, status } = req.body as { name?: string; status?: string };
-  const updates: Record<string, unknown> = {};
-  if (name)   updates.name = name;
-  await db.update(organizationsTable).set(updates).where(eq(organizationsTable.id, id));
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_updated", resource: "workspace", resourceId: String(id), details: { name, status }, req });
+  const id = Number(req.params["id"]);
+  const { name } = req.body as { name?: string };
+  if (name?.trim()) {
+    await db.update(organizationsTable).set({ name: name.trim() }).where(eq(organizationsTable.id, id));
+  }
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_updated", resource: "workspace", resourceId: String(id), details: { name }, req });
   res.json({ ok: true });
 });
 
-// ── DELETE /workspaces/:id — delete workspace ─────────────────────────────────
+// ── POST /workspaces/:id/suspend ──────────────────────────────────────────────
+controlCenterRouter.post("/workspaces/:id/suspend", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede suspender workspaces" }); return; }
+  const id = Number(req.params["id"]);
+  const { reason } = req.body as { reason?: string };
+  await db.execute(sql`UPDATE organizations SET status = 'suspended' WHERE id = ${id}`);
+  clearModuleCache(id);
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_suspended", resource: "workspace", resourceId: String(id), details: { reason }, severity: "warning", req });
+  res.json({ ok: true });
+});
+
+// ── POST /workspaces/:id/activate ─────────────────────────────────────────────
+controlCenterRouter.post("/workspaces/:id/activate", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede activar workspaces" }); return; }
+  const id = Number(req.params["id"]);
+  await db.execute(sql`UPDATE organizations SET status = 'active' WHERE id = ${id}`);
+  clearModuleCache(id);
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_activated", resource: "workspace", resourceId: String(id), severity: "info", req });
+  res.json({ ok: true });
+});
+
+// ── DELETE /workspaces/:id ────────────────────────────────────────────────────
 controlCenterRouter.delete("/workspaces/:id", async (req, res) => {
-  const id = Number(req.params.id);
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede eliminar workspaces" }); return; }
+  const id = Number(req.params["id"]);
   await db.delete(organizationsTable).where(eq(organizationsTable.id, id));
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_deleted", resource: "workspace", resourceId: String(id), severity: "warning", req });
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_deleted", resource: "workspace", resourceId: String(id), severity: "critical", req });
   res.json({ ok: true });
 });
 
-// ── GET /users — list all platform users ──────────────────────────────────────
-controlCenterRouter.get("/users", async (req, res) => {
+// ── GET /users ────────────────────────────────────────────────────────────────
+controlCenterRouter.get("/users", async (_req, res) => {
   const users = await db.select().from(usersTable).orderBy(desc(usersTable.createdAt));
   const enriched = await Promise.all(users.map(async (u) => {
-    const [mem] = await db.select({ orgId: orgMembersTable.orgId, role: orgMembersTable.role })
+    const members = await db.select({ orgId: orgMembersTable.orgId, role: orgMembersTable.role, isSuspended: orgMembersTable.isSuspended })
       .from(orgMembersTable).where(eq(orgMembersTable.userId, u.id));
     const [platformRole] = await db.select({ role: platformRolesTable.role })
       .from(platformRolesTable).where(eq(platformRolesTable.clerkUserId, u.clerkId));
-    let orgName: string | null = null;
-    if (mem?.orgId) {
-      const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, mem.orgId));
-      orgName = org?.name ?? null;
-    }
+    const orgs = await Promise.all(members.map(async m => {
+      const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, m.orgId));
+      return { orgId: m.orgId, orgName: org?.name ?? null, orgRole: m.role, isSuspended: m.isSuspended };
+    }));
     return {
-      id:           u.id,
-      clerkId:      u.clerkId,
-      email:        u.email,
-      orgId:        mem?.orgId ?? null,
-      orgName,
-      orgRole:      mem?.role ?? null,
+      id: u.id, clerkId: u.clerkId, email: u.email, name: u.name,
+      status:       u.status ?? "active",
+      suspendedAt:  u.suspendedAt,
+      suspendedReason: u.suspendedReason,
+      orgs,
+      // Primary org (first)
+      orgId:       orgs[0]?.orgId   ?? null,
+      orgName:     orgs[0]?.orgName ?? null,
+      orgRole:     orgs[0]?.orgRole ?? null,
       platformRole: platformRole?.role ?? null,
-      status:       "active",
-      createdAt:    u.createdAt,
+      createdAt:   u.createdAt,
     };
   }));
   res.json(enriched);
 });
 
-// ── GET /modules — list module configs ───────────────────────────────────────
-controlCenterRouter.get("/modules", async (req, res) => {
+// ── PATCH /users/:clerkId — change CRM role ───────────────────────────────────
+controlCenterRouter.patch("/users/:clerkId", async (req, res) => {
+  const { clerkId } = req.params;
+  const { orgId, role } = req.body as { orgId: number; role: string };
+  const VALID_ROLES = ["owner", "admin", "member", "read_only"];
+  if (!VALID_ROLES.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
+
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.clerkId, clerkId));
+  if (!user) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
+
+  await db.update(orgMembersTable)
+    .set({ role })
+    .where(and(eq(orgMembersTable.userId, user.id), eq(orgMembersTable.orgId, orgId)));
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "user_role_changed", resource: "user", resourceId: clerkId, details: { role, orgId }, severity: "warning", req });
+  res.json({ ok: true });
+});
+
+// ── POST /users/:clerkId/suspend ──────────────────────────────────────────────
+controlCenterRouter.post("/users/:clerkId/suspend", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede suspender usuarios" }); return; }
+  const { clerkId } = req.params;
+  const { reason } = req.body as { reason?: string };
+  await db.update(usersTable)
+    .set({ status: "suspended", suspendedReason: reason ?? null, suspendedAt: new Date() })
+    .where(eq(usersTable.clerkId, clerkId));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "user_suspended", resource: "user", resourceId: clerkId, details: { reason }, severity: "warning", req });
+  res.json({ ok: true });
+});
+
+// ── POST /users/:clerkId/activate ─────────────────────────────────────────────
+controlCenterRouter.post("/users/:clerkId/activate", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede activar usuarios" }); return; }
+  const { clerkId } = req.params;
+  await db.update(usersTable)
+    .set({ status: "active", suspendedReason: null, suspendedAt: null })
+    .where(eq(usersTable.clerkId, clerkId));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "user_activated", resource: "user", resourceId: clerkId, severity: "info", req });
+  res.json({ ok: true });
+});
+
+// ── GET /modules ──────────────────────────────────────────────────────────────
+controlCenterRouter.get("/modules", async (_req, res) => {
   const CATALOG = [
-    { slug: "crm",                 name: "CRM",                   description: "Gestión de clientes y relaciones" },
-    { slug: "whatsapp",            name: "WhatsApp Business",      description: "Mensajería y automatizaciones" },
-    { slug: "omni_import_ai",      name: "Omni Import AI",         description: "Importación inteligente de datos" },
-    { slug: "omni_docs",           name: "Omni Docs",              description: "Gestión documental" },
-    { slug: "omni_security",       name: "Omni Security Core",     description: "Seguridad y auditoría avanzada" },
-    { slug: "omni_marketing",      name: "Omni Marketing Hub",     description: "Campañas y automatización marketing" },
-    { slug: "analytics",           name: "Analytics",              description: "Análisis avanzado de datos" },
-    { slug: "automations",         name: "Automations",            description: "Flujos de trabajo automatizados" },
-    { slug: "ai_agents",           name: "AI Agents",              description: "Agentes de IA personalizados" },
+    { slug: "crm",            name: "CRM",                   description: "Gestión de clientes y relaciones",       alwaysOn: true  },
+    { slug: "whatsapp",       name: "WhatsApp Business",      description: "Mensajería y automatizaciones",          alwaysOn: false },
+    { slug: "omni_import_ai", name: "Omni Import AI",         description: "Importación inteligente de datos",       alwaysOn: false },
+    { slug: "omni_docs",      name: "Omni Docs",              description: "Gestión documental",                     alwaysOn: false },
+    { slug: "omni_security",  name: "Omni Security Core",     description: "Seguridad y auditoría avanzada",         alwaysOn: false },
+    { slug: "omni_marketing", name: "Omni Marketing Hub",     description: "Campañas y automatización marketing",    alwaysOn: false },
+    { slug: "analytics",      name: "Analytics",              description: "Análisis avanzado de datos",             alwaysOn: false },
+    { slug: "automations",    name: "Automations",            description: "Flujos de trabajo automatizados",        alwaysOn: false },
+    { slug: "ai_agents",      name: "AI Agents",              description: "Agentes de IA personalizados",           alwaysOn: false },
   ];
-
   const configs = await db.select().from(moduleConfigsTable);
-
-  const orgs = await db.select({ id: organizationsTable.id, name: organizationsTable.name }).from(organizationsTable);
-
-  const result = orgs.map(org => ({
+  const orgs    = await db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable);
+  const result  = orgs.map(org => ({
     org,
     modules: CATALOG.map(mod => {
       const cfg = configs.find(c => c.orgId === org.id && c.moduleSlug === mod.slug);
       return { ...mod, isEnabled: cfg ? cfg.isEnabled : (mod.slug === "crm"), configId: cfg?.id ?? null };
     }),
   }));
-
   res.json({ catalog: CATALOG, orgs: result });
 });
 
-// ── PATCH /modules — toggle module for org ────────────────────────────────────
+// ── PATCH /modules ────────────────────────────────────────────────────────────
 controlCenterRouter.patch("/modules", async (req, res) => {
   const { orgId, moduleSlug, isEnabled } = req.body as { orgId: number; moduleSlug: string; isEnabled: boolean };
   await db.insert(moduleConfigsTable)
     .values({ orgId, moduleSlug, isEnabled, updatedBy: req.clerkUserId })
     .onConflictDoUpdate({ target: [moduleConfigsTable.orgId, moduleConfigsTable.moduleSlug], set: { isEnabled, updatedBy: req.clerkUserId!, updatedAt: new Date() } });
+  clearModuleCache(orgId, moduleSlug);
   await logAudit({ actorClerkId: req.clerkUserId!, action: `module_${isEnabled ? "enabled" : "disabled"}`, resource: "module", resourceId: moduleSlug, orgId, req });
   res.json({ ok: true });
 });
 
-// ── GET /licenses — list all license plans ────────────────────────────────────
-controlCenterRouter.get("/licenses", async (req, res) => {
+// ── GET /licenses ─────────────────────────────────────────────────────────────
+controlCenterRouter.get("/licenses", async (_req, res) => {
   const plans = await db.select().from(licensePlansTable).orderBy(desc(licensePlansTable.createdAt));
   const orgs  = await db.select({ id: organizationsTable.id, name: organizationsTable.name }).from(organizationsTable);
-  const result = plans.map(p => ({
-    ...p,
-    orgName: orgs.find(o => o.id === p.orgId)?.name ?? `Org #${p.orgId}`,
-  }));
-  // Add orgs without a license plan
+  const result = plans.map(p => ({ ...p, orgName: orgs.find(o => o.id === p.orgId)?.name ?? `Org #${p.orgId}` }));
   const orgsWithPlan = new Set(plans.map(p => p.orgId));
-  const orgsWithout = orgs.filter(o => !orgsWithPlan.has(o.id)).map(o => ({
+  const orgsWithout  = orgs.filter(o => !orgsWithPlan.has(o.id)).map(o => ({
     id: null, orgId: o.id, orgName: o.name, plan: "starter", seats: 5, isActive: true,
-    billingCycle: "monthly", validFrom: null, validUntil: null, notes: null, assignedBy: null, createdAt: null,
+    billingCycle: "monthly", validFrom: null, validUntil: null, notes: null, assignedBy: null, createdAt: null, updatedAt: null,
   }));
   res.json([...result, ...orgsWithout]);
 });
 
-// ── POST /licenses — assign license ──────────────────────────────────────────
+// ── POST /licenses ────────────────────────────────────────────────────────────
 controlCenterRouter.post("/licenses", async (req, res) => {
-  const { orgId, plan, seats, billingCycle, notes } = req.body as { orgId: number; plan: string; seats?: number; billingCycle?: string; notes?: string };
+  const { orgId, plan, seats, billingCycle, notes, validUntil } = req.body as {
+    orgId: number; plan: string; seats?: number; billingCycle?: string; notes?: string; validUntil?: string;
+  };
+  const validUntilDate = validUntil ? new Date(validUntil) : null;
   await db.insert(licensePlansTable)
-    .values({ orgId, plan, seats: seats ?? 5, billingCycle: billingCycle ?? "monthly", notes: notes ?? null, assignedBy: req.clerkUserId })
-    .onConflictDoUpdate({ target: [licensePlansTable.orgId], set: { plan, seats: seats ?? 5, billingCycle: billingCycle ?? "monthly", notes: notes ?? null, assignedBy: req.clerkUserId!, updatedAt: new Date() } });
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "license_assigned", resource: "license", orgId, details: { plan, seats }, req });
+    .values({ orgId, plan, seats: seats ?? 5, billingCycle: billingCycle ?? "monthly", notes: notes ?? null, validFrom: new Date(), validUntil: validUntilDate, assignedBy: req.clerkUserId })
+    .onConflictDoUpdate({ target: [licensePlansTable.orgId], set: { plan, seats: seats ?? 5, billingCycle: billingCycle ?? "monthly", notes: notes ?? null, validUntil: validUntilDate, assignedBy: req.clerkUserId!, updatedAt: new Date() } });
+  // Sync plan to organizations table too
+  await db.update(organizationsTable).set({ plan }).where(eq(organizationsTable.id, orgId));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "license_assigned", resource: "license", orgId, details: { plan, seats, validUntil }, req });
   res.json({ ok: true });
 });
 
-// ── GET /audit — audit logs ───────────────────────────────────────────────────
+// ── GET /audit ────────────────────────────────────────────────────────────────
 controlCenterRouter.get("/audit", async (req, res) => {
-  const logs = await db.select().from(auditLogsTable).orderBy(desc(auditLogsTable.createdAt)).limit(200);
-  res.json(logs);
+  const limit     = Math.min(Number(req.query["limit"] ?? 50), 200);
+  const offset    = Number(req.query["offset"] ?? 0);
+  const severity  = req.query["severity"] as string | undefined;
+  const action    = req.query["action"]   as string | undefined;
+  const actor     = req.query["actor"]    as string | undefined;
+  const orgId     = req.query["orgId"]    as string | undefined;
+  const startDate = req.query["startDate"] as string | undefined;
+  const endDate   = req.query["endDate"]   as string | undefined;
+
+  const conditions = [];
+  if (severity && severity !== "all")        conditions.push(eq(auditLogsTable.severity, severity));
+  if (action)                                 conditions.push(ilike(auditLogsTable.action, `%${action}%`));
+  if (actor)                                  conditions.push(or(ilike(auditLogsTable.actorEmail, `%${actor}%`), ilike(auditLogsTable.actorClerkId, `%${actor}%`)));
+  if (orgId && !isNaN(Number(orgId)))         conditions.push(eq(auditLogsTable.orgId, Number(orgId)));
+  if (startDate)                              conditions.push(gte(auditLogsTable.createdAt, new Date(startDate)));
+  if (endDate)                                conditions.push(lte(auditLogsTable.createdAt, new Date(endDate)));
+
+  const where = conditions.length ? and(...conditions) : undefined;
+
+  const [{ total }] = await db.select({ total: count() }).from(auditLogsTable).where(where);
+  const logs = await db.select().from(auditLogsTable)
+    .where(where)
+    .orderBy(desc(auditLogsTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  res.json({ logs, total: Number(total), limit, offset });
 });
 
-// ── GET /platform-roles — list super admins ───────────────────────────────────
-controlCenterRouter.get("/platform-roles", async (req, res) => {
+// ── GET /audit/export ─────────────────────────────────────────────────────────
+controlCenterRouter.get("/audit/export", async (req, res) => {
+  const severity  = req.query["severity"]  as string | undefined;
+  const action    = req.query["action"]    as string | undefined;
+  const actor     = req.query["actor"]     as string | undefined;
+  const startDate = req.query["startDate"] as string | undefined;
+  const endDate   = req.query["endDate"]   as string | undefined;
+
+  const conditions = [];
+  if (severity && severity !== "all") conditions.push(eq(auditLogsTable.severity, severity));
+  if (action)      conditions.push(ilike(auditLogsTable.action, `%${action}%`));
+  if (actor)       conditions.push(or(ilike(auditLogsTable.actorEmail, `%${actor}%`), ilike(auditLogsTable.actorClerkId, `%${actor}%`)));
+  if (startDate)   conditions.push(gte(auditLogsTable.createdAt, new Date(startDate)));
+  if (endDate)     conditions.push(lte(auditLogsTable.createdAt, new Date(endDate)));
+
+  const logs = await db.select().from(auditLogsTable)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(auditLogsTable.createdAt))
+    .limit(5000);
+
+  const escCsv = (v: unknown) => {
+    const s = v == null ? "" : String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = ["ID", "Fecha", "Actor Email", "Actor ClerkID", "Acción", "Recurso", "Recurso ID", "Org ID", "Severidad", "IP", "Detalles"].join(",");
+  const rows   = logs.map(l => [
+    l.id, l.createdAt ? new Date(l.createdAt).toISOString() : "", l.actorEmail ?? "", l.actorClerkId ?? "",
+    l.action, l.resource ?? "", l.resourceId ?? "", l.orgId ?? "", l.severity ?? "",
+    l.ipAddress ?? "", escCsv(l.details ? JSON.stringify(l.details) : ""),
+  ].map(escCsv).join(","));
+
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="audit-log-${new Date().toISOString().slice(0,10)}.csv"`);
+  res.send([header, ...rows].join("\n"));
+});
+
+// ── GET /platform-roles ───────────────────────────────────────────────────────
+controlCenterRouter.get("/platform-roles", async (_req, res) => {
   const roles = await db.select().from(platformRolesTable).orderBy(desc(platformRolesTable.createdAt));
   res.json(roles);
 });
 
-// ── POST /platform-roles — grant role ────────────────────────────────────────
+// ── POST /platform-roles ──────────────────────────────────────────────────────
 controlCenterRouter.post("/platform-roles", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede conceder roles" }); return; }
   const { clerkUserId, role, displayName, email, notes } = req.body as { clerkUserId: string; role: string; displayName?: string; email?: string; notes?: string };
@@ -247,7 +426,7 @@ controlCenterRouter.post("/platform-roles", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ── DELETE /platform-roles/:clerkUserId — revoke role ────────────────────────
+// ── DELETE /platform-roles/:clerkUserId ───────────────────────────────────────
 controlCenterRouter.delete("/platform-roles/:clerkUserId", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede revocar roles" }); return; }
   const { clerkUserId } = req.params;
@@ -257,11 +436,9 @@ controlCenterRouter.delete("/platform-roles/:clerkUserId", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ── GET /diagnostics — full role system audit ─────────────────────────────────
-controlCenterRouter.get("/diagnostics", async (req, res) => {
-  // All users with their CRM role and platform role
+// ── GET /diagnostics ──────────────────────────────────────────────────────────
+controlCenterRouter.get("/diagnostics", async (_req, res) => {
   const users = await db.select().from(usersTable).orderBy(usersTable.id);
-
   const enrichedUsers = await Promise.all(users.map(async u => {
     const [mem] = await db.select({ orgId: orgMembersTable.orgId, role: orgMembersTable.role })
       .from(orgMembersTable).where(eq(orgMembersTable.userId, u.id));
@@ -272,64 +449,40 @@ controlCenterRouter.get("/diagnostics", async (req, res) => {
       const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, mem.orgId));
       orgName = org?.name ?? null;
     }
-    return {
-      id: u.id, email: u.email, clerkId: u.clerkId,
-      crmRole: mem?.role ?? null, orgName,
-      platformRole: pr?.role ?? null,
-      createdAt: u.createdAt,
-    };
+    return { id: u.id, email: u.email, clerkId: u.clerkId, status: u.status ?? "active", crmRole: mem?.role ?? null, orgName, platformRole: pr?.role ?? null, createdAt: u.createdAt };
   }));
-
-  // Organizations with member counts
   const orgs = await db.select().from(organizationsTable).orderBy(organizationsTable.id);
   const enrichedOrgs = await Promise.all(orgs.map(async o => {
     const [mc] = await db.select({ count: count() }).from(orgMembersTable).where(eq(orgMembersTable.orgId, o.id));
-    return { id: o.id, name: o.name, slug: o.slug, plan: o.plan ?? "free", memberCount: Number(mc?.count ?? 0) };
+    return { id: o.id, name: o.name, slug: o.slug, plan: o.plan ?? "free", status: o.status ?? "active", memberCount: Number(mc?.count ?? 0) };
   }));
-
-  // Role catalog from DB
   let roleCatalog: Array<{ role: string; scope: string; description: string; priority: number }> = [];
   try {
     const rc = await db.execute(sql`SELECT role, scope, description, priority FROM role_catalog ORDER BY priority DESC`);
     roleCatalog = (rc as { rows: typeof roleCatalog }).rows;
   } catch {
-    // Fallback if table doesn't exist yet
     roleCatalog = [
-      { role: "SUPER_ADMIN",   scope: "platform", description: "Acceso total a la plataforma OmniTech", priority: 100 },
-      { role: "STAFF_OMNITECH",scope: "platform", description: "Personal interno de OmniTech",          priority: 90  },
-      { role: "owner",         scope: "org",      description: "Propietario de la organización",        priority: 80  },
-      { role: "admin",         scope: "org",      description: "Administrador de la organización",      priority: 70  },
-      { role: "member",        scope: "org",      description: "Miembro estándar",                      priority: 60  },
-      { role: "read_only",     scope: "org",      description: "Acceso de solo lectura",                priority: 50  },
-      { role: "CLIENT",        scope: "client",   description: "Cliente externo (sin acceso CRM)",      priority: 10  },
+      { role: "SUPER_ADMIN",    scope: "platform", description: "Acceso total a la plataforma OmniTech", priority: 100 },
+      { role: "STAFF_OMNITECH", scope: "platform", description: "Personal interno de OmniTech",          priority: 90  },
+      { role: "owner",          scope: "org",      description: "Propietario de la organización",        priority: 80  },
+      { role: "admin",          scope: "org",      description: "Administrador de la organización",      priority: 70  },
+      { role: "member",         scope: "org",      description: "Miembro estándar",                      priority: 60  },
+      { role: "read_only",      scope: "org",      description: "Acceso de solo lectura",                priority: 50  },
+      { role: "CLIENT",         scope: "client",   description: "Cliente externo (sin acceso CRM)",      priority: 10  },
     ];
   }
-
-  // Distinct roles in use
-  const crmRolesResult = await db.selectDistinct({ role: orgMembersTable.role }).from(orgMembersTable);
-  const platRolesResult = await db.selectDistinct({ role: platformRolesTable.role })
-    .from(platformRolesTable).where(eq(platformRolesTable.isActive, true));
-
+  const crmRolesResult  = await db.selectDistinct({ role: orgMembersTable.role }).from(orgMembersTable);
+  const platRolesResult = await db.selectDistinct({ role: platformRolesTable.role }).from(platformRolesTable).where(eq(platformRolesTable.isActive, true));
   const crmRolesInUse      = crmRolesResult.map(r => r.role);
   const platformRolesInUse = platRolesResult.map(r => r.role);
-
   const controlCenterEnabled = platformRolesInUse.includes("SUPER_ADMIN") || platformRolesInUse.includes("STAFF_OMNITECH");
-
   res.json({
-    users: enrichedUsers,
-    orgs: enrichedOrgs,
-    roleCatalog,
-    crmRolesInUse,
-    platformRolesInUse,
-    controlCenterEnabled,
+    users: enrichedUsers, orgs: enrichedOrgs, roleCatalog,
+    crmRolesInUse, platformRolesInUse, controlCenterEnabled,
     routesEnabled: controlCenterEnabled ? [
-      "/control-center",
-      "/control-center/workspaces",
-      "/control-center/users",
-      "/control-center/modules",
-      "/control-center/security",
-      "/control-center/licenses",
-      "/control-center/diagnostics",
+      "/control-center", "/control-center/workspaces", "/control-center/users",
+      "/control-center/modules", "/control-center/security", "/control-center/licenses",
+      "/control-center/diagnostics", "/control-center/ai-center",
     ] : [],
   });
 });
