@@ -102,6 +102,10 @@ async function buildAll() {
       "electron",
       "pdfkit",
       "fontkit",
+      "pdf-parse",
+      "xlsx",
+      "multer",
+      "csv-parse",
     ],
     sourcemap: "linked",
     plugins: [

@@ -1,0 +1,348 @@
+OMNITECH CORE – OMNI IMPORT AI
+
+OBJETIVO
+
+Diseñar e implementar el módulo “Omni Import AI”, un sistema inteligente de captura, lectura, clasificación e importación automática de información empresarial.
+
+La misión del módulo es eliminar la introducción manual de datos.
+
+El usuario debe poder subir documentos o capturarlos con la cámara y OmniTech debe analizar, clasificar y almacenar automáticamente la información en el módulo correspondiente.
+
+⸻
+
+VISIÓN DEL PRODUCTO
+
+El usuario no debe pensar en formatos.
+
+Debe pensar únicamente:
+
+“Tengo información y quiero que OmniTech la procese.”
+
+Flujo objetivo:
+
+Capturar → Analizar → Clasificar → Confirmar → Guardar
+
+⸻
+
+NUEVO MÓDULO
+
+Nombre:
+
+Omni Import AI
+
+Ubicación:
+
+Menú principal
+
+Icono:
+
+Importar / IA
+
+Disponible para:
+
+* CRM
+* Documentos
+* Marketing
+* Proyectos
+* Automatizaciones
+* Futuras expansiones
+
+⸻
+
+FUENTES SOPORTADAS
+
+Implementar soporte para:
+
+Archivos
+
+* PDF
+* XLSX
+* CSV
+* DOCX
+* TXT
+
+Imágenes
+
+* JPG
+* JPEG
+* PNG
+* WEBP
+* HEIC
+
+Cámara móvil
+
+Permitir:
+
+* Captura directa
+* Escaneo de documentos
+* Captura de tarjetas
+* Captura de facturas
+* Captura de contratos
+
+Diseño mobile-first.
+
+⸻
+
+MOTOR DE CLASIFICACIÓN IA
+
+Al recibir un documento:
+
+La IA debe identificar automáticamente:
+
+* Cliente
+* Factura
+* Contrato
+* Presupuesto
+* Tarjeta de visita
+* Lead
+* Documento interno
+* Lista de contactos
+* Otro
+
+Mostrar porcentaje de confianza.
+
+Ejemplo:
+
+Factura detectada
+Confianza: 96%
+
+⸻
+
+EXTRACCIÓN DE DATOS
+
+Detectar automáticamente:
+
+CRM
+
+* Nombre
+* Apellidos
+* Empresa
+* Cargo
+* Teléfono
+* Email
+* Dirección
+* Web
+
+Empresas
+
+* Razón social
+* CIF/NIF
+* Dirección fiscal
+* Teléfono
+* Email
+
+Facturas
+
+* Número
+* Fecha
+* Cliente
+* Importe
+* IVA
+* Estado
+
+Contratos
+
+* Partes firmantes
+* Fechas
+* Importe
+* Duración
+
+⸻
+
+IMPORTACIÓN MASIVA
+
+Permitir:
+
+Excel
+
+Mapeo automático de columnas.
+
+Ejemplo:
+
+Nombre → Nombre
+
+Móvil → Teléfono
+
+Correo → Email
+
+Empresa → Empresa
+
+Permitir corrección manual.
+
+⸻
+
+CSV
+
+Importación masiva.
+
+Vista previa.
+
+Validación.
+
+Confirmación.
+
+⸻
+
+OCR AVANZADO
+
+Implementar reconocimiento de texto.
+
+Capaz de leer:
+
+* Documentos impresos
+* Tarjetas de visita
+* Capturas de pantalla
+* Formularios
+* Facturas escaneadas
+
+Preparar arquitectura para múltiples idiomas.
+
+⸻
+
+DETECCIÓN DE DUPLICADOS
+
+Antes de guardar:
+
+Comprobar:
+
+* Email
+* Teléfono
+* CIF/NIF
+
+Si existe coincidencia:
+
+Mostrar:
+
+* Actualizar registro existente
+* Crear nuevo registro
+* Ignorar
+
+⸻
+
+VISTA PREVIA
+
+Antes de guardar:
+
+Mostrar:
+
+Información detectada.
+
+Campos editables.
+
+Posibilidad de corregir errores.
+
+Confirmación manual.
+
+⸻
+
+DESTINO INTELIGENTE
+
+La IA debe sugerir dónde guardar la información.
+
+Ejemplos:
+
+Tarjeta → CRM
+
+Factura → Documentos
+
+Contrato → Documentos + CRM
+
+Lista de clientes → CRM
+
+Lead → CRM Leads
+
+⸻
+
+INTEGRACIÓN CRM
+
+Crear automáticamente:
+
+* Contactos
+* Empresas
+* Leads
+* Oportunidades
+
+Sin intervención manual.
+
+⸻
+
+OMNI SCAN
+
+Implementar captura desde móvil.
+
+Botón:
+
+Escanear
+
+Opciones:
+
+* Documento
+* Tarjeta de visita
+* Factura
+* Contrato
+* Imagen libre
+
+Procesamiento inmediato.
+
+⸻
+
+SEGURIDAD
+
+Integración obligatoria con Omni Security Core.
+
+Requisitos:
+
+* Cifrado de archivos.
+* Control de acceso.
+* Registro de actividad.
+* Historial de importaciones.
+* Auditoría.
+
+⸻
+
+DASHBOARD DE IMPORTACIÓN
+
+Crear panel con:
+
+* Total importaciones.
+* Documentos procesados.
+* Contactos creados.
+* Errores detectados.
+* Tiempo ahorrado estimado.
+
+⸻
+
+EXPERIENCIA DE USUARIO
+
+Objetivo principal:
+
+Reducir a menos de 60 segundos el tiempo necesario para convertir un documento o fotografía en información estructurada dentro de OmniTech.
+
+La experiencia debe ser extremadamente simple:
+
+1. Subir archivo o tomar foto.
+2. La IA analiza.
+3. Revisar resultado.
+4. Confirmar.
+5. Guardar.
+
+⸻
+
+RESULTADO ESPERADO
+
+Implementar Omni Import AI como uno de los módulos principales de OmniTech.
+
+Entregar:
+
+* Arquitectura técnica.
+* Base de datos necesaria.
+* Nuevas rutas.
+* Componentes UI.
+* Flujo OCR.
+* Flujo IA.
+* Integración CRM.
+* Integración Documentos.
+* Sistema de auditoría.
+* Sistema de detección de duplicados.
+
+Preparar la arquitectura para futuras ampliaciones y procesamiento masivo empresarial.

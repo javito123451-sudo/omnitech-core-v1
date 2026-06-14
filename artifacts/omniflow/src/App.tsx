@@ -35,6 +35,7 @@ import SecurityPage from "@/pages/control-center/security";
 import LicensesPage from "@/pages/control-center/licenses";
 import DiagnosticsPage from "@/pages/control-center/diagnostics";
 import AiCenterPage from "@/pages/control-center/ai-center";
+import ImportAiPage from "@/pages/import-ai";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 
 const clerkPubKey = publishableKeyFromHost(
@@ -294,6 +295,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <WhatsAppLogsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/import">
+        <ProtectedRoute>
+          <MainLayout>
+            <ImportAiPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>

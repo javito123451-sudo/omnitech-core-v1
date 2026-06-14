@@ -19,6 +19,7 @@ import { telegramRouter, telegramWebhookRouter } from "./telegram";
 import { integrationsRouter } from "./integrations";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 import { controlCenterRouter } from "./control-center";
+import { importAiRouter } from "./import-ai";
 
 const router: IRouter = Router();
 
@@ -69,5 +70,6 @@ router.use("/executive", executiveRouter);
 router.use("/whatsapp", whatsappRouter);
 router.use("/telegram", telegramRouter);
 router.use("/integrations", integrationsRouter);
+router.use("/import", importAiRouter);
 
 export default router;
