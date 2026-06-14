@@ -3,12 +3,13 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
-  MoreHorizontal, X, ChevronRight,
+  MoreHorizontal, X, ChevronRight, Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useClerk, useUser } from "@clerk/react";
 import { useOrg } from "@/lib/orgContext";
+import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -171,6 +172,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   const { user: clerkUser } = useUser();
   const { org } = useOrg();
   const [moreOpen, setMoreOpen] = useState(false);
+  const { isSuperAdmin } = useSuperAdmin();
 
   const handleSignOut = () => {
     signOut({ redirectUrl: `${basePath}/` });
@@ -264,6 +266,20 @@ export default function MainLayout({ children }: { children: ReactNode }) {
                 </div>
               </div>
             </div>
+          )}
+
+          {isSuperAdmin && (
+            <Link href="/control-center">
+              <div className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all cursor-pointer group",
+                location.startsWith("/control-center")
+                  ? "bg-violet-500/20 text-violet-400 border border-violet-500/30"
+                  : "text-muted-foreground hover:bg-violet-500/10 hover:text-violet-400 border border-transparent",
+              )}>
+                <Shield className="w-4 h-4 shrink-0 text-violet-500" />
+                <span className="font-medium text-sm">Control Center</span>
+              </div>
+            </Link>
           )}
 
           <button

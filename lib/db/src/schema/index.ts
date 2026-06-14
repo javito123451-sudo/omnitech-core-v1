@@ -6,3 +6,4 @@ export * from "./activity";
 export * from "./ai-memory";
 export * from "./quotes";
 export * from "./integrations";
+export * from "./platform-admin";

@@ -18,11 +18,15 @@ import { whatsappRouter, whatsappWebhookRouter } from "./whatsapp";
 import { telegramRouter, telegramWebhookRouter } from "./telegram";
 import { integrationsRouter } from "./integrations";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
+import { controlCenterRouter } from "./control-center";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use("/auth", authRouter);
+
+// ── Control Center — uses its own requireSuperAdmin middleware ─────────────────
+router.use("/control-center", controlCenterRouter);
 router.use("/invitations", invitationsRouter);
 
 // ── WhatsApp webhook — public (Meta calls this without auth) ──────────────────

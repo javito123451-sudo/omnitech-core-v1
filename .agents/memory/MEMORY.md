@@ -1,3 +1,4 @@
+- [Control Center](control-center.md) — Super Admin Control Center at /control-center: 4 new DB tables, requireSuperAdmin middleware, 6 frontend pages, SuperAdminRoute guard, 2 seeded SUPER_ADMINs.
 - [Calendar premium upgrade](calendar-upgrade.md) — Calendar has 3 views (week/month/day), new statuses (pending/confirmed/completed/cancelled), new DB columns (reminder/tags/location), AI panel at /api/calendar-ai, drag-and-drop on week grid.
 - [Quotes module](quotes-module.md) — Full quotes/presupuestos module: DB tables (quotes, quote_items), CRUD API at /api/quotes, PDF via pdfkit (external in esbuild), frontend at /quotes, AI tool create_quote in chat.ts.
 - [Executive Intelligence Layer](executive-dashboard.md) — Dashboard at /executive: forecast, risks, priorities, opportunities. Babel backtick-in-template-literal gotcha documented.

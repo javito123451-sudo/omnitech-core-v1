@@ -1,0 +1,270 @@
+OMNITECH CORE – IMPLEMENTACIÓN DEL SUPER ADMIN CONTROL CENTER
+
+Analiza la arquitectura actual del proyecto OmniTech y crea una implementación profesional de un sistema de administración multinivel.
+
+IMPORTANTE:
+
+No eliminar funcionalidades existentes.
+
+No romper rutas existentes.
+
+No modificar datos actuales.
+
+Crear la nueva arquitectura de forma escalable y compatible con futuras ampliaciones.
+
+⸻
+
+OBJETIVO
+
+Crear una capa superior llamada:
+
+“OmniTech Control Center”
+
+Esta capa será exclusiva para propietarios y personal autorizado de OmniTech.
+
+Los clientes NO deben poder acceder ni visualizar ninguna funcionalidad de administración global.
+
+⸻
+
+NUEVO ROL
+
+Crear nuevo rol:
+
+SUPER_ADMIN
+
+Permisos:
+
+* Acceso total a la plataforma.
+* Acceso a todos los Workspaces.
+* Gestión de usuarios globales.
+* Gestión de módulos.
+* Gestión de seguridad.
+* Gestión de IA.
+* Gestión de licencias.
+* Gestión de auditoría.
+
+Este rol tendrá prioridad sobre cualquier otro rol existente.
+
+⸻
+
+SISTEMA DE ROLES
+
+Implementar jerarquía:
+
+SUPER_ADMIN
+
+STAFF_OMNITECH
+
+WORKSPACE_ADMIN
+
+MANAGER
+
+EMPLOYEE
+
+READ_ONLY
+
+Permitir ampliación futura.
+
+⸻
+
+CONTROL CENTER
+
+Crear ruta protegida:
+
+/control-center
+
+o equivalente según arquitectura actual.
+
+Esta ruta:
+
+* No debe aparecer en menús de clientes.
+* No debe mostrarse a usuarios normales.
+* Debe validar permisos en backend.
+* Debe bloquear accesos no autorizados.
+
+⸻
+
+DASHBOARD SUPER ADMIN
+
+Crear dashboard principal con:
+
+Métricas globales
+
+* Total de Workspaces.
+* Total de usuarios.
+* Total de clientes.
+* Total de documentos.
+* Total de automatizaciones.
+* Total de agentes IA.
+* Consumo de almacenamiento.
+* Estado del sistema.
+
+Mostrar datos reales cuando existan.
+
+Mientras tanto utilizar datos dinámicos simulados.
+
+⸻
+
+GESTIÓN DE WORKSPACES
+
+Crear módulo:
+
+Workspace Management
+
+Funciones:
+
+* Ver todos los Workspaces.
+* Crear Workspace.
+* Editar Workspace.
+* Suspender Workspace.
+* Reactivar Workspace.
+* Eliminar Workspace.
+* Ver consumo.
+
+Cada Workspace debe mostrar:
+
+* Nombre.
+* Estado.
+* Plan.
+* Usuarios.
+* Fecha de creación.
+
+⸻
+
+GESTIÓN DE USUARIOS
+
+Crear módulo:
+
+User Management
+
+Funciones:
+
+* Buscar usuarios.
+* Crear usuario.
+* Editar usuario.
+* Desactivar usuario.
+* Reactivar usuario.
+* Restablecer contraseña.
+* Asignar roles.
+
+⸻
+
+GESTIÓN DE MÓDULOS
+
+Crear módulo:
+
+Module Management
+
+Módulos iniciales:
+
+* CRM
+* Omni Import AI
+* Omni Docs
+* Omni Security
+* Omni Marketing Hub
+* WhatsApp
+* Analytics
+* Automations
+* AI Agents
+
+Permitir:
+
+* Activar
+* Desactivar
+* Configurar por Workspace
+
+Preparar arquitectura para licencias futuras.
+
+⸻
+
+SEGURIDAD
+
+Crear módulo:
+
+Security Center
+
+Funciones:
+
+* Logs de acceso.
+* Intentos fallidos.
+* Historial de actividad.
+* Auditoría.
+* Eventos críticos.
+
+Preparar para MFA en futuras versiones.
+
+⸻
+
+LICENCIAS
+
+Crear módulo:
+
+License Management
+
+Planes:
+
+* Starter
+* Professional
+* Enterprise
+
+Asignables por Workspace.
+
+Preparar para integración futura con facturación.
+
+⸻
+
+BASE DE DATOS
+
+Crear estructuras necesarias para:
+
+* Roles.
+* Permisos.
+* Licencias.
+* Auditoría.
+* Configuración de módulos.
+
+Usar migraciones seguras.
+
+No eliminar tablas existentes.
+
+⸻
+
+FRONTEND
+
+Diseño moderno.
+
+Responsive.
+
+Optimizado para escritorio y móvil.
+
+Usar la identidad visual actual de OmniTech.
+
+Crear navegación lateral independiente para Super Admin.
+
+⸻
+
+SEGURIDAD CRÍTICA
+
+Los usuarios que NO tengan rol SUPER_ADMIN:
+
+* No deben ver enlaces.
+* No deben acceder por URL directa.
+* No deben acceder mediante llamadas API.
+* No deben visualizar información global.
+
+Toda validación debe realizarse también en backend.
+
+⸻
+
+RESULTADO ESPERADO
+
+Entregar:
+
+1. Arquitectura propuesta.
+2. Cambios realizados.
+3. Nuevas tablas creadas.
+4. Nuevas rutas.
+5. Nuevos permisos.
+6. Plan de ampliación futura.
+
+Implementar el sistema completo de Super Admin Center manteniendo la compatibilidad con el proyecto actual y preparándolo para Omni Import AI, Omni Security Core, Omni Marketing Hub y futuras expansiones de OmniTech.

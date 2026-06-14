@@ -12,6 +12,7 @@ import { queryClient } from "@/lib/queryClient";
 import { OrgProvider, useOrg } from "@/lib/orgContext";
 import NotFound from "@/pages/not-found";
 import MainLayout from "@/components/layout/MainLayout";
+import ControlCenterLayout from "@/components/layout/ControlCenterLayout";
 import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
 import Assistant from "@/pages/assistant";
@@ -26,6 +27,13 @@ import ExecutivePage from "@/pages/executive";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 import IntegrationsPage from "@/pages/integrations";
 import WhatsAppLogsPage from "@/pages/whatsapp-logs";
+import ControlCenterDashboard from "@/pages/control-center/index";
+import WorkspacesPage from "@/pages/control-center/workspaces";
+import UsersPage from "@/pages/control-center/users";
+import ModulesPage from "@/pages/control-center/modules";
+import SecurityPage from "@/pages/control-center/security";
+import LicensesPage from "@/pages/control-center/licenses";
+import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -158,6 +166,36 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   );
 }
 
+function SuperAdminRoute({ children }: { children: React.ReactNode }) {
+  const [, setLocation] = useLocation();
+  const { isSuperAdmin, loading } = useSuperAdmin();
+
+  useEffect(() => {
+    if (!loading && !isSuperAdmin) {
+      setLocation("/executive-dashboard");
+    }
+  }, [loading, isSuperAdmin, setLocation]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#0a0b14]">
+        <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) return null;
+
+  return (
+    <>
+      <Show when="signed-in">{children}</Show>
+      <Show when="signed-out">
+        <Redirect to="/sign-in" />
+      </Show>
+    </>
+  );
+}
+
 function AppRoutes() {
   return (
     <Switch>
@@ -257,6 +295,50 @@ function AppRoutes() {
           </MainLayout>
         </ProtectedRoute>
       </Route>
+      {/* ── Control Center (Super Admin only) ─────────────────────────────── */}
+      <Route path="/control-center">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <ControlCenterDashboard />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/workspaces">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <WorkspacesPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/users">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <UsersPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/modules">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <ModulesPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/security">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <SecurityPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/licenses">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <LicensesPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+
       <Route component={NotFound} />
     </Switch>
   );
