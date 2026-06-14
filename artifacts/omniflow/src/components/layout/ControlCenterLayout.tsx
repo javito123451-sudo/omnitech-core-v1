@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   Shield, LayoutDashboard, Building2, Users, Puzzle,
   Lock, CreditCard, ChevronRight, LogOut, Menu, X,
-  Hexagon, AlertTriangle,
+  Hexagon, Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
@@ -12,12 +12,13 @@ import { motion, AnimatePresence } from "framer-motion";
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const ccNav = [
-  { icon: LayoutDashboard, label: "Dashboard",   href: "/control-center" },
-  { icon: Building2,       label: "Workspaces",  href: "/control-center/workspaces" },
-  { icon: Users,           label: "Usuarios",    href: "/control-center/users" },
-  { icon: Puzzle,          label: "Módulos",     href: "/control-center/modules" },
-  { icon: Lock,            label: "Seguridad",   href: "/control-center/security" },
-  { icon: CreditCard,      label: "Licencias",   href: "/control-center/licenses" },
+  { icon: LayoutDashboard, label: "Dashboard",    href: "/control-center" },
+  { icon: Building2,       label: "Workspaces",   href: "/control-center/workspaces" },
+  { icon: Users,           label: "Usuarios",     href: "/control-center/users" },
+  { icon: Puzzle,          label: "Módulos",      href: "/control-center/modules" },
+  { icon: Lock,            label: "Seguridad",    href: "/control-center/security" },
+  { icon: CreditCard,      label: "Licencias",    href: "/control-center/licenses" },
+  { icon: Database,        label: "Diagnóstico",  href: "/control-center/diagnostics" },
 ];
 
 function NavItem({ icon: Icon, label, href, currentLocation, onClick }: {

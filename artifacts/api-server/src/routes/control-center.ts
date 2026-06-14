@@ -2,8 +2,8 @@ import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { platformRolesTable, moduleConfigsTable, licensePlansTable, auditLogsTable } from "@workspace/db";
-import { organizationsTable, usersTable, orgMembersTable, clientsTable, messagesTable, quotesTable, integrationEventsTable } from "@workspace/db";
-import { eq, desc, count, and, ne } from "drizzle-orm";
+import { organizationsTable, usersTable, orgMembersTable, clientsTable, messagesTable, quotesTable } from "@workspace/db";
+import { eq, desc, count, and, sql } from "drizzle-orm";
 import { requireSuperAdmin, hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
 
 export const controlCenterRouter = Router();
@@ -251,4 +251,81 @@ controlCenterRouter.delete("/platform-roles/:clerkUserId", async (req, res) => {
   clearRoleCache(clerkUserId);
   await logAudit({ actorClerkId: req.clerkUserId!, action: "platform_role_revoked", resource: "platform_role", resourceId: clerkUserId, severity: "warning", req });
   res.json({ ok: true });
+});
+
+// ── GET /diagnostics — full role system audit ─────────────────────────────────
+controlCenterRouter.get("/diagnostics", async (req, res) => {
+  // All users with their CRM role and platform role
+  const users = await db.select().from(usersTable).orderBy(usersTable.id);
+
+  const enrichedUsers = await Promise.all(users.map(async u => {
+    const [mem] = await db.select({ orgId: orgMembersTable.orgId, role: orgMembersTable.role })
+      .from(orgMembersTable).where(eq(orgMembersTable.userId, u.id));
+    const [pr] = await db.select({ role: platformRolesTable.role })
+      .from(platformRolesTable).where(eq(platformRolesTable.clerkUserId, u.clerkId));
+    let orgName: string | null = null;
+    if (mem?.orgId) {
+      const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, mem.orgId));
+      orgName = org?.name ?? null;
+    }
+    return {
+      id: u.id, email: u.email, clerkId: u.clerkId,
+      crmRole: mem?.role ?? null, orgName,
+      platformRole: pr?.role ?? null,
+      createdAt: u.createdAt,
+    };
+  }));
+
+  // Organizations with member counts
+  const orgs = await db.select().from(organizationsTable).orderBy(organizationsTable.id);
+  const enrichedOrgs = await Promise.all(orgs.map(async o => {
+    const [mc] = await db.select({ count: count() }).from(orgMembersTable).where(eq(orgMembersTable.orgId, o.id));
+    return { id: o.id, name: o.name, slug: o.slug, plan: o.plan ?? "free", memberCount: Number(mc?.count ?? 0) };
+  }));
+
+  // Role catalog from DB
+  let roleCatalog: Array<{ role: string; scope: string; description: string; priority: number }> = [];
+  try {
+    const rc = await db.execute(sql`SELECT role, scope, description, priority FROM role_catalog ORDER BY priority DESC`);
+    roleCatalog = (rc as { rows: typeof roleCatalog }).rows;
+  } catch {
+    // Fallback if table doesn't exist yet
+    roleCatalog = [
+      { role: "SUPER_ADMIN",   scope: "platform", description: "Acceso total a la plataforma OmniTech", priority: 100 },
+      { role: "STAFF_OMNITECH",scope: "platform", description: "Personal interno de OmniTech",          priority: 90  },
+      { role: "owner",         scope: "org",      description: "Propietario de la organización",        priority: 80  },
+      { role: "admin",         scope: "org",      description: "Administrador de la organización",      priority: 70  },
+      { role: "member",        scope: "org",      description: "Miembro estándar",                      priority: 60  },
+      { role: "read_only",     scope: "org",      description: "Acceso de solo lectura",                priority: 50  },
+      { role: "CLIENT",        scope: "client",   description: "Cliente externo (sin acceso CRM)",      priority: 10  },
+    ];
+  }
+
+  // Distinct roles in use
+  const crmRolesResult = await db.selectDistinct({ role: orgMembersTable.role }).from(orgMembersTable);
+  const platRolesResult = await db.selectDistinct({ role: platformRolesTable.role })
+    .from(platformRolesTable).where(eq(platformRolesTable.isActive, true));
+
+  const crmRolesInUse      = crmRolesResult.map(r => r.role);
+  const platformRolesInUse = platRolesResult.map(r => r.role);
+
+  const controlCenterEnabled = platformRolesInUse.includes("SUPER_ADMIN") || platformRolesInUse.includes("STAFF_OMNITECH");
+
+  res.json({
+    users: enrichedUsers,
+    orgs: enrichedOrgs,
+    roleCatalog,
+    crmRolesInUse,
+    platformRolesInUse,
+    controlCenterEnabled,
+    routesEnabled: controlCenterEnabled ? [
+      "/control-center",
+      "/control-center/workspaces",
+      "/control-center/users",
+      "/control-center/modules",
+      "/control-center/security",
+      "/control-center/licenses",
+      "/control-center/diagnostics",
+    ] : [],
+  });
 });
