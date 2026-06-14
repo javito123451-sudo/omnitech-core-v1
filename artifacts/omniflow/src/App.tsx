@@ -34,6 +34,7 @@ import ModulesPage from "@/pages/control-center/modules";
 import SecurityPage from "@/pages/control-center/security";
 import LicensesPage from "@/pages/control-center/licenses";
 import DiagnosticsPage from "@/pages/control-center/diagnostics";
+import AiCenterPage from "@/pages/control-center/ai-center";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 
 const clerkPubKey = publishableKeyFromHost(
@@ -343,6 +344,13 @@ function AppRoutes() {
         <SuperAdminRoute>
           <ControlCenterLayout>
             <DiagnosticsPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/ai-center">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <AiCenterPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>

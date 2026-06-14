@@ -5,8 +5,12 @@ import { platformRolesTable, moduleConfigsTable, licensePlansTable, auditLogsTab
 import { organizationsTable, usersTable, orgMembersTable, clientsTable, messagesTable, quotesTable } from "@workspace/db";
 import { eq, desc, count, and, sql } from "drizzle-orm";
 import { requireSuperAdmin, hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
+import { aiCenterRouter } from "./ai-center-routes";
 
 export const controlCenterRouter = Router();
+
+// Mount AI Center sub-router
+controlCenterRouter.use("/ai-center", aiCenterRouter);
 
 // ── Helper: log audit event ───────────────────────────────────────────────────
 async function logAudit(params: {

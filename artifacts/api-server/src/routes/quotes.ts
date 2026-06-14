@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logAiCall } from "../utils/aiUsageLogger";
 import { db, quotesTable, quoteItemsTable, clientsTable, activityTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { generateQuotePdf } from "../utils/pdf-quote";
@@ -392,6 +393,15 @@ El array actions debe tener exactamente los mismos IDs en el mismo orden. Solo J
       { role: "user", content: "Presupuestos a analizar (ordenados por score):\n" + listForAI },
     ],
   });
+
+  logAiCall({
+    orgId:        (req as import("express").Request & { orgId?: number }).orgId ?? null,
+    userClerkId:  (req as import("express").Request & { clerkUserId?: string }).clerkUserId ?? null,
+    functionName: "quotes_ai_rank",
+    model:        "gpt-4o-mini",
+    tokensInput:  completion.usage?.prompt_tokens    ?? 0,
+    tokensOutput: completion.usage?.completion_tokens ?? 0,
+  }).catch(() => {});
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
   let ai: { top_id?: number; summary?: string; actions?: { id: number; action: string; reason: string }[] };

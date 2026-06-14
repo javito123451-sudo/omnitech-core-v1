@@ -1,5 +1,6 @@
 import { Router } from "express";
 import OpenAI from "openai";
+import { logAiCall } from "../utils/aiUsageLogger";
 
 export const calendarAiRouter = Router();
 
@@ -54,6 +55,7 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
     }
 
     const openai = new OpenAI({ apiKey });
+    const calAiStart = Date.now();
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -63,6 +65,16 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
       temperature: 0.7,
       max_tokens: 500,
     });
+
+    logAiCall({
+      orgId:        (req as Request & { orgId?: number }).orgId ?? null,
+      userClerkId:  (req as Request & { clerkUserId?: string }).clerkUserId ?? null,
+      functionName: `calendar_ai_${action as string}`,
+      model:        "gpt-4o-mini",
+      tokensInput:  completion.usage?.prompt_tokens    ?? 0,
+      tokensOutput: completion.usage?.completion_tokens ?? 0,
+      durationMs:   Date.now() - calAiStart,
+    }).catch(() => {});
 
     const raw = completion.choices[0]?.message?.content ?? "";
 

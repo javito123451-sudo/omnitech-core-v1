@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logAiCall } from "../utils/aiUsageLogger";
 import {
   db, clientsTable, appointmentsTable, quotesTable, activityTable,
 } from "@workspace/db";
@@ -466,6 +467,14 @@ Máximo 3 clientes prioritarios y 3 bloqueadores. Sé directo y accionable. Sin 
     ],
   });
 
+  logAiCall({
+    orgId:        orgId,
+    functionName: "executive_report",
+    model:        "gpt-4o-mini",
+    tokensInput:  completion.usage?.prompt_tokens    ?? 0,
+    tokensOutput: completion.usage?.completion_tokens ?? 0,
+  }).catch(() => {});
+
   const raw = completion.choices[0]?.message?.content ?? "{}";
   let report: Record<string, unknown>;
   try {
@@ -584,6 +593,14 @@ Reglas:
       { role: "user", content: context },
     ],
   });
+
+  logAiCall({
+    orgId:        orgId,
+    functionName: "executive_ceo",
+    model:        "gpt-4o-mini",
+    tokensInput:  completion.usage?.prompt_tokens    ?? 0,
+    tokensOutput: completion.usage?.completion_tokens ?? 0,
+  }).catch(() => {});
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
   let decision: Record<string, unknown>;

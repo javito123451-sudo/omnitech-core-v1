@@ -1,5 +1,6 @@
 import { Router } from "express";
 import OpenAI from "openai";
+import { logAiCall, checkBudgetBlocked } from "../utils/aiUsageLogger";
 import {
   db,
   agentMemoryTable,
@@ -1288,6 +1289,17 @@ router.post("/", async (req, res) => {
   }
 
   const orgId = req.orgId!;
+
+  // ── Budget guard ──────────────────────────────────────────────────────────
+  const budgetCheck = await checkBudgetBlocked(orgId);
+  if (budgetCheck.blocked) {
+    res.status(429).json({
+      error: `Límite de IA alcanzado (${budgetCheck.pct.toFixed(0)}% del presupuesto mensual). ${budgetCheck.reason ?? ""}`.trim(),
+      code: "AI_BUDGET_EXCEEDED",
+    });
+    return;
+  }
+
   const openai = new OpenAI({ apiKey });
 
   // Load relevant memories via semantic search (isolated by orgId)
@@ -1450,23 +1462,38 @@ router.post("/", async (req, res) => {
 
     // ── Phase 2: Final streaming response (always) ─────────────────────────
     // Executive reports get more token budget for complete structured output.
+    const chatStreamStart = Date.now();
     const stream = await openai.chat.completions.create({
-      model:       "gpt-4o-mini",
-      messages:    apiMessages,
-      stream:      true,
-      max_tokens:  isExecutive ? 1200 : 700,
-      temperature: 0.7,
+      model:          "gpt-4o-mini",
+      messages:       apiMessages,
+      stream:         true,
+      stream_options: { include_usage: true },
+      max_tokens:     isExecutive ? 1200 : 700,
+      temperature:    0.7,
     });
 
     let accumulatedResponse = "";
+    let streamUsage: { prompt_tokens: number; completion_tokens: number } | undefined;
 
     for await (const chunk of stream) {
+      if (chunk.usage) streamUsage = chunk.usage;
       const token = chunk.choices[0]?.delta?.content ?? "";
       if (token) {
         accumulatedResponse += token;
         res.write(`data: ${JSON.stringify({ token })}\n\n`);
       }
     }
+
+    // Log AI usage (fire-and-forget)
+    logAiCall({
+      orgId,
+      userClerkId:  req.clerkUserId ?? null,
+      functionName: isExecutive ? "chat_executive" : "chat_stream",
+      model:        "gpt-4o-mini",
+      tokensInput:  streamUsage?.prompt_tokens    ?? 0,
+      tokensOutput: streamUsage?.completion_tokens ?? 0,
+      durationMs:   Date.now() - chatStreamStart,
+    }).catch(() => {});
 
     // Persist AI response to session (fire-and-forget)
     if (sessionId && accumulatedResponse.length > 0) {

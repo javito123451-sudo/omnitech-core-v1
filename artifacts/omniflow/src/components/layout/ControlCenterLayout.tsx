@@ -19,6 +19,7 @@ const ccNav = [
   { icon: Lock,            label: "Seguridad",    href: "/control-center/security" },
   { icon: CreditCard,      label: "Licencias",    href: "/control-center/licenses" },
   { icon: Database,        label: "Diagnóstico",  href: "/control-center/diagnostics" },
+  { icon: Hexagon,         label: "AI Center",    href: "/control-center/ai-center" },
 ];
 
 function NavItem({ icon: Icon, label, href, currentLocation, onClick }: {
