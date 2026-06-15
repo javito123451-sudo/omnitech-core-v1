@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   Shield, LayoutDashboard, Building2, Users, Puzzle,
   Lock, ChevronRight, LogOut, Menu, X, Hexagon,
-  Crown, Bot, Plug, ClipboardList,
+  Crown, Bot, Plug, ClipboardList, HardDrive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
@@ -35,6 +35,7 @@ const ccNav = [
     items: [
       { icon: Lock,            label: "Seguridad",       href: "/control-center/security"     },
       { icon: ClipboardList,   label: "Auditoría",       href: "/control-center/audit"        },
+      { icon: HardDrive,       label: "Backups",         href: "/control-center/backups"      },
     ],
   },
 ];

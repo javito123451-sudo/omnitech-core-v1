@@ -39,6 +39,7 @@ import CCIntegrationsPage from "@/pages/control-center/integrations";
 import LicensesPage from "@/pages/control-center/licenses";
 import DiagnosticsPage from "@/pages/control-center/diagnostics";
 import AiCenterPage from "@/pages/control-center/ai-center";
+import BackupsPage from "@/pages/control-center/backups";
 import ImportAiPage from "@/pages/import-ai";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 
@@ -391,6 +392,13 @@ function AppRoutes() {
         <SuperAdminRoute>
           <ControlCenterLayout>
             <DiagnosticsPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/backups">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <BackupsPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>

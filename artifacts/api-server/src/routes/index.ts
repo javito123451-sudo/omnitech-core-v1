@@ -21,6 +21,7 @@ import { requireAuth, resolveOrg } from "../middlewares/auth";
 import { controlCenterRouter } from "./control-center";
 import { importAiRouter } from "./import-ai";
 import { requireModule } from "../middlewares/requireModule";
+import { backupRouter } from "./backup";
 
 const router: IRouter = Router();
 
@@ -29,6 +30,7 @@ router.use("/auth", authRouter);
 
 // ── Control Center — uses its own requireSuperAdmin middleware ─────────────────
 router.use("/control-center", controlCenterRouter);
+router.use("/backups", backupRouter);
 router.use("/invitations", invitationsRouter);
 
 // ── WhatsApp webhook — public (Meta calls this without auth) ──────────────────
