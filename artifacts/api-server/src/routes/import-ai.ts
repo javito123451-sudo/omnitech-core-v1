@@ -9,6 +9,7 @@ import { db } from "@workspace/db";
 import { clientsTable, activityTable } from "@workspace/db";
 import { eq, and, ilike, sql } from "drizzle-orm";
 import { logAiCall } from "../utils/aiUsageLogger";
+import { logAudit } from "../utils/auditLogger";
 
 // CJS interop: pdf-parse v2 uses class-based API (requires a file path URL, not buffer)
 const _require = createRequire(import.meta.url);
@@ -517,6 +518,22 @@ importAiRouter.post("/confirm", async (req, res) => {
   `).catch(e => console.error("[ImportAI][UPDATE-JOB-ERR]", e.message));
 
   console.log("[ImportAI][CONFIRM] Done:", { created, updated, skipped, errors });
+
+  logAudit({
+    actorClerkId: clerkUserId ?? "unknown",
+    action:    "import_completed",
+    resource:  "import",
+    orgId,
+    details: {
+      created, updated, skipped, errors,
+      total:  results.length,
+      result: errors > 0 ? "partial" : "success",
+    },
+    severity: errors > 0 ? "warning" : "info",
+    result:   errors === results.length - skipped ? "failure" : "success",
+    req,
+  });
+
   res.json({ results, summary: { created, updated, skipped, errors, total: results.length } });
 });
 

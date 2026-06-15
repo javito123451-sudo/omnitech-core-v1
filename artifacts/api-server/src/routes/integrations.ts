@@ -10,6 +10,7 @@ import {
   encryptCredentials,
   decryptCredentials,
 } from "../utils/integrationCreds";
+import { logAudit } from "../utils/auditLogger";
 
 export const integrationsRouter = Router();
 
@@ -270,6 +271,18 @@ integrationsRouter.post("/:slug/connect", async (req, res) => {
       });
     }
 
+    logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:    "integration_connected",
+      resource:  "integration",
+      resourceId: slug,
+      orgId,
+      details: { slug, name: catalogItem.name, displayName: displayName ?? null, hasCredentials: Object.keys(credentials).length > 0 },
+      severity: "info",
+      result:   "success",
+      req,
+    });
+
     await db.insert(integrationEventsTable).values({
       orgId,
       integrationSlug: slug,
@@ -301,6 +314,18 @@ integrationsRouter.delete("/:slug/disconnect", async (req, res) => {
           eq(orgIntegrationsTable.integrationSlug, slug),
         ),
       );
+
+    logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:    "integration_disconnected",
+      resource:  "integration",
+      resourceId: slug,
+      orgId,
+      details: { slug, name: catalogItem?.name ?? slug },
+      severity: "warning",
+      result:   "success",
+      req,
+    });
 
     await db.insert(integrationEventsTable).values({
       orgId,

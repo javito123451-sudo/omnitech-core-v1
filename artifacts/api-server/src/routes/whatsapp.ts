@@ -17,6 +17,7 @@ import {
   resolveWhatsAppVerifyTokens,
   logIntegrationEvent,
 } from "../utils/integrationCreds";
+import { logAuditSystem } from "../utils/auditLogger";
 
 export const whatsappRouter = Router();
 export const whatsappWebhookRouter = Router();
@@ -230,6 +231,23 @@ async function processIncomingMessage(payload: {
     clientName:  client.name,
   }).catch(() => {/* non-critical */});
 
+  logAuditSystem({
+    actorClerkId: `system:whatsapp:${orgId}`,
+    action:    "whatsapp_message_received",
+    resource:  "whatsapp_message",
+    resourceId: String(client.id),
+    orgId,
+    details: {
+      clientId:   client.id,
+      clientName: client.name,
+      phone:      fromPhone.slice(-9),
+      preview:    text.slice(0, 120),
+      result:     "success",
+    },
+    severity: "info",
+    result:   "success",
+  });
+
   const trimmed = text.trim();
 
   // 4. Check for acceptance / rejection keywords
@@ -307,6 +325,28 @@ async function processIncomingMessage(payload: {
       type:        activityType,
       description: `Presupuesto "${quote.title}" ${verb} por ${client.name} vía WhatsApp — ${totalFormatted}`,
       clientName:  client.name,
+    });
+
+    logAuditSystem({
+      actorClerkId: `system:whatsapp:${orgId}`,
+      action:    isAccepted ? "whatsapp_quote_accepted" : "whatsapp_quote_rejected",
+      resource:  "quote",
+      resourceId: String(quote.id),
+      orgId,
+      details: {
+        clientId:   client.id,
+        clientName: client.name,
+        phone:      fromPhone.slice(-9),
+        quoteId:    quote.id,
+        quoteTitle: quote.title,
+        quoteTotal: quote.total,
+        currency:   quote.currency ?? "EUR",
+        totalFormatted,
+        clientPromoted: false,
+        result: newQuoteStatus,
+      },
+      severity: "info",
+      result:   "success",
     });
 
     // Create memory entry (only on acceptance)

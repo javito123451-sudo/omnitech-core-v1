@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useClerk, useUser } from "@clerk/react";
 import { useOrg } from "@/lib/orgContext";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
+import { authFetch } from "@/lib/authFetch";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -176,7 +177,10 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { isSuperAdmin } = useSuperAdmin();
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      await authFetch(`${import.meta.env.BASE_URL}api/auth/logout-event`, { method: "POST" });
+    } catch { /* non-critical */ }
     signOut({ redirectUrl: `${basePath}/` });
   };
 

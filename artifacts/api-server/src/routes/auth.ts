@@ -3,6 +3,7 @@ import { clerkClient } from "@clerk/express";
 import { db, usersTable, orgMembersTable, organizationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
+import { logAudit, shouldLogLogin } from "../utils/auditLogger";
 
 export const authRouter = Router();
 
@@ -81,7 +82,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       .innerJoin(organizationsTable, eq(orgMembersTable.orgId, organizationsTable.id))
       .where(eq(orgMembersTable.userId, user.id));
 
-    res.json({
+    const responsePayload = {
       user: {
         id:        user.id,
         clerkId:   user.clerkId,
@@ -99,7 +100,52 @@ authRouter.get("/me", requireAuth, async (req, res) => {
             role:    membership.role,
           }
         : null,
+    };
+
+    shouldLogLogin(clerkUserId).then((should) => {
+      if (should) {
+        logAudit({
+          actorClerkId: clerkUserId,
+          actorEmail:   user.email ?? undefined,
+          action:       "user_login",
+          resource:     "session",
+          orgId:        membership?.orgId ?? undefined,
+          details: {
+            userName:   user.name,
+            orgName:    membership?.orgName ?? null,
+            orgRole:    membership?.role    ?? null,
+            result:     "success",
+          },
+          severity: "info",
+          result:   "success",
+          req,
+        });
+      }
+    }).catch(() => {});
+
+    res.json(responsePayload);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /logout-event — log user logout ──────────────────────────────────────
+authRouter.post("/logout-event", requireAuth, async (req, res) => {
+  const clerkUserId = req.clerkUserId!;
+  try {
+    const [user] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.clerkId, clerkUserId));
+    logAudit({
+      actorClerkId: clerkUserId,
+      actorEmail:   user?.email ?? undefined,
+      action:       "user_logout",
+      resource:     "session",
+      orgId:        req.orgId ?? undefined,
+      details: { userName: user?.name ?? null, result: "success" },
+      severity: "info",
+      result:   "success",
+      req,
     });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

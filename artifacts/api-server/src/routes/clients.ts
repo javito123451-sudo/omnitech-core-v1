@@ -9,6 +9,7 @@ import {
   UpdateClientParams,
   DeleteClientParams,
 } from "@workspace/api-zod";
+import { logAudit } from "../utils/auditLogger";
 
 export const clientsRouter = Router();
 
@@ -68,6 +69,18 @@ clientsRouter.post("/", async (req, res) => {
       userId: req.userId,
     });
 
+    logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:    "client_created",
+      resource:  "client",
+      resourceId: String(client.id),
+      orgId,
+      details: { name: client.name, email: client.email, company: client.company, status: client.status },
+      severity: "info",
+      result:   "success",
+      req,
+    });
+
     res.status(201).json({ ...client, createdAt: client.createdAt.toISOString() });
   } catch (err) {
     res.status(400).json({ error: String(err) });
@@ -119,6 +132,18 @@ clientsRouter.patch("/:id", async (req, res) => {
       userId: req.userId,
     });
 
+    logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:    "client_updated",
+      resource:  "client",
+      resourceId: String(id),
+      orgId,
+      details: { name: client.name, changes: Object.keys(body) },
+      severity: "info",
+      result:   "success",
+      req,
+    });
+
     res.json({ ...client, createdAt: client.createdAt.toISOString() });
   } catch (err) {
     res.status(400).json({ error: String(err) });
@@ -129,9 +154,28 @@ clientsRouter.delete("/:id", async (req, res) => {
   try {
     const orgId = req.orgId!;
     const { id } = DeleteClientParams.parse({ id: Number(req.params.id) });
+
+    const [client] = await db
+      .select({ name: clientsTable.name, email: clientsTable.email, company: clientsTable.company })
+      .from(clientsTable)
+      .where(and(eq(clientsTable.id, id), eq(clientsTable.orgId, orgId)));
+
     await db
       .delete(clientsTable)
       .where(and(eq(clientsTable.id, id), eq(clientsTable.orgId, orgId)));
+
+    logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:    "client_deleted",
+      resource:  "client",
+      resourceId: String(id),
+      orgId,
+      details: { clientId: id, name: client?.name, email: client?.email, company: client?.company },
+      severity: "warning",
+      result:   "success",
+      req,
+    });
+
     res.status(204).send();
   } catch (err) {
     res.status(400).json({ error: String(err) });

@@ -8,6 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
 import { motion, AnimatePresence } from "framer-motion";
+import { authFetch } from "@/lib/authFetch";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -99,7 +100,10 @@ function Sidebar({ location, onClose }: { location: string; onClose?: () => void
           </div>
         </Link>
         <button
-          onClick={() => signOut()}
+          onClick={async () => {
+            try { await authFetch(`${import.meta.env.BASE_URL}api/auth/logout-event`, { method: "POST" }); } catch { /* non-critical */ }
+            signOut();
+          }}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
         >
           <LogOut size={17} />

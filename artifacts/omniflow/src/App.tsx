@@ -404,6 +404,7 @@ function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const qc = useQueryClient();
   const prevUserIdRef = useRef<string | null | undefined>(undefined);
+  const loginLoggedRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = addListener(({ user }) => {
@@ -413,11 +414,28 @@ function ClerkQueryClientCacheInvalidator() {
         prevUserIdRef.current !== userId
       ) {
         qc.clear();
+        loginLoggedRef.current = false;
       }
       prevUserIdRef.current = userId;
     });
     return unsubscribe;
   }, [addListener, qc]);
+
+  const { getToken } = useAuth();
+  useEffect(() => {
+    if (loginLoggedRef.current) return;
+    let cancelled = false;
+    (async () => {
+      const token = await getToken().catch(() => null);
+      if (!token || cancelled) return;
+      loginLoggedRef.current = true;
+      fetch(`${import.meta.env.BASE_URL}api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      }).catch(() => {});
+    })();
+    return () => { cancelled = true; };
+  }, [getToken]);
 
   return null;
 }

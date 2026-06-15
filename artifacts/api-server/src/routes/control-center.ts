@@ -9,37 +9,15 @@ import { eq, desc, count, and, sql, gte, lte, ilike, or, lt } from "drizzle-orm"
 import { requireSuperAdmin, hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
 import { aiCenterRouter } from "./ai-center-routes";
 import { clearModuleCache } from "../middlewares/requireModule";
+import { logAudit as _logAudit } from "../utils/auditLogger";
 
 export const controlCenterRouter = Router();
 
 // Mount AI Center sub-router
 controlCenterRouter.use("/ai-center", aiCenterRouter);
 
-// ── Helper: log audit event ───────────────────────────────────────────────────
-export async function logAudit(params: {
-  actorClerkId: string;
-  actorEmail?: string;
-  action: string;
-  resource?: string;
-  resourceId?: string;
-  orgId?: number;
-  details?: Record<string, unknown>;
-  severity?: string;
-  req: import("express").Request;
-}) {
-  await db.insert(auditLogsTable).values({
-    actorClerkId: params.actorClerkId,
-    actorEmail:   params.actorEmail ?? null,
-    action:       params.action,
-    resource:     params.resource ?? null,
-    resourceId:   params.resourceId ? String(params.resourceId) : null,
-    orgId:        params.orgId ?? null,
-    ipAddress:    params.req.ip ?? null,
-    userAgent:    params.req.headers["user-agent"] ?? null,
-    details:      params.details ?? null,
-    severity:     params.severity ?? "info",
-  }).catch(() => {});
-}
+// ── Re-export shared logAudit so existing callers keep working ────────────────
+export const logAudit = _logAudit;
 
 // ── GET /check — public ───────────────────────────────────────────────────────
 controlCenterRouter.get("/check", async (req, res) => {
