@@ -2,8 +2,8 @@ import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Shield, LayoutDashboard, Building2, Users, Puzzle,
-  Lock, CreditCard, ChevronRight, LogOut, Menu, X,
-  Hexagon, Database,
+  Lock, ChevronRight, LogOut, Menu, X, Hexagon,
+  Crown, Bot, Plug, ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
@@ -12,22 +12,35 @@ import { motion, AnimatePresence } from "framer-motion";
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const ccNav = [
-  { icon: LayoutDashboard, label: "Dashboard",    href: "/control-center" },
-  { icon: Building2,       label: "Workspaces",   href: "/control-center/workspaces" },
-  { icon: Users,           label: "Usuarios",     href: "/control-center/users" },
-  { icon: Puzzle,          label: "Módulos",      href: "/control-center/modules" },
-  { icon: Lock,            label: "Seguridad",    href: "/control-center/security" },
-  { icon: CreditCard,      label: "Licencias",    href: "/control-center/licenses" },
-  { icon: Database,        label: "Diagnóstico",  href: "/control-center/diagnostics" },
-  { icon: Hexagon,         label: "AI Center",    href: "/control-center/ai-center" },
+  {
+    section: "Core",
+    items: [
+      { icon: LayoutDashboard, label: "Dashboard",       href: "/control-center"              },
+      { icon: Building2,       label: "Workspaces",      href: "/control-center/workspaces"   },
+      { icon: Users,           label: "Usuarios",        href: "/control-center/users"        },
+      { icon: Crown,           label: "Roles",           href: "/control-center/roles"        },
+    ],
+  },
+  {
+    section: "Plataforma",
+    items: [
+      { icon: Puzzle,          label: "Módulos",         href: "/control-center/modules"      },
+      { icon: Bot,             label: "IA",              href: "/control-center/ai-center"    },
+      { icon: Plug,            label: "Integraciones",   href: "/control-center/integrations" },
+    ],
+  },
+  {
+    section: "Seguridad",
+    items: [
+      { icon: Lock,            label: "Seguridad",       href: "/control-center/security"     },
+      { icon: ClipboardList,   label: "Auditoría",       href: "/control-center/audit"        },
+    ],
+  },
 ];
 
 function NavItem({ icon: Icon, label, href, currentLocation, onClick }: {
-  icon: React.ElementType;
-  label: string;
-  href: string;
-  currentLocation: string;
-  onClick?: () => void;
+  icon: React.ElementType; label: string; href: string;
+  currentLocation: string; onClick?: () => void;
 }) {
   const isActive = currentLocation === href || (href !== "/control-center" && currentLocation.startsWith(href));
   return (
@@ -38,9 +51,9 @@ function NavItem({ icon: Icon, label, href, currentLocation, onClick }: {
           ? "bg-violet-600 text-white shadow-lg shadow-violet-500/25"
           : "text-slate-400 hover:text-white hover:bg-white/5",
       )}>
-        <Icon size={18} />
+        <Icon size={17} />
         <span className="flex-1">{label}</span>
-        {isActive && <ChevronRight size={14} className="opacity-60" />}
+        {isActive && <ChevronRight size={13} className="opacity-60" />}
       </div>
     </Link>
   );
@@ -63,19 +76,25 @@ function Sidebar({ location, onClose }: { location: string; onClose?: () => void
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 mb-3">Administración</p>
-        {ccNav.map(item => (
-          <NavItem key={item.href} {...item} currentLocation={location} onClick={onClose} />
+      {/* Nav — grouped by section */}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-5">
+        {ccNav.map(group => (
+          <div key={group.section}>
+            <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest px-4 mb-1.5">{group.section}</p>
+            <div className="space-y-0.5">
+              {group.items.map(item => (
+                <NavItem key={item.href} {...item} currentLocation={location} onClick={onClose} />
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 
       {/* Footer */}
-      <div className="px-3 py-4 border-t border-white/10 space-y-2">
+      <div className="px-3 py-4 border-t border-white/10 space-y-1">
         <Link href={`${basePath}/executive-dashboard`} onClick={onClose}>
           <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer transition-all">
-            <Hexagon size={18} />
+            <Hexagon size={17} />
             <span>Volver al CRM</span>
           </div>
         </Link>
@@ -83,7 +102,7 @@ function Sidebar({ location, onClose }: { location: string; onClose?: () => void
           onClick={() => signOut()}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
         >
-          <LogOut size={18} />
+          <LogOut size={17} />
           <span>Cerrar sesión</span>
         </button>
       </div>
@@ -95,13 +114,12 @@ export default function ControlCenterLayout({ children }: { children: ReactNode 
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Strip basePath for active matching
   const strippedLocation = basePath && location.startsWith(basePath) ? location.slice(basePath.length) || "/" : location;
 
   return (
     <div className="flex h-screen bg-[#0a0b14] text-white overflow-hidden">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-64 flex-col bg-[#0d0e1e] border-r border-white/[0.06] flex-shrink-0">
+      <aside className="hidden lg:flex w-60 flex-col bg-[#0d0e1e] border-r border-white/[0.06] flex-shrink-0">
         <Sidebar location={strippedLocation} />
       </aside>
 
@@ -132,10 +150,7 @@ export default function ControlCenterLayout({ children }: { children: ReactNode 
               initial={{ x: -288 }} animate={{ x: 0 }} exit={{ x: -288 }}
               transition={{ type: "spring", stiffness: 400, damping: 35 }}
             >
-              <button
-                onClick={() => setMobileOpen(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-white"
-              >
+              <button onClick={() => setMobileOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
                 <X size={20} />
               </button>
               <Sidebar location={strippedLocation} onClose={() => setMobileOpen(false)} />

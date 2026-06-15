@@ -436,6 +436,161 @@ controlCenterRouter.delete("/platform-roles/:clerkUserId", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /workspaces/:id — workspace detail ────────────────────────────────────
+controlCenterRouter.get("/workspaces/:id", async (req, res) => {
+  const id = Number(req.params["id"]);
+  const [org] = await db.select().from(organizationsTable).where(eq(organizationsTable.id, id));
+  if (!org) { res.status(404).json({ error: "Workspace no encontrado" }); return; }
+  const [userCount]   = await db.select({ count: count() }).from(orgMembersTable).where(eq(orgMembersTable.orgId, id));
+  const [clientCount] = await db.select({ count: count() }).from(clientsTable).where(eq(clientsTable.orgId, id));
+  const [msgCount]    = await db.select({ count: count() }).from(messagesTable).where(eq(messagesTable.orgId, id));
+  const [quoteCount]  = await db.select({ count: count() }).from(quotesTable).where(eq(quotesTable.orgId, id));
+  const [license]     = await db.select().from(licensePlansTable).where(eq(licensePlansTable.orgId, id));
+  const modules       = await db.select().from(moduleConfigsTable).where(eq(moduleConfigsTable.orgId, id));
+  const recentAudit   = await db.select().from(auditLogsTable)
+    .where(eq(auditLogsTable.orgId, id))
+    .orderBy(desc(auditLogsTable.createdAt))
+    .limit(10);
+  res.json({
+    ...org,
+    plan: license?.plan ?? org.plan ?? "starter",
+    stats: {
+      users:    Number(userCount?.count   ?? 0),
+      clients:  Number(clientCount?.count ?? 0),
+      messages: Number(msgCount?.count    ?? 0),
+      quotes:   Number(quoteCount?.count  ?? 0),
+    },
+    license: license ?? null,
+    modules,
+    recentAudit,
+  });
+});
+
+// ── GET /workspaces/:id/members ───────────────────────────────────────────────
+controlCenterRouter.get("/workspaces/:id/members", async (req, res) => {
+  const id = Number(req.params["id"]);
+  const members = await db.select({
+    userId: orgMembersTable.userId,
+    role:   orgMembersTable.role,
+    isSuspended: orgMembersTable.isSuspended,
+    joinedAt:    orgMembersTable.joinedAt,
+  }).from(orgMembersTable).where(eq(orgMembersTable.orgId, id));
+  const enriched = await Promise.all(members.map(async m => {
+    const [user] = await db.select({ email: usersTable.email, name: usersTable.name, clerkId: usersTable.clerkId, status: usersTable.status })
+      .from(usersTable).where(eq(usersTable.id, m.userId));
+    return { ...m, email: user?.email ?? null, name: user?.name ?? null, clerkId: user?.clerkId ?? null, userStatus: user?.status ?? "active" };
+  }));
+  res.json(enriched);
+});
+
+// ── PATCH /workspaces/:id/members/:clerkId — change member role ──────────────
+controlCenterRouter.patch("/workspaces/:id/members/:clerkId", async (req, res) => {
+  const orgId    = Number(req.params["id"]);
+  const clerkId  = req.params["clerkId"];
+  const { role } = req.body as { role: string };
+  const VALID = ["owner", "admin", "member", "read_only"];
+  if (!VALID.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.clerkId, clerkId));
+  if (!user) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
+  await db.update(orgMembersTable).set({ role }).where(and(eq(orgMembersTable.userId, user.id), eq(orgMembersTable.orgId, orgId)));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "user_role_changed", resource: "user", resourceId: clerkId, details: { role, orgId }, severity: "warning", req });
+  res.json({ ok: true });
+});
+
+// ── GET /integrations — global integrations status ───────────────────────────
+controlCenterRouter.get("/integrations", async (_req, res) => {
+  const whatsappConfigured  = !!(process.env["META_WHATSAPP_TOKEN"] ?? process.env["WHATSAPP_TOKEN"]);
+  const telegramConfigured  = !!process.env["TELEGRAM_BOT_TOKEN"];
+  const resendConfigured    = !!process.env["RESEND_API_KEY"];
+  const stripeConfigured    = !!(process.env["STRIPE_SECRET_KEY"] ?? process.env["STRIPE_PUBLISHABLE_KEY"]);
+  const encryptionConfigured = !!process.env["INTEGRATION_ENCRYPTION_KEY"];
+  const openaiConfigured    = !!(process.env["OPENAI_API_KEY"]?.startsWith("sk-"));
+
+  let whatsappOrgs = 0;
+  let telegramOrgs = 0;
+  try {
+    const wa = await db.execute(sql`SELECT COUNT(DISTINCT org_id) as cnt FROM integrations WHERE type = 'whatsapp' AND is_active = true`);
+    whatsappOrgs = Number((wa as { rows: Array<{ cnt: string }> }).rows?.[0]?.cnt ?? 0);
+    const tg = await db.execute(sql`SELECT COUNT(DISTINCT org_id) as cnt FROM integrations WHERE type = 'telegram' AND is_active = true`);
+    telegramOrgs = Number((tg as { rows: Array<{ cnt: string }> }).rows?.[0]?.cnt ?? 0);
+  } catch {}
+
+  const [totalOrgs] = await db.select({ count: count() }).from(organizationsTable);
+  const total = Number(totalOrgs?.count ?? 0);
+
+  const waWebhookVerify = process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] ?? process.env["META_WEBHOOK_VERIFY"];
+  const weakVerifyToken = !waWebhookVerify || waWebhookVerify === "omnitech-webhook" || waWebhookVerify.length < 16;
+
+  res.json({
+    platform: {
+      whatsapp:   { name: "WhatsApp Business",  configured: whatsappConfigured, orgsActive: whatsappOrgs, orgsTotal: total, warning: weakVerifyToken ? "Verify token débil" : null },
+      telegram:   { name: "Telegram Bot",        configured: telegramConfigured, orgsActive: telegramOrgs, orgsTotal: total, warning: null },
+      resend:     { name: "Email (Resend)",       configured: resendConfigured,  warning: !resendConfigured ? "Sin API key — emails no funcionan" : null },
+      stripe:     { name: "Stripe Payments",      configured: stripeConfigured,  warning: !stripeConfigured ? "No implementado" : null },
+      openai:     { name: "OpenAI",              configured: openaiConfigured,   warning: !openaiConfigured ? "Sin API key" : null },
+      encryption: { name: "Cifrado Integraciones", configured: encryptionConfigured, warning: !encryptionConfigured ? "Sin clave — tokens en Base64" : null },
+    },
+    webhookBase: process.env["REPLIT_DEV_DOMAIN"] ? `https://${process.env["REPLIT_DEV_DOMAIN"]}` : null,
+    warnings: [
+      ...(!resendConfigured     ? ["Email no configurado — invitaciones fallando"]       : []),
+      ...(!encryptionConfigured ? ["Cifrado de integraciones no configurado (Base64)"]   : []),
+      ...(weakVerifyToken       ? ["WhatsApp verify token débil o por defecto"]          : []),
+      ...(!stripeConfigured     ? ["Stripe no configurado — facturación no disponible"]  : []),
+    ],
+  });
+});
+
+// ── GET /security/summary ─────────────────────────────────────────────────────
+controlCenterRouter.get("/security/summary", async (_req, res) => {
+  const [critCount]   = await db.select({ count: count() }).from(auditLogsTable).where(eq(auditLogsTable.severity, "critical"));
+  const [warnCount]   = await db.select({ count: count() }).from(auditLogsTable).where(eq(auditLogsTable.severity, "warning"));
+  const [suspUsers]   = await db.select({ count: count() }).from(usersTable).where(eq(usersTable.status, "suspended"));
+  const [suspOrgs]    = await db.select({ count: count() }).from(organizationsTable).where(eq(organizationsTable.status, "suspended"));
+  const [adminCount]  = await db.select({ count: count() }).from(platformRolesTable).where(eq(platformRolesTable.isActive, true));
+  const [totalUsers]  = await db.select({ count: count() }).from(usersTable);
+  const [totalOrgs]   = await db.select({ count: count() }).from(organizationsTable);
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recentCritical = await db.select().from(auditLogsTable)
+    .where(and(eq(auditLogsTable.severity, "critical"), gte(auditLogsTable.createdAt, sevenDaysAgo)))
+    .orderBy(desc(auditLogsTable.createdAt))
+    .limit(10);
+
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [recentEvents] = await db.select({ count: count() }).from(auditLogsTable).where(gte(auditLogsTable.createdAt, oneDayAgo));
+
+  res.json({
+    stats: {
+      criticalEvents:  Number(critCount?.count   ?? 0),
+      warningEvents:   Number(warnCount?.count   ?? 0),
+      suspendedUsers:  Number(suspUsers?.count   ?? 0),
+      suspendedOrgs:   Number(suspOrgs?.count    ?? 0),
+      platformAdmins:  Number(adminCount?.count  ?? 0),
+      totalUsers:      Number(totalUsers?.count  ?? 0),
+      totalOrgs:       Number(totalOrgs?.count   ?? 0),
+      eventsLast24h:   Number(recentEvents?.count ?? 0),
+    },
+    checks: {
+      encryptionConfigured:  !!process.env["INTEGRATION_ENCRYPTION_KEY"],
+      emailConfigured:       !!process.env["RESEND_API_KEY"],
+      openaiConfigured:      !!(process.env["OPENAI_API_KEY"]?.startsWith("sk-")),
+      clerkConfigured:       !!(process.env["CLERK_SECRET_KEY"]?.startsWith("sk_")),
+      postgresRls:           false,
+      rateLimiting:          true,
+      twoFactorForced:       false,
+    },
+    vulnerabilities: [
+      { id: "SEC-01", severity: "high",   title: "IDOR en POST /messages",              detail: "clientId no validado contra orgId antes del INSERT",         status: "open" },
+      { id: "SEC-02", severity: "high",   title: "read_only sin enforcement",           detail: "Rol read_only puede ejecutar escrituras en todos los módulos", status: "open" },
+      { id: "SEC-03", severity: "medium", title: "Sin Row-Level Security en PostgreSQL", detail: "No hay segunda barrera si hay bug en el código",             status: "open" },
+      { id: "SEC-04", severity: "medium", title: "Invitación aceptable por cualquier usuario", detail: "Email no verificado en accept token",                 status: "open" },
+      { id: "SEC-05", severity: "medium", title: "Sin rate limiting en Control Center",  detail: "Rutas del CC sin límite de peticiones",                      status: "open" },
+      { id: "SEC-06", severity: "low",    title: "Cache de rol con lag de 5 minutos",    detail: "Revocación de SUPER_ADMIN no es inmediata en multi-instancia", status: "open" },
+    ],
+    recentCritical,
+  });
+});
+
 // ── GET /diagnostics ──────────────────────────────────────────────────────────
 controlCenterRouter.get("/diagnostics", async (_req, res) => {
   const users = await db.select().from(usersTable).orderBy(usersTable.id);

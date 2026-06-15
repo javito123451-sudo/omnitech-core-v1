@@ -29,9 +29,13 @@ import IntegrationsPage from "@/pages/integrations";
 import WhatsAppLogsPage from "@/pages/whatsapp-logs";
 import ControlCenterDashboard from "@/pages/control-center/index";
 import WorkspacesPage from "@/pages/control-center/workspaces";
+import WorkspaceDetailPage from "@/pages/control-center/workspace-detail";
 import UsersPage from "@/pages/control-center/users";
 import ModulesPage from "@/pages/control-center/modules";
 import SecurityPage from "@/pages/control-center/security";
+import AuditPage from "@/pages/control-center/audit";
+import RolesPage from "@/pages/control-center/roles";
+import CCIntegrationsPage from "@/pages/control-center/integrations";
 import LicensesPage from "@/pages/control-center/licenses";
 import DiagnosticsPage from "@/pages/control-center/diagnostics";
 import AiCenterPage from "@/pages/control-center/ai-center";
@@ -313,6 +317,13 @@ function AppRoutes() {
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>
+      <Route path="/control-center/workspaces/:id">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <WorkspaceDetailPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
       <Route path="/control-center/workspaces">
         <SuperAdminRoute>
           <ControlCenterLayout>
@@ -327,6 +338,13 @@ function AppRoutes() {
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>
+      <Route path="/control-center/roles">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <RolesPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
       <Route path="/control-center/modules">
         <SuperAdminRoute>
           <ControlCenterLayout>
@@ -334,10 +352,31 @@ function AppRoutes() {
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>
+      <Route path="/control-center/ai-center">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <AiCenterPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/integrations">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <CCIntegrationsPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
       <Route path="/control-center/security">
         <SuperAdminRoute>
           <ControlCenterLayout>
             <SecurityPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/audit">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <AuditPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>
@@ -352,13 +391,6 @@ function AppRoutes() {
         <SuperAdminRoute>
           <ControlCenterLayout>
             <DiagnosticsPage />
-          </ControlCenterLayout>
-        </SuperAdminRoute>
-      </Route>
-      <Route path="/control-center/ai-center">
-        <SuperAdminRoute>
-          <ControlCenterLayout>
-            <AiCenterPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>

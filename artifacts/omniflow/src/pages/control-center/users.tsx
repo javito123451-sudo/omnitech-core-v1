@@ -3,7 +3,7 @@ import { authFetch } from "@/lib/authFetch";
 import { useState } from "react";
 import {
   Users, Search, Shield, Building2, Crown, Loader2, UserX, UserCheck2,
-  ChevronDown, X, AlertTriangle, CheckCircle2,
+  ChevronDown, X, AlertTriangle, CheckCircle2, Plus, Trash2, Filter,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -16,6 +16,8 @@ interface PlatformUser {
   orgId: number | null; orgName: string | null; orgRole: string | null;
   platformRole: string | null; createdAt: string;
 }
+
+type Tab = "all" | "admins";
 
 const ROLE_COLORS: Record<string, string> = {
   owner:          "bg-amber-500/20 text-amber-400",
@@ -30,39 +32,27 @@ const CRM_ROLES = ["owner", "admin", "member", "read_only"] as const;
 function RoleDropdown({ user, onSuccess }: { user: PlatformUser; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
-
   const mut = useMutation({
     mutationFn: ({ role }: { role: string }) => authFetch(`${BASE}/api/control-center/users/${user.clerkId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgId: user.orgId, role }),
     }).then(r => r.json()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); setOpen(false); onSuccess(); },
   });
-
   if (!user.orgId || !user.orgRole) return <span className="text-slate-600 text-sm">—</span>;
-
   return (
     <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className={`text-xs font-medium px-2.5 py-1 rounded-full capitalize flex items-center gap-1.5 ${ROLE_COLORS[user.orgRole] ?? ROLE_COLORS.member}`}
-      >
-        {user.orgRole}
-        <ChevronDown size={11} />
+      <button onClick={() => setOpen(!open)}
+        className={`text-xs font-medium px-2.5 py-1 rounded-full capitalize flex items-center gap-1.5 ${ROLE_COLORS[user.orgRole] ?? ROLE_COLORS.member}`}>
+        {user.orgRole} <ChevronDown size={11} />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div className="absolute left-0 top-8 z-40 bg-[#0d0e1e] border border-white/10 rounded-xl p-1 shadow-2xl min-w-[140px]">
             {CRM_ROLES.map(r => (
-              <button
-                key={r}
-                disabled={r === user.orgRole || mut.isPending}
-                onClick={() => mut.mutate({ role: r })}
-                className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all capitalize flex items-center gap-2 ${r === user.orgRole ? "text-white bg-violet-600/20 cursor-default" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
-              >
-                {mut.isPending && r !== user.orgRole ? <Loader2 size={11} className="animate-spin" /> : null}
+              <button key={r} disabled={r === user.orgRole || mut.isPending} onClick={() => mut.mutate({ role: r })}
+                className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all capitalize ${r === user.orgRole ? "text-white bg-violet-600/20 cursor-default" : "text-slate-400 hover:text-white hover:bg-white/5"}`}>
                 {r}
               </button>
             ))}
@@ -77,16 +67,12 @@ function SuspendUserModal({ user, onClose }: { user: PlatformUser; onClose: () =
   const qc = useQueryClient();
   const [reason, setReason] = useState("");
   const isActive = user.status === "active";
-
   const mut = useMutation({
     mutationFn: () => authFetch(`${BASE}/api/control-center/users/${user.clerkId}/${isActive ? "suspend" : "activate"}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
     }).then(r => r.json()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); onClose(); },
   });
-
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className={`bg-[#0d0e1e] border rounded-2xl p-6 w-full max-w-md ${isActive ? "border-red-500/20" : "border-emerald-500/20"}`}>
@@ -100,30 +86,20 @@ function SuspendUserModal({ user, onClose }: { user: PlatformUser; onClose: () =
         </div>
         {isActive ? (
           <>
-            <p className="text-slate-400 text-sm mb-4">
-              El usuario <strong className="text-white">perderá acceso inmediatamente</strong> al CRM.
-            </p>
-            <label className="block text-xs text-slate-500 mb-1.5">Motivo (opcional)</label>
-            <textarea
-              value={reason} onChange={e => setReason(e.target.value)}
-              placeholder="Describe el motivo..."
-              rows={3}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm resize-none focus:outline-none focus:border-red-500 mb-4"
-            />
+            <p className="text-slate-400 text-sm mb-4">El usuario <strong className="text-white">perderá acceso inmediatamente</strong>.</p>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Motivo (opcional)..." rows={3}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm resize-none focus:outline-none focus:border-red-500 mb-4" />
           </>
         ) : (
           <p className="text-slate-400 text-sm mb-6">
-            Se restaurará el acceso del usuario al CRM.
-            {user.suspendedReason && <span className="block mt-2 text-xs text-slate-500">Motivo de suspensión: "{user.suspendedReason}"</span>}
+            Se restaurará el acceso del usuario.
+            {user.suspendedReason && <span className="block mt-2 text-xs text-slate-500">Motivo: "{user.suspendedReason}"</span>}
           </p>
         )}
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white transition-all">Cancelar</button>
-          <button
-            onClick={() => mut.mutate()}
-            disabled={mut.isPending}
-            className={`flex-1 px-4 py-2.5 rounded-xl text-white text-sm font-medium flex items-center justify-center gap-2 ${isActive ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
-          >
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">Cancelar</button>
+          <button onClick={() => mut.mutate()} disabled={mut.isPending}
+            className={`flex-1 px-4 py-2.5 rounded-xl text-white text-sm font-medium flex items-center justify-center gap-2 ${isActive ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>
             {mut.isPending ? <Loader2 size={15} className="animate-spin" /> : isActive ? <UserX size={15} /> : <UserCheck2 size={15} />}
             {isActive ? "Suspender" : "Activar"}
           </button>
@@ -133,9 +109,86 @@ function SuspendUserModal({ user, onClose }: { user: PlatformUser; onClose: () =
   );
 }
 
+function GrantRoleModal({ user, onClose }: { user: PlatformUser; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [role, setRole] = useState<"STAFF_OMNITECH" | "SUPER_ADMIN">("STAFF_OMNITECH");
+  const hasRole = !!user.platformRole;
+
+  const grantMut = useMutation({
+    mutationFn: () => authFetch(`${BASE}/api/control-center/platform-roles`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clerkUserId: user.clerkId, email: user.email, displayName: user.name ?? undefined, role }),
+    }).then(r => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); qc.invalidateQueries({ queryKey: ["cc-platform-roles"] }); onClose(); },
+  });
+
+  const revokeMut = useMutation({
+    mutationFn: () => authFetch(`${BASE}/api/control-center/platform-roles/${user.clerkId}`, { method: "DELETE" }).then(r => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); qc.invalidateQueries({ queryKey: ["cc-platform-roles"] }); onClose(); },
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-[#0d0e1e] border border-violet-500/20 rounded-2xl p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <Crown size={18} className="text-violet-400" />
+            <h2 className="text-white font-semibold">Rol de Plataforma</h2>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
+        </div>
+        <p className="text-slate-400 text-sm mb-5">{user.name ?? user.email}</p>
+
+        {hasRole ? (
+          <>
+            <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-4 mb-5">
+              <p className="text-white text-sm font-medium">Rol actual: <span className="text-violet-400">{user.platformRole}</span></p>
+              <p className="text-slate-500 text-xs mt-1">Este usuario tiene acceso al Control Center</p>
+            </div>
+            <p className="text-slate-400 text-sm mb-4">¿Revocar acceso al Control Center?</p>
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">Cancelar</button>
+              <button onClick={() => revokeMut.mutate()} disabled={revokeMut.isPending}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium flex items-center justify-center gap-2">
+                {revokeMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Revocar
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {(["STAFF_OMNITECH", "SUPER_ADMIN"] as const).map(r => (
+                <button key={r} onClick={() => setRole(r)}
+                  className={`px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${role === r ? "bg-violet-600 border-violet-500 text-white" : "border-white/10 text-slate-400 hover:text-white"}`}>
+                  {r === "SUPER_ADMIN" ? "SUPER_ADMIN" : "STAFF"}
+                </button>
+              ))}
+            </div>
+            {role === "SUPER_ADMIN" && (
+              <p className="text-amber-400 text-xs mb-4 flex items-center gap-1.5">
+                <AlertTriangle size={11} /> SUPER_ADMIN tiene acceso total a la plataforma
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">Cancelar</button>
+              <button onClick={() => grantMut.mutate()} disabled={grantMut.isPending}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium flex items-center justify-center gap-2">
+                {grantMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Conceder
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const [search, setSearch]       = useState("");
+  const [tab, setTab]             = useState<Tab>("all");
+  const [filterStatus, setStatus] = useState("all");
   const [suspendUser, setSuspend] = useState<PlatformUser | null>(null);
+  const [roleUser, setRoleUser]   = useState<PlatformUser | null>(null);
   const [toast, setToast]         = useState<string | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
@@ -145,40 +198,73 @@ export default function UsersPage() {
     queryFn:  () => authFetch(`${BASE}/api/control-center/users`).then(r => r.json()),
   });
 
-  const filtered = users.filter(u =>
-    !search ||
-    u.email.toLowerCase().includes(search.toLowerCase()) ||
-    u.orgName?.toLowerCase().includes(search.toLowerCase()) ||
-    u.name?.toLowerCase().includes(search.toLowerCase())
-  );
+  const displayUsers = users.filter(u => {
+    const isAdmin = tab === "admins";
+    if (isAdmin && !u.platformRole) return false;
+    if (filterStatus !== "all" && u.status !== filterStatus) return false;
+    if (!search) return true;
+    return (
+      u.email.toLowerCase().includes(search.toLowerCase()) ||
+      u.orgName?.toLowerCase().includes(search.toLowerCase()) ||
+      u.name?.toLowerCase().includes(search.toLowerCase())
+    );
+  });
 
   const activeCount    = users.filter(u => u.status === "active").length;
   const suspendedCount = users.filter(u => u.status === "suspended").length;
+  const adminCount     = users.filter(u => u.platformRole).length;
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-      {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl text-sm shadow-lg flex items-center gap-2 animate-in slide-in-from-bottom-2">
           <CheckCircle2 size={16} /> {toast}
         </div>
       )}
-
       {suspendUser && <SuspendUserModal user={suspendUser} onClose={() => setSuspend(null)} />}
+      {roleUser    && <GrantRoleModal   user={roleUser}    onClose={() => setRoleUser(null)} />}
 
       <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Users size={24} className="text-violet-400" /> User Management
+            <Users size={24} className="text-violet-400" /> Gestión de Usuarios
           </h1>
           <p className="text-slate-500 mt-1">
             {activeCount} activos
             {suspendedCount > 0 && <span className="text-red-400 ml-2">· {suspendedCount} suspendidos</span>}
+            {adminCount > 0 && <span className="text-violet-400 ml-2">· {adminCount} con rol de plataforma</span>}
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <AlertTriangle size={13} className="text-amber-400" />
           Los cambios de rol son inmediatos
+        </div>
+      </div>
+
+      {/* Tabs + filters */}
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/[0.06]">
+          {([
+            { id: "all",    label: `Todos (${users.length})` },
+            { id: "admins", label: `Plataforma (${adminCount})` },
+          ] as const).map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === t.id ? "bg-violet-600 text-white" : "text-slate-400 hover:text-white"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/[0.06] rounded-xl px-2 py-1">
+            <Filter size={12} className="text-slate-500" />
+            <select value={filterStatus} onChange={e => setStatus(e.target.value)}
+              className="bg-transparent text-slate-400 text-sm focus:outline-none">
+              <option value="all">Todos</option>
+              <option value="active">Activos</option>
+              <option value="suspended">Suspendidos</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -205,7 +291,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(u => (
+              {displayUsers.map(u => (
                 <tr key={u.id} className={`border-b border-white/[0.04] transition-colors ${u.status === "suspended" ? "bg-red-500/[0.02] hover:bg-red-500/[0.03]" : "hover:bg-white/[0.02]"}`}>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
@@ -215,7 +301,7 @@ export default function UsersPage() {
                       <div>
                         <p className="text-white font-medium text-sm">{u.name ?? u.email}</p>
                         {u.name && <p className="text-slate-500 text-xs">{u.email}</p>}
-                        <p className="text-slate-600 text-xs font-mono">{u.clerkId.slice(0, 16)}…</p>
+                        <p className="text-slate-600 text-xs font-mono">{u.clerkId.slice(0, 14)}…</p>
                       </div>
                     </div>
                   </td>
@@ -244,28 +330,35 @@ export default function UsersPage() {
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Activo
                         </span>}
                   </td>
-                  <td className="px-5 py-4">
-                    <span className="text-slate-500 text-xs">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString("es-ES") : "—"}
-                    </span>
+                  <td className="px-5 py-4 text-slate-500 text-xs">
+                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString("es-ES") : "—"}
                   </td>
                   <td className="px-5 py-4">
-                    <button
-                      title={u.status === "active" ? "Suspender usuario" : "Activar usuario"}
-                      onClick={() => setSuspend(u)}
-                      className={`p-1.5 rounded-lg transition-all ${u.status === "active" ? "text-slate-500 hover:text-red-400 hover:bg-red-500/10" : "text-red-400 hover:text-emerald-400 hover:bg-emerald-500/10"}`}
-                    >
-                      {u.status === "active" ? <UserX size={15} /> : <UserCheck2 size={15} />}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        title="Rol de plataforma"
+                        onClick={() => setRoleUser(u)}
+                        className={`p-1.5 rounded-lg transition-all ${u.platformRole ? "text-violet-400 hover:text-violet-300 hover:bg-violet-500/10" : "text-slate-500 hover:text-violet-400 hover:bg-violet-500/10"}`}
+                      >
+                        {u.platformRole ? <Crown size={14} /> : <Shield size={14} />}
+                      </button>
+                      <button
+                        title={u.status === "active" ? "Suspender usuario" : "Activar usuario"}
+                        onClick={() => setSuspend(u)}
+                        className={`p-1.5 rounded-lg transition-all ${u.status === "active" ? "text-slate-500 hover:text-red-400 hover:bg-red-500/10" : "text-red-400 hover:text-emerald-400 hover:bg-emerald-500/10"}`}
+                      >
+                        {u.status === "active" ? <UserX size={15} /> : <UserCheck2 size={15} />}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && (
+          {displayUsers.length === 0 && (
             <div className="text-center py-16 text-slate-500">
               <Users size={40} className="mx-auto mb-3 opacity-30" />
-              <p>No se encontraron usuarios</p>
+              <p>{tab === "admins" ? "Sin administradores de plataforma" : "No se encontraron usuarios"}</p>
             </div>
           )}
         </div>
