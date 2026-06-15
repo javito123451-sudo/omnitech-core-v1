@@ -126,7 +126,9 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
 
     } else if (DOCUMENT_EXTS.has(ext)) {
       // PDF → extract text → GPT-4o
-      const pdfParse = (await import("pdf-parse")).default;
+      // pdf-parse is CJS: .default may be undefined on dynamic import — fall back to module root
+      const pdfMod   = await import("pdf-parse");
+      const pdfParse = (pdfMod.default ?? pdfMod) as (buf: Buffer) => Promise<{ text: string; numpages: number; info: Record<string, unknown> }>;
       const parsed   = await pdfParse(file.buffer);
       rawText        = parsed.text;
       result = await analyzeWithAI(openai, { type: "text", text: rawText }, orgId, clerkUserId);
