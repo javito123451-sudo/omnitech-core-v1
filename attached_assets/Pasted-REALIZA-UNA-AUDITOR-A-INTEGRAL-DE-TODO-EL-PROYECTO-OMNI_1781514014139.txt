@@ -1,0 +1,114 @@
+REALIZA UNA AUDITORÍA INTEGRAL DE TODO EL PROYECTO OMNITECH.
+
+NO MODIFIQUES CÓDIGO.
+NO APLIQUES CAMBIOS.
+NO HAGAS REFACTORIZACIONES.
+SOLO INSPECCIONA, ANALIZA Y REPORTA.
+
+Quiero una auditoría técnica, funcional, operativa, de seguridad y de escalabilidad.
+
+ANALIZA TODOS LOS MÓDULOS:
+
+1. Arquitectura general.
+2. Frontend.
+3. Backend.
+4. Base de datos.
+5. APIs.
+6. Integraciones externas.
+7. Sistema de autenticación.
+8. Sistema de permisos y roles.
+9. Workspaces.
+10. Multiempresa.
+11. CRM.
+12. Clientes.
+13. Leads.
+14. Presupuestos.
+15. Facturación.
+16. Documentos.
+17. Automatizaciones.
+18. IA.
+19. WhatsApp.
+20. Telegram.
+21. Email.
+22. Stripe.
+23. Omni Import AI.
+24. Omni Scan.
+25. Omni Sign.
+26. Omni Security.
+27. Control Center.
+28. Super Admin.
+29. Sistema de módulos.
+30. Sistema de licencias.
+31. Sistema de tokens IA.
+32. Logs.
+33. Auditoría.
+34. Webhooks.
+35. Variables de entorno.
+36. Configuración de despliegue.
+37. Seguridad de datos.
+38. RGPD.
+39. Copias de seguridad.
+40. Rendimiento.
+41. Escalabilidad.
+42. Costes de infraestructura.
+43. Riesgos de producción.
+
+PARA CADA MÓDULO INDICA:
+
+✅ FUNCIONA
+⚠️ FUNCIONA PARCIALMENTE
+❌ NO FUNCIONA
+
+Y DETALLA:
+
+- Estado actual.
+- Nivel de madurez.
+- Riesgos.
+- Dependencias.
+- Errores encontrados.
+- Código muerto.
+- Funcionalidades incompletas.
+- Configuraciones pendientes.
+- Problemas de seguridad.
+- Problemas de rendimiento.
+- Problemas de UX.
+- Problemas de arquitectura.
+
+REALIZA ADEMÁS:
+
+1. Auditoría de seguridad.
+2. Auditoría de base de datos.
+3. Auditoría de APIs.
+4. Auditoría de integraciones.
+5. Auditoría de costes futuros.
+6. Auditoría de escalabilidad SaaS.
+7. Auditoría de producción.
+
+GENERA AL FINAL:
+
+# RESUMEN EJECUTIVO
+
+- Nivel de madurez del proyecto:
+  - Experimental
+  - Operativo
+  - Precomercial
+  - Comercial
+  - Escalable
+
+- Porcentaje estimado de completitud.
+- Riesgo actual.
+- Principales cuellos de botella.
+- Bloqueadores para lanzar a clientes reales.
+
+Y finalmente crea:
+
+# PLAN DE ACCIÓN PRIORITARIO
+
+Prioridad 1 (Crítico)
+Prioridad 2 (Alta)
+Prioridad 3 (Media)
+Prioridad 4 (Mejoras)
+
+Ordenado por impacto, riesgo y retorno.
+
+Quiero una auditoría brutalmente honesta y sin suavizar problemas.
