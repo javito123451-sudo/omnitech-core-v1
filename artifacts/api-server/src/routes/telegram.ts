@@ -4,8 +4,9 @@ import OpenAI from "openai";
 import {
   db, orgIntegrationsTable, integrationEventsTable,
   clientsTable, quotesTable, agentMemoryTable, organizationsTable, messagesTable,
+  knowledgeBaseTable,
 } from "@workspace/db";
-import { eq, and, desc, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, isNotNull } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 
 // ── Two routers: one public (webhook), one authenticated ─────────────────────
@@ -70,68 +71,122 @@ async function getTelegramToken(orgId: number): Promise<string | null> {
   return process.env.TELEGRAM_BOT_TOKEN ?? null;
 }
 
-// ── AI reply for general Telegram messages ────────────────────────────────────
-// This is the "Telegram → IA → Respuesta" flow.
-// Called for every message that is NOT a quote acceptance/rejection keyword.
+// ── LEAD_KEYWORDS for Phase 3 Lead Intelligence ──────────────────────────────
+const LEAD_HOT_RE  = /\b(presupuesto|precio|coste|costo|cuánto cuesta|cuanto vale|contratar|contrataré|contrataré|demo|quiero contratar|quiero empezar|cómo contrato|propuesta|oferta comercial|me interesa contratar)\b/i;
+const LEAD_WARM_RE = /\b(información|más info|más información|me interesa|interesado|interesada|saber más|cómo funciona|qué ofrecéis|qué servicios|qué hacéis|qué incluye|cuéntame más|qué es|podéis ayudarme)\b/i;
+
 async function generateTelegramAIReply(params: {
   orgId:      number;
   orgName:    string;
   text:       string;
   senderName: string;
-  client:     { name: string; status: string; company?: string | null; tags?: string | null; notes?: string | null } | null;
+  client:     { id: number; name: string; status: string; leadScore?: string | null; company?: string | null; tags?: string | null; notes?: string | null } | null;
 }): Promise<string | null> {
   const apiKey = process.env["OPENAI_API_KEY"];
   if (!apiKey) return null;
 
-  const { orgName, text, senderName, client } = params;
+  const { orgId, orgName, text, senderName, client } = params;
 
-  // Load org agent memory (last 10 entries) for business context
+  // 1. Knowledge base (Phase 2) — company services & info
+  const kbEntries = await db
+    .select()
+    .from(knowledgeBaseTable)
+    .where(and(eq(knowledgeBaseTable.orgId, orgId), eq(knowledgeBaseTable.isActive, true)))
+    .orderBy(asc(knowledgeBaseTable.sortOrder))
+    .limit(25);
+
+  // 2. Org agent memory (business context)
   const memories = await db
     .select()
     .from(agentMemoryTable)
-    .where(and(
-      eq(agentMemoryTable.orgId, params.orgId),
-      eq(agentMemoryTable.agentSlug, "operator"),
-    ))
+    .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, "operator")))
     .orderBy(desc(agentMemoryTable.updatedAt))
-    .limit(10);
+    .limit(8);
+
+  // 3. Conversation history (Phase 1) — last 20 messages for continuity
+  let convHistory: { role: "user" | "assistant"; content: string }[] = [];
+  if (client) {
+    const historyRows = await db
+      .select()
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.orgId, orgId),
+        eq(messagesTable.clientId, client.id),
+      ))
+      .orderBy(desc(messagesTable.createdAt))
+      .limit(21); // +1 to exclude the current message just saved
+
+    convHistory = historyRows
+      .slice(1)  // skip the message we just inserted (current)
+      .reverse()
+      .map((m) => ({
+        role:    m.direction === "outbound" ? ("assistant" as const) : ("user" as const),
+        content: m.content,
+      }));
+  }
+
+  // 4. Build blocks
+  const kbBlock = kbEntries.length > 0
+    ? "\n\nBASE DE CONOCIMIENTO DE LA EMPRESA:\n" +
+      kbEntries.map((e) => `[${e.category.toUpperCase()}] **${e.title}**\n${e.content.slice(0, 400)}`).join("\n\n")
+    : "";
 
   const memoryBlock = memories.length > 0
-    ? "\n\nCONOCIMIENTO DEL NEGOCIO:\n" +
+    ? "\n\nCONTEXTO DEL NEGOCIO:\n" +
       memories.map((m) => `- ${m.memoryKey}: ${String(m.content ?? "").slice(0, 120)}`).join("\n")
     : "";
 
   const clientBlock = client
-    ? `\n\nCLIENTE IDENTIFICADO:\n- Nombre: ${client.name}\n- Estado: ${client.status}${client.company ? `\n- Empresa: ${client.company}` : ""}${client.tags ? `\n- Etiquetas: ${client.tags}` : ""}${client.notes ? `\n- Notas: ${String(client.notes).slice(0, 200)}` : ""}`
+    ? `\n\nCLIENTE IDENTIFICADO:
+- Nombre: ${client.name}
+- Estado CRM: ${client.status}
+- Lead Score: ${client.leadScore ?? "cold"}${client.company ? `\n- Empresa: ${client.company}` : ""}${client.tags ? `\n- Etiquetas: ${client.tags}` : ""}${client.notes ? `\n- Historial: ${String(client.notes).slice(0, 300)}` : ""}`
     : "";
 
-  const systemPrompt =
-    `Eres el asistente virtual de *${orgName}* en Telegram. Respondes en nombre del negocio de forma profesional, cálida y concisa.
+  // 5. Commercial flow system prompt (Phase 4)
+  const systemPrompt = `Eres el asistente comercial inteligente de *${orgName}* en Telegram. Actúas como comercial consultivo senior.
+
+MISIÓN: Convertir cada conversación en una oportunidad de negocio real.
+
+FLUJO COMERCIAL ADAPTATIVO:
+1. Captación → Saluda con energía y crea interés genuino
+2. Descubrimiento → Pregunta abierta: ¿en qué puedo ayudarte?
+3. Calificación → Entiende su situación: empresa, tamaño, necesidad urgente
+4. Recogida de datos → Solicita nombre completo, empresa, email y teléfono de forma natural
+5. Presentación → Presenta el servicio o módulo más adecuado a su necesidad
+6. Presupuesto/Demo → Ofrece demo, llamada o envío de propuesta personalizada
+7. Conversión → Cierra o escala: "Te pongo en contacto con uno de nuestros asesores ahora"
 
 REGLAS OBLIGATORIAS:
 - Responde SIEMPRE en español
-- Máximo 3-4 frases por respuesta (Telegram = mensajes cortos)
-- Tono cercano pero profesional. Tutea al cliente (tú/te)
-- Usa emojis con moderación (1-2 máximo)
-- Si preguntan por servicios/precios que no conoces → ofrece ponerte en contacto
-- Termina siempre con una pregunta o invitación a continuar
-- NO menciones que eres IA ni GPT — eres el asistente del negocio
-- NO inventes precios ni datos concretos que no te han dado${memoryBlock}${clientBlock}`;
+- Máximo 3-4 frases por respuesta (Telegram = mensajes breves)
+- Tono cálido, cercano y profesional. Tutea siempre (tú/te)
+- 1-2 emojis por respuesta máximo
+- SIEMPRE termina con una pregunta que avance la conversación
+- NO menciones que eres IA ni GPT — eres el asistente del equipo
+- NO inventes precios, datos o servicios no documentados
+- Si detectas interés comercial → recoge datos de contacto
+- Si no puedes resolver → escala: "Te pongo en contacto con un asesor"${kbBlock}${memoryBlock}${clientBlock}`;
 
-  const userMessage = client
-    ? `El cliente ${client.name} dice: "${text}"`
-    : `Una persona llamada ${senderName || "un usuario"} escribe: "${text}"`;
+  // 6. Build message array with full conversation history
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    { role: "system", content: systemPrompt },
+    ...convHistory,
+    {
+      role:    "user",
+      content: client
+        ? `${client.name} dice: "${text}"`
+        : `${senderName || "Un usuario"} escribe: "${text}"`,
+    },
+  ];
 
   try {
     const openai = new OpenAI({ apiKey });
     const completion = await openai.chat.completions.create({
       model:       "gpt-4o-mini",
-      temperature: 0.7,
-      max_tokens:  200,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user",   content: userMessage },
-      ],
+      temperature: 0.72,
+      max_tokens:  400,
+      messages,
     });
     return (completion.choices[0]?.message?.content ?? "").trim() || null;
   } catch (err) {
@@ -214,18 +269,40 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     // Persist chat_id on client if not already set
     if (!client.telegramChatId || client.telegramChatId !== chatIdStr) {
       await db.update(clientsTable)
-        .set({ telegramChatId: chatIdStr })
+        .set({ telegramChatId: chatIdStr, updatedAt: new Date() })
         .where(eq(clientsTable.id, client.id));
     }
     // Save inbound message
     await db.insert(messagesTable).values({
       orgId,
-      clientId: client.id,
-      content:  text.slice(0, 2000),
+      clientId:  client.id,
+      content:   text.slice(0, 2000),
       direction: "inbound",
-      isAi:     false,
-      status:   "received",
+      channel:   "telegram",
+      isAi:      false,
+      status:    "received",
     });
+
+    // ── Phase 3: Lead Intelligence detection ─────────────────────────────────
+    const trimmedLower = text.toLowerCase();
+    let newLeadScore: string | null = null;
+    if (LEAD_HOT_RE.test(trimmedLower)) {
+      newLeadScore = "caliente";
+    } else if (LEAD_WARM_RE.test(trimmedLower) && client.leadScore !== "caliente") {
+      newLeadScore = "tibio";
+    }
+    if (newLeadScore && newLeadScore !== client.leadScore) {
+      db.update(clientsTable)
+        .set({ leadScore: newLeadScore, leadIntent: text.slice(0, 500), updatedAt: new Date() })
+        .where(eq(clientsTable.id, client.id))
+        .catch((e) => console.error("[Lead Intelligence] update error:", e));
+      logIntegrationEvent({
+        orgId, integrationSlug: "telegram", direction: "inbound",
+        eventType: "lead_detected", status: "processed",
+        summary:   `Lead ${newLeadScore} detectado · ${client.name}: "${text.slice(0, 80)}"`,
+        payloadJson: JSON.stringify({ chatId, leadScore: newLeadScore, clientId: client.id }),
+      });
+    }
   }
 
   // 3. Log message_received
@@ -282,6 +359,7 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
           clientId:  client.id,
           content:   aiReply.slice(0, 2000),
           direction: "outbound",
+          channel:   "telegram",
           isAi:      true,
           status:    sent ? "sent" : "failed",
         });
@@ -745,10 +823,11 @@ telegramRouter.post("/send", async (req, res) => {
 
       if (client) {
         await db.insert(messagesTable).values({
-          clientId: client.id,
-          channel:  "telegram",
+          orgId:     orgId,
+          clientId:  client.id,
+          channel:   "telegram",
           direction: "outbound",
-          body:      message.trim(),
+          content:   message.trim().slice(0, 2000),
           status:    "sent",
           isAi:      false,
         });
@@ -765,6 +844,142 @@ telegramRouter.post("/send", async (req, res) => {
     res.json({ success: true, message: "Mensaje enviado correctamente." });
   } catch (err) {
     res.status(500).json({ success: false, message: String(err) });
+  }
+});
+
+// ── GET /api/telegram/conversations — Phase 5 inbox list ─────────────────────
+telegramRouter.get("/conversations", async (req, res) => {
+  const orgId = (req as any).orgId as number;
+  try {
+    const clients = await db
+      .select()
+      .from(clientsTable)
+      .where(and(
+        eq(clientsTable.orgId, orgId),
+        isNotNull(clientsTable.telegramChatId),
+      ));
+
+    const conversations = await Promise.all(clients.map(async (c) => {
+      const [lastMsg] = await db
+        .select()
+        .from(messagesTable)
+        .where(and(
+          eq(messagesTable.orgId, orgId),
+          eq(messagesTable.clientId, c.id),
+        ))
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(1);
+
+      const countRows = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(and(
+          eq(messagesTable.orgId, orgId),
+          eq(messagesTable.clientId, c.id),
+        ));
+
+      return {
+        clientId:            c.id,
+        clientName:          c.name,
+        chatId:              c.telegramChatId,
+        leadScore:           c.leadScore ?? "cold",
+        leadIntent:          c.leadIntent,
+        status:              c.status,
+        company:             c.company,
+        phone:               c.phone,
+        email:               c.email,
+        lastMessage:         lastMsg?.content ?? null,
+        lastMessageAt:       lastMsg?.createdAt ?? null,
+        lastMessageDirection: lastMsg?.direction ?? null,
+        lastMessageIsAi:     lastMsg?.isAi ?? null,
+        messageCount:        countRows.length,
+      };
+    }));
+
+    conversations.sort((a, b) => {
+      if (!a.lastMessageAt && !b.lastMessageAt) return 0;
+      if (!a.lastMessageAt) return 1;
+      if (!b.lastMessageAt) return -1;
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+
+    res.json(conversations);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── GET /api/telegram/conversations/:clientId — messages thread ───────────────
+telegramRouter.get("/conversations/:clientId", async (req, res) => {
+  const orgId    = (req as any).orgId as number;
+  const clientId = Number(req.params.clientId);
+  const limit    = Math.min(Number(req.query.limit ?? 100), 300);
+  try {
+    const msgs = await db
+      .select()
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.orgId, orgId),
+        eq(messagesTable.clientId, clientId),
+      ))
+      .orderBy(asc(messagesTable.createdAt))
+      .limit(limit);
+    res.json(msgs);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /api/telegram/conversations/:clientId/reply — manual CRM reply ──────
+telegramRouter.post("/conversations/:clientId/reply", async (req, res) => {
+  const orgId    = (req as any).orgId as number;
+  const clientId = Number(req.params.clientId);
+  const { message } = req.body as { message: string };
+
+  if (!message?.trim()) {
+    res.status(400).json({ error: "Se requiere message." });
+    return;
+  }
+
+  try {
+    const client = await db.select().from(clientsTable)
+      .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, clientId)))
+      .then((r) => r[0] ?? null);
+
+    if (!client?.telegramChatId) {
+      res.status(404).json({ error: "Cliente sin chat_id de Telegram." });
+      return;
+    }
+
+    const token = await getTelegramToken(orgId);
+    if (!token) {
+      res.status(404).json({ error: "Bot token no configurado." });
+      return;
+    }
+
+    const sent = await tgSend(token, Number(client.telegramChatId), message.trim());
+
+    await db.insert(messagesTable).values({
+      orgId,
+      clientId,
+      content:   message.trim().slice(0, 2000),
+      direction: "outbound",
+      channel:   "telegram",
+      isAi:      false,
+      status:    sent ? "sent" : "failed",
+    });
+
+    await logIntegrationEvent({
+      orgId, integrationSlug: "telegram", direction: "outbound",
+      eventType: sent ? "message_sent" : "message_send_failed",
+      status:    sent ? "processed" : "error",
+      summary:   `Respuesta manual desde CRM → ${client.name}: "${message.slice(0, 80)}"`,
+      payloadJson: JSON.stringify({ clientId, chatId: client.telegramChatId }),
+    });
+
+    res.json({ success: sent });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 

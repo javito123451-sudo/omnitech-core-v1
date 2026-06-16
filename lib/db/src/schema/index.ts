@@ -8,3 +8,4 @@ export * from "./quotes";
 export * from "./integrations";
 export * from "./platform-admin";
 export * from "./ai-center";
+export * from "./knowledge-base";

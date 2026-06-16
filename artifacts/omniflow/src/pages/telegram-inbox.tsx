@@ -1,12 +1,11 @@
-import { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { formatDistanceToNow, format } from "date-fns";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  Send, RefreshCw, AlertCircle, ArrowDownLeft, ArrowLeft,
-  CheckCircle2, XCircle, ChevronDown, ChevronUp, User,
-  FileText, Brain, Clock, Zap, Bot, MessageSquare, Hash,
-  UserPlus, Settings,
+  Send, RefreshCw, Bot, MessageSquare, User, Building2,
+  Phone, Mail, Flame, Thermometer, Snowflake, ArrowLeft,
+  Settings, ChevronRight, Search, CheckCheck, Sparkles,
+  LayoutList, AlertCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,271 +19,271 @@ import { useToast } from "@/hooks/use-toast";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface TgEvent {
-  id:            number;
-  orgId:         number;
-  direction:     string;
-  eventType:     string;
-  status:        string;
-  summary:       string | null;
-  error:         string | null;
-  createdAt:     string;
-  payloadJson:   string | null;
+interface ConvSummary {
+  clientId:             number;
+  clientName:           string;
+  chatId:               string | null;
+  leadScore:            string;
+  leadIntent:           string | null;
+  status:               string;
+  company:              string | null;
+  phone:                string | null;
+  email:                string | null;
+  lastMessage:          string | null;
+  lastMessageAt:        string | null;
+  lastMessageDirection: string | null;
+  lastMessageIsAi:      boolean | null;
+  messageCount:         number;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const EVENT_LABELS: Record<string, string> = {
-  message_received:  "Mensaje recibido",
-  message_sent:      "Mensaje enviado",
-  message_send_failed: "Envío fallido",
-  quote_accepted:    "Presupuesto aceptado",
-  quote_rejected:    "Presupuesto rechazado",
-  contact_created:   "Contacto creado automáticamente",
-  test_sent:         "Mensaje de prueba enviado",
-  test_send_failed:  "Prueba fallida",
-  test_ok:           "Test de conexión OK",
-  test_failed:       "Test de conexión fallido",
-  credentials_saved: "Credenciales guardadas",
-  webhook_set:       "Webhook configurado",
-};
-
-function parseChatId(evt: TgEvent): string | null {
-  if (!evt.payloadJson) return null;
-  try {
-    const p = JSON.parse(evt.payloadJson);
-    return p.chatId != null ? String(p.chatId) : null;
-  } catch { return null; }
+interface TgMessage {
+  id:        number;
+  content:   string;
+  direction: string;
+  channel:   string | null;
+  isAi:      boolean | null;
+  status:    string | null;
+  createdAt: string;
 }
 
-function parsePreview(evt: TgEvent): string | null {
-  if (!evt.payloadJson) return null;
-  try {
-    const p = JSON.parse(evt.payloadJson);
-    return p.message ?? p.preview ?? p.messageText ?? null;
-  } catch { return null; }
-}
-
-function parseSenderName(evt: TgEvent): string | null {
-  if (!evt.payloadJson) return null;
-  try {
-    const p = JSON.parse(evt.payloadJson);
-    return p.senderName ?? p.username ?? null;
-  } catch { return null; }
-}
-
-// ── Status badge ──────────────────────────────────────────────────────────────
-function StatusBadge({ status, eventType }: { status: string; eventType: string }) {
-  const isError   = status === "error" || eventType.includes("failed");
-  const isOk      = status === "processed" || status === "ok";
-  const isCreated = eventType === "contact_created";
-  if (isError)   return <Badge className="bg-red-500/15 text-red-400 border-red-500/25 text-[10px]">Error</Badge>;
-  if (isCreated) return <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/25 text-[10px]">Nuevo contacto</Badge>;
-  if (isOk)      return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/25 text-[10px]">Procesado</Badge>;
-  return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/25 text-[10px]">{status}</Badge>;
-}
-
-function DirectionIcon({ direction }: { direction: string }) {
-  if (direction === "inbound")  return <ArrowDownLeft className="w-3.5 h-3.5 text-sky-400" />;
-  if (direction === "outbound") return <Send className="w-3.5 h-3.5 text-violet-400" />;
-  return <Zap className="w-3.5 h-3.5 text-muted-foreground" />;
-}
-
-function EventIcon({ eventType }: { eventType: string }) {
-  if (eventType === "message_received")  return <ArrowDownLeft className="w-4 h-4 text-sky-400" />;
-  if (eventType === "message_sent")      return <Send className="w-4 h-4 text-violet-400" />;
-  if (eventType === "quote_accepted")    return <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
-  if (eventType === "quote_rejected")    return <XCircle className="w-4 h-4 text-red-400" />;
-  if (eventType === "contact_created")   return <UserPlus className="w-4 h-4 text-violet-400" />;
-  if (eventType.includes("failed"))      return <AlertCircle className="w-4 h-4 text-red-400" />;
-  return <Bot className="w-4 h-4 text-muted-foreground" />;
-}
-
-// ── Event row ──────────────────────────────────────────────────────────────────
-function EventRow({ evt, idx }: { evt: TgEvent; idx: number }) {
-  const [expanded, setExpanded] = useState(false);
-  const isAccepted = evt.eventType === "quote_accepted";
-  const isRejected = evt.eventType === "quote_rejected";
-  const isError    = evt.status === "error" || evt.eventType.includes("failed");
-  const chatId     = parseChatId(evt);
-  const preview    = parsePreview(evt);
-  const sender     = parseSenderName(evt);
-
-  const rowBg = isAccepted
-    ? "bg-emerald-500/5 border-emerald-500/15"
-    : isRejected
-    ? "bg-red-500/5 border-red-500/15"
-    : isError
-    ? "bg-red-500/5 border-red-500/15"
-    : "bg-card border-border";
-
+// ── Lead score badge ──────────────────────────────────────────────────────────
+function LeadBadge({ score }: { score: string }) {
+  if (score === "caliente") return (
+    <Badge className="bg-red-500/15 text-red-400 border-red-500/25 text-[10px] gap-1">
+      <Flame className="w-3 h-3" /> Caliente
+    </Badge>
+  );
+  if (score === "tibio") return (
+    <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/25 text-[10px] gap-1">
+      <Thermometer className="w-3 h-3" /> Tibio
+    </Badge>
+  );
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: idx * 0.02, duration: 0.2 }}
-      className={cn("rounded-xl border overflow-hidden", rowBg)}
-    >
-      <button
-        className="w-full text-left px-4 py-3 flex items-start gap-3"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-          <DirectionIcon direction={evt.direction} />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <EventIcon eventType={evt.eventType} />
-            <span className="text-sm font-medium text-white">
-              {EVENT_LABELS[evt.eventType] ?? evt.eventType}
-            </span>
-            <StatusBadge status={evt.status} eventType={evt.eventType} />
-            {isAccepted && <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/25 text-[10px]">✅ Venta</Badge>}
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">
-            {evt.summary ?? "—"}
-          </p>
-          {preview && (
-            <p className="text-xs text-sky-300/70 mt-0.5 truncate font-mono">
-              "{preview.slice(0, 80)}{preview.length > 80 ? "…" : ""}"
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-            {formatDistanceToNow(new Date(evt.createdAt), { addSuffix: true, locale: es })}
-          </span>
-          {expanded
-            ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
-            : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-        </div>
-      </button>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 pt-0 border-t border-border/50">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">
-
-                <div className="bg-background/50 rounded-lg p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Hash className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Chat ID</span>
-                  </div>
-                  <span className="text-xs font-mono text-white">{chatId ?? "—"}</span>
-                </div>
-
-                <div className="bg-background/50 rounded-lg p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <User className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Remitente</span>
-                  </div>
-                  <span className="text-xs text-white">{sender ?? "—"}</span>
-                </div>
-
-                <div className="bg-background/50 rounded-lg p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Zap className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Dirección</span>
-                  </div>
-                  <span className="text-xs text-white capitalize">{evt.direction}</span>
-                </div>
-              </div>
-
-              {evt.error && (
-                <div className="mt-3 bg-red-500/10 rounded-lg p-2.5">
-                  <p className="text-[10px] text-red-400 uppercase tracking-wide mb-1">Error</p>
-                  <p className="text-xs text-red-300 font-mono">{evt.error}</p>
-                </div>
-              )}
-
-              <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {format(new Date(evt.createdAt), "dd MMM yyyy · HH:mm:ss", { locale: es })}
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+    <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/25 text-[10px] gap-1">
+      <Snowflake className="w-3 h-3" /> Frío
+    </Badge>
   );
 }
 
-// ── Stats bar ─────────────────────────────────────────────────────────────────
-function StatsBar({ events }: { events: TgEvent[] }) {
-  const received  = events.filter((e) => e.eventType === "message_received").length;
-  const sent      = events.filter((e) => e.eventType === "message_sent").length;
-  const accepted  = events.filter((e) => e.eventType === "quote_accepted").length;
-  const created   = events.filter((e) => e.eventType === "contact_created").length;
+function LeadDot({ score }: { score: string }) {
+  if (score === "caliente") return <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />;
+  if (score === "tibio")    return <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />;
+  return <span className="w-2 h-2 rounded-full bg-sky-400/50 shrink-0" />;
+}
 
-  const chatIds = new Set<string>();
-  for (const e of events) {
-    const cid = parseChatId(e);
-    if (cid) chatIds.add(cid);
-  }
-
-  const stats = [
-    { label: "Mensajes recibidos",   value: received, color: "text-sky-400",     icon: ArrowDownLeft },
-    { label: "Respuestas enviadas",  value: sent,     color: "text-violet-400",  icon: Send },
-    { label: "Presupuestos aceptados", value: accepted, color: "text-emerald-400", icon: CheckCircle2 },
-    { label: "Contactos creados",    value: created,  color: "text-pink-400",    icon: UserPlus },
-  ];
+// ── Conversation card (left panel) ───────────────────────────────────────────
+function ConvCard({
+  conv, isSelected, onClick,
+}: { conv: ConvSummary; isSelected: boolean; onClick: () => void }) {
+  const isInbound = conv.lastMessageDirection === "inbound";
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-4">
-      {stats.map(({ label, value, color, icon: Icon }) => (
-        <div key={label} className="bg-card rounded-xl border border-border p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Icon className={cn("w-3.5 h-3.5", color)} />
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</span>
-          </div>
-          <span className={cn("text-xl font-bold", color)}>{value}</span>
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full text-left px-4 py-3 border-b border-border/50 hover:bg-white/5 transition-colors flex gap-3 items-start",
+        isSelected && "bg-sky-500/10 border-l-2 border-l-sky-500",
+      )}
+    >
+      {/* Avatar */}
+      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-500/30 to-violet-500/30 border border-border flex items-center justify-center shrink-0 mt-0.5">
+        <span className="text-sm font-bold text-white">
+          {conv.clientName.charAt(0).toUpperCase()}
+        </span>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2 mb-0.5">
+          <span className="text-sm font-medium text-white truncate">{conv.clientName}</span>
+          {conv.lastMessageAt && (
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+              {formatDistanceToNow(new Date(conv.lastMessageAt), { addSuffix: false, locale: es })}
+            </span>
+          )}
         </div>
-      ))}
-      {chatIds.size > 0 && (
-        <div className="col-span-2 md:col-span-4 bg-sky-500/10 border border-sky-500/20 rounded-xl p-3 flex items-center gap-3">
-          <MessageSquare className="w-6 h-6 text-sky-400" />
-          <div>
-            <p className="text-[10px] text-sky-400/80 uppercase tracking-wide">Conversaciones únicas en Telegram</p>
-            <p className="text-lg font-bold text-sky-400">{chatIds.size}</p>
-          </div>
+
+        <div className="flex items-center gap-1.5 mb-1">
+          <LeadDot score={conv.leadScore} />
+          {conv.company && (
+            <span className="text-[10px] text-muted-foreground truncate">{conv.company}</span>
+          )}
+          {!conv.company && (
+            <span className="text-[10px] text-muted-foreground">@{conv.chatId}</span>
+          )}
+        </div>
+
+        {conv.lastMessage && (
+          <p className={cn(
+            "text-xs truncate",
+            isInbound ? "text-muted-foreground" : "text-sky-400/70",
+          )}>
+            {!isInbound && <CheckCheck className="w-3 h-3 inline mr-1" />}
+            {conv.lastMessage.slice(0, 60)}{conv.lastMessage.length > 60 ? "…" : ""}
+          </p>
+        )}
+      </div>
+
+      {/* Lead badge */}
+      {conv.leadScore !== "cold" && (
+        <LeadDot score={conv.leadScore} />
+      )}
+    </button>
+  );
+}
+
+// ── Message bubble ─────────────────────────────────────────────────────────────
+function MsgBubble({ msg }: { msg: TgMessage }) {
+  const isOutbound = msg.direction === "outbound";
+  const isAi = msg.isAi === true;
+
+  return (
+    <div className={cn("flex gap-2", isOutbound ? "justify-end" : "justify-start")}>
+      {!isOutbound && (
+        <div className="w-7 h-7 rounded-full bg-sky-500/20 border border-sky-500/30 flex items-center justify-center shrink-0 mt-0.5">
+          <User className="w-3.5 h-3.5 text-sky-400" />
+        </div>
+      )}
+
+      <div className={cn(
+        "max-w-[72%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+        isOutbound
+          ? isAi
+            ? "bg-violet-600/80 text-white rounded-tr-sm border border-violet-500/30"
+            : "bg-sky-600/80 text-white rounded-tr-sm border border-sky-500/30"
+          : "bg-card border border-border text-white rounded-tl-sm",
+      )}>
+        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+        <div className={cn("flex items-center gap-1 mt-1.5", isOutbound ? "justify-end" : "justify-start")}>
+          {isAi && isOutbound && (
+            <Sparkles className="w-3 h-3 text-violet-300/70" />
+          )}
+          <span className="text-[10px] opacity-50">
+            {format(new Date(msg.createdAt), "HH:mm")}
+          </span>
+        </div>
+      </div>
+
+      {isOutbound && (
+        <div className={cn(
+          "w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 border",
+          isAi
+            ? "bg-violet-500/20 border-violet-500/30"
+            : "bg-sky-500/20 border-sky-500/30",
+        )}>
+          {isAi
+            ? <Bot className="w-3.5 h-3.5 text-violet-400" />
+            : <Send className="w-3.5 h-3.5 text-sky-400" />
+          }
         </div>
       )}
     </div>
   );
 }
 
-// ── Send panel ─────────────────────────────────────────────────────────────────
-function SendPanel({ onSent }: { onSent: () => void }) {
+// ── Day divider ────────────────────────────────────────────────────────────────
+function DayDivider({ date }: { date: Date }) {
+  return (
+    <div className="flex items-center gap-3 my-3">
+      <div className="flex-1 h-px bg-border/50" />
+      <span className="text-[10px] text-muted-foreground px-2">
+        {format(date, "EEEE, d MMMM", { locale: es })}
+      </span>
+      <div className="flex-1 h-px bg-border/50" />
+    </div>
+  );
+}
+
+// ── Empty state ────────────────────────────────────────────────────────────────
+function EmptyThread() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+      <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
+        <MessageSquare className="w-8 h-8 text-sky-400/50" />
+      </div>
+      <div>
+        <p className="text-white font-medium mb-1">Selecciona una conversación</p>
+        <p className="text-sm text-muted-foreground max-w-xs">
+          Elige un cliente de la lista para ver su hilo de mensajes y responder directamente.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function TelegramInboxPage() {
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [chatId,  setChatId]  = useState("");
-  const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
-  const [open,    setOpen]    = useState(false);
+
+  const [convs,       setConvs]       = useState<ConvSummary[]>([]);
+  const [selected,    setSelected]    = useState<ConvSummary | null>(null);
+  const [messages,    setMessages]    = useState<TgMessage[]>([]);
+  const [convLoading, setConvLoading] = useState(false);
+  const [msgLoading,  setMsgLoading]  = useState(false);
+  const [reply,       setReply]       = useState("");
+  const [sending,     setSending]     = useState(false);
+  const [search,      setSearch]      = useState("");
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Load conversations list
+  const loadConvs = useCallback(async () => {
+    setConvLoading(true);
+    try {
+      const res = await authFetch(`${BASE}/api/telegram/conversations`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as ConvSummary[];
+      setConvs(data);
+    } catch (e) {
+      toast({ title: "Error al cargar conversaciones", description: String(e), variant: "destructive" });
+    } finally {
+      setConvLoading(false);
+    }
+  }, [toast]);
+
+  // Load messages for selected conversation
+  const loadMessages = useCallback(async (clientId: number) => {
+    setMsgLoading(true);
+    try {
+      const res = await authFetch(`${BASE}/api/telegram/conversations/${clientId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as TgMessage[];
+      setMessages(data);
+    } catch (e) {
+      toast({ title: "Error al cargar mensajes", description: String(e), variant: "destructive" });
+    } finally {
+      setMsgLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { loadConvs(); }, [loadConvs]);
+
+  useEffect(() => {
+    if (selected) loadMessages(selected.clientId);
+  }, [selected, loadMessages]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const handleSend = async () => {
-    if (!chatId.trim() || !message.trim()) return;
+    if (!selected || !reply.trim()) return;
     setSending(true);
     try {
-      const res = await authFetch(`${BASE}/api/telegram/send`, {
+      const res = await authFetch(`${BASE}/api/telegram/conversations/${selected.clientId}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId: Number(chatId.trim()), message: message.trim() }),
+        body: JSON.stringify({ message: reply.trim() }),
       });
-      const data = await res.json() as { success: boolean; message: string };
+      const data = await res.json() as { success: boolean };
       if (data.success) {
-        toast({ title: "Mensaje enviado", description: `Chat ID: ${chatId}` });
-        setMessage("");
-        onSent();
+        setReply("");
+        await loadMessages(selected.clientId);
+        await loadConvs();
+        toast({ title: "Mensaje enviado ✓" });
       } else {
-        toast({ title: "Error al enviar", description: data.message, variant: "destructive" });
+        toast({ title: "Error al enviar", variant: "destructive" });
       }
     } catch (e) {
       toast({ title: "Error", description: String(e), variant: "destructive" });
@@ -293,229 +292,252 @@ function SendPanel({ onSent }: { onSent: () => void }) {
     }
   };
 
-  return (
-    <div className="bg-card border border-sky-500/20 rounded-xl overflow-hidden">
-      <button
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <div className="flex items-center gap-2">
-          <Send className="w-4 h-4 text-sky-400" />
-          <span className="text-sm font-medium text-white">Enviar mensaje a Telegram</span>
-        </div>
-        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-      </button>
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSend();
+  };
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-border/50"
-          >
-            <div className="p-4 space-y-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Chat ID del destinatario</label>
-                <Input
-                  placeholder="Ej: 123456789"
-                  value={chatId}
-                  onChange={(e) => setChatId(e.target.value)}
-                  className="font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Mensaje</label>
-                <Textarea
-                  placeholder="Escribe el mensaje..."
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  rows={3}
-                />
-              </div>
-              <Button
-                size="sm"
-                onClick={handleSend}
-                disabled={sending || !chatId.trim() || !message.trim()}
-                className="bg-sky-600 hover:bg-sky-500 text-white"
-              >
-                {sending
-                  ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Enviando...</>
-                  : <><Send className="w-3.5 h-3.5 mr-1.5" />Enviar</>
-                }
-              </Button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+  const filteredConvs = convs.filter((c) =>
+    search.trim() === "" ||
+    c.clientName.toLowerCase().includes(search.toLowerCase()) ||
+    (c.company ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (c.chatId ?? "").includes(search),
   );
-}
 
-// ── Filter ────────────────────────────────────────────────────────────────────
-type Filter = "all" | "message_received" | "message_sent" | "quote_accepted" | "contact_created" | "error";
-
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: "all",              label: "Todos" },
-  { value: "message_received", label: "Recibidos" },
-  { value: "message_sent",     label: "Enviados" },
-  { value: "quote_accepted",   label: "Aceptados" },
-  { value: "contact_created",  label: "Contactos" },
-  { value: "error",            label: "Errores" },
-];
-
-function applyFilter(events: TgEvent[], filter: Filter): TgEvent[] {
-  if (filter === "all")              return events;
-  if (filter === "error")            return events.filter((e) => e.status === "error" || e.eventType.includes("failed"));
-  return events.filter((e) => e.eventType === filter);
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
-export default function TelegramInboxPage() {
-  const [, setLocation] = useLocation();
-  const [events,  setEvents]  = useState<TgEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loaded,  setLoaded]  = useState(false);
-  const [filter,  setFilter]  = useState<Filter>("all");
-  const [error,   setError]   = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await authFetch(`${BASE}/api/telegram/audit?limit=200`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as TgEvent[];
-      setEvents(data);
-      setLoaded(true);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
+  // Group messages by day for dividers
+  const msgsWithDividers: Array<{ type: "msg"; msg: TgMessage } | { type: "day"; date: Date }> = [];
+  let lastDay = "";
+  for (const msg of messages) {
+    const day = format(new Date(msg.createdAt), "yyyy-MM-dd");
+    if (day !== lastDay) {
+      msgsWithDividers.push({ type: "day", date: new Date(msg.createdAt) });
+      lastDay = day;
     }
-  }, []);
+    msgsWithDividers.push({ type: "msg", msg });
+  }
 
-  const filtered = applyFilter(events, filter);
+  const hotCount  = convs.filter((c) => c.leadScore === "caliente").length;
+  const warmCount = convs.filter((c) => c.leadScore === "tibio").length;
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-500">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
+    <div className="flex flex-col h-[calc(100dvh-130px)] -mt-1">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-1 pb-3 shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setLocation("/integrations/telegram")}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-white transition-colors"
+            className="text-muted-foreground hover:text-white transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            Telegram
           </button>
-          <span className="text-muted-foreground">/</span>
           <div className="flex items-center gap-2">
-            <Bot className="w-5 h-5 text-sky-400" />
+            <div className="w-8 h-8 rounded-xl bg-sky-500/15 border border-sky-500/25 flex items-center justify-center">
+              <Bot className="w-4 h-4 text-sky-400" />
+            </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Telegram Inbox</h1>
-              <p className="text-xs text-muted-foreground">
-                Mensajes entrantes, respuestas automáticas y eventos del bot
+              <h1 className="text-base font-bold text-white leading-none">Telegram Inbox</h1>
+              <p className="text-[11px] text-muted-foreground">
+                {convs.length} conversaciones
+                {hotCount > 0 && <> · <span className="text-red-400">{hotCount} calientes</span></>}
+                {warmCount > 0 && <> · <span className="text-amber-400">{warmCount} tibios</span></>}
               </p>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setLocation("/integrations/telegram")}
-          >
-            <Settings className="w-3.5 h-3.5 mr-1.5" />
-            Configurar
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={loadConvs} disabled={convLoading}>
+            <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", convLoading && "animate-spin")} />
+            Actualizar
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={load}
-            disabled={loading}
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", loading && "animate-spin")} />
-            {loaded ? "Actualizar" : "Cargar"}
+          <Button size="sm" variant="outline" onClick={() => setLocation("/integrations/telegram")}>
+            <Settings className="w-3.5 h-3.5 mr-1.5" />
+            Config
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setLocation("/knowledge-base")}>
+            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+            KB
           </Button>
         </div>
       </div>
 
-      {/* Send panel */}
-      <SendPanel onSent={load} />
+      {/* ── Split panel ── */}
+      <div className="flex flex-1 min-h-0 rounded-xl border border-border overflow-hidden bg-card/30">
 
-      {/* Empty state */}
-      {!loaded && !loading && (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Bot className="w-12 h-12 text-muted-foreground/30 mb-4" />
-          <p className="text-white font-medium mb-1">Telegram Inbox</p>
-          <p className="text-sm text-muted-foreground max-w-sm mb-5">
-            Visualiza todos los mensajes entrantes de Telegram, contactos creados automáticamente y respuestas del bot.
-          </p>
-          <Button onClick={load} size="sm">
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-            Cargar mensajes
-          </Button>
-        </div>
-      )}
-
-      {loading && (
-        <div className="flex items-center justify-center py-16">
-          <RefreshCw className="w-6 h-6 text-sky-400 animate-spin" />
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-sm text-red-400">
-          Error al cargar: {error}
-        </div>
-      )}
-
-      {loaded && !loading && (
-        <>
-          <StatsBar events={events} />
-
-          {/* Filter tabs */}
-          <div className="flex gap-1.5 flex-wrap">
-            {FILTERS.map((f) => (
-              <button
-                key={f.value}
-                onClick={() => setFilter(f.value)}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                  filter === f.value
-                    ? "bg-sky-600 text-white"
-                    : "bg-card border border-border text-muted-foreground hover:text-white",
-                )}
-              >
-                {f.label}
-                {f.value !== "all" && (
-                  <span className="ml-1.5 opacity-60">
-                    {applyFilter(events, f.value).length}
-                  </span>
-                )}
-              </button>
-            ))}
+        {/* ── LEFT: Conversation list ── */}
+        <div className="w-72 xl:w-80 border-r border-border flex flex-col shrink-0">
+          {/* Search */}
+          <div className="p-3 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar conversación..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-8 text-xs bg-background/50"
+              />
+            </div>
           </div>
 
-          {/* Event list */}
-          {filtered.length === 0 ? (
-            <div className="text-center py-12">
-              <AlertCircle className="w-8 h-8 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">
-                No hay eventos para el filtro seleccionado
-              </p>
-            </div>
+          {/* Conv list */}
+          <div className="flex-1 overflow-y-auto">
+            {convLoading && (
+              <div className="flex items-center justify-center py-12">
+                <RefreshCw className="w-5 h-5 text-sky-400 animate-spin" />
+              </div>
+            )}
+
+            {!convLoading && filteredConvs.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                <LayoutList className="w-8 h-8 text-muted-foreground/30 mb-3" />
+                <p className="text-sm font-medium text-white mb-1">Sin conversaciones</p>
+                <p className="text-xs text-muted-foreground">
+                  {search ? "Sin resultados para esa búsqueda" : "Los contactos de Telegram aparecerán aquí"}
+                </p>
+              </div>
+            )}
+
+            {filteredConvs.map((conv) => (
+              <ConvCard
+                key={conv.clientId}
+                conv={conv}
+                isSelected={selected?.clientId === conv.clientId}
+                onClick={() => setSelected(conv)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* ── RIGHT: Message thread ── */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {!selected ? (
+            <EmptyThread />
           ) : (
-            <div className="space-y-2">
-              {filtered.map((evt, idx) => (
-                <EventRow key={evt.id} evt={evt} idx={idx} />
-              ))}
-            </div>
+            <>
+              {/* Thread header */}
+              <div className="px-4 py-3 border-b border-border flex items-center gap-3 shrink-0 bg-card/40">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-sky-500/30 to-violet-500/30 border border-border flex items-center justify-center shrink-0">
+                  <span className="text-sm font-bold text-white">
+                    {selected.clientName.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-white">{selected.clientName}</span>
+                    <LeadBadge score={selected.leadScore} />
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    {selected.company && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Building2 className="w-3 h-3" />{selected.company}
+                      </span>
+                    )}
+                    {selected.phone && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Phone className="w-3 h-3" />{selected.phone}
+                      </span>
+                    )}
+                    {selected.email && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Mail className="w-3 h-3" />{selected.email}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      chat_id: {selected.chatId}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {selected.messageCount} mensajes
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-xs"
+                    onClick={() => loadMessages(selected.clientId)}
+                    disabled={msgLoading}
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5", msgLoading && "animate-spin")} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-xs"
+                    onClick={() => setLocation(`/clients`)}
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                    Ver cliente
+                  </Button>
+                </div>
+              </div>
+
+              {/* Lead intent banner */}
+              {selected.leadIntent && (
+                <div className="mx-4 mt-3 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 flex items-start gap-2 shrink-0">
+                  <Flame className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-amber-400 font-medium uppercase tracking-wide">Intención detectada</span>
+                    <p className="text-xs text-amber-300/80 mt-0.5">{selected.leadIntent.slice(0, 120)}{selected.leadIntent.length > 120 ? "…" : ""}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {msgLoading && (
+                  <div className="flex items-center justify-center py-12">
+                    <RefreshCw className="w-5 h-5 text-sky-400 animate-spin" />
+                  </div>
+                )}
+
+                {!msgLoading && messages.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <AlertCircle className="w-7 h-7 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm text-muted-foreground">Sin mensajes en el historial aún</p>
+                  </div>
+                )}
+
+                {!msgLoading && msgsWithDividers.map((item, i) =>
+                  item.type === "day"
+                    ? <DayDivider key={`d-${i}`} date={item.date} />
+                    : <MsgBubble key={item.msg.id} msg={item.msg} />
+                )}
+                <div ref={bottomRef} />
+              </div>
+
+              {/* Reply input */}
+              <div className="p-3 border-t border-border shrink-0 bg-card/40">
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Textarea
+                      placeholder="Escribe una respuesta... (Ctrl+Enter para enviar)"
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      rows={2}
+                      className="resize-none text-sm bg-background/50"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleSend}
+                    disabled={sending || !reply.trim()}
+                    className="bg-sky-600 hover:bg-sky-500 text-white h-[64px] px-4 shrink-0"
+                  >
+                    {sending
+                      ? <RefreshCw className="w-4 h-4 animate-spin" />
+                      : <Send className="w-4 h-4" />
+                    }
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5 flex items-center gap-1.5">
+                  <Bot className="w-3 h-3 text-violet-400" />
+                  El bot IA responde automáticamente a los mensajes entrantes.
+                  <span className="text-sky-400">Tú puedes escribir respuestas manuales aquí.</span>
+                </p>
+              </div>
+            </>
           )}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,227 @@
+ACTÚA COMO ARQUITECTO SENIOR DE SOFTWARE, IA, CRM Y AUTOMATIZACIÓN.
+
+Objetivo:
+
+Convertir el bot de Telegram de OmniTech en un Asistente Comercial Inteligente con memoria conversacional, memoria empresarial y generación automática de leads.
+
+ESTADO ACTUAL
+
+* Telegram Bot operativo.
+* Webhook operativo.
+* OpenAI conectado.
+* Respuestas IA funcionando.
+* OmniTech desplegado en producción.
+
+FASE 1: MEMORIA CONVERSACIONAL
+
+Implementar memoria persistente.
+
+Guardar:
+
+* chat_id
+* user_id
+* username
+* nombre
+* mensaje usuario
+* respuesta IA
+* fecha
+* canal
+
+Requisitos:
+
+* Mantener historial por usuario.
+* Recuperar automáticamente las últimas 20 interacciones.
+* Enviar el contexto completo a la IA.
+* Evitar reinicios de conversación.
+* Comprender respuestas cortas:
+    * sí
+    * no
+    * vale
+    * ok
+    * perfecto
+    * continúa
+
+Crear panel:
+
+OmniTech → CRM → Conversaciones
+
+Mostrar:
+
+* Usuario
+* Canal
+* Último mensaje
+* Estado
+* Fecha
+
+FASE 2: OMNITECH KNOWLEDGE BASE
+
+Crear módulo:
+
+Configuración → IA → Base de Conocimiento
+
+La IA debe responder utilizando prioritariamente esta información.
+
+EMPRESA
+
+Nombre:
+OmniTech
+
+Descripción:
+Plataforma de gestión empresarial, CRM, automatización e inteligencia artificial para empresas y autónomos.
+
+SERVICIOS PRINCIPALES
+
+CRM
+
+* Gestión de clientes
+* Leads
+* Seguimiento comercial
+* Historial completo
+
+AUTOMATIZACIÓN IA
+
+* Agentes IA
+* Automatización de procesos
+* Atención al cliente
+* Flujos inteligentes
+
+OMNI IMPORT AI
+
+* Importación PDF
+* Excel
+* CSV
+* Word
+* OCR
+* Captura móvil
+* Clasificación automática
+* Detección de duplicados
+
+OMNI SCAN
+
+* Escaneo móvil
+* Digitalización documental
+
+OMNI SIGN
+
+* Firma electrónica
+* Firma biométrica
+
+OMNI SECURITY CORE
+
+* Cifrado
+* Auditoría
+* Permisos
+* RGPD
+
+OMNI MARKETING HUB
+
+* Captación de leads
+* Automatización de marketing
+* Seguimiento comercial
+
+CONTROL CENTER
+
+* Multi Workspace
+* Gestión de módulos
+* Gestión de licencias
+* Superadministración
+
+La IA NO debe inventar servicios.
+
+Si desconoce una respuesta:
+
+* Solicitar información adicional.
+* Escalar a un humano.
+
+FASE 3: LEAD INTELLIGENCE
+
+Detectar automáticamente:
+
+* Presupuesto
+* Precio
+* Coste
+* Contratación
+* Servicios
+* Información comercial
+* Solicitud de demo
+
+Crear Lead automáticamente.
+
+Extraer:
+
+* Nombre
+* Empresa
+* Teléfono
+* Email
+* Ciudad
+* Servicio solicitado
+* Presupuesto estimado
+* Necesidad detectada
+
+Crear Lead Score automático.
+
+Clasificación:
+
+* Frío
+* Tibio
+* Caliente
+
+FASE 4: FLUJO COMERCIAL
+
+Objetivo:
+
+Convertir conversaciones en oportunidades reales.
+
+Flujo:
+
+1. Captación
+2. Descubrimiento
+3. Calificación
+4. Recogida de datos
+5. Presupuesto
+6. Seguimiento
+7. Conversión
+
+La IA debe actuar como comercial consultivo.
+
+FASE 5: TELEGRAM INBOX
+
+Crear bandeja de entrada tipo WhatsApp Business.
+
+Mostrar:
+
+* Conversaciones activas
+* Estado
+* Lead asociado
+* Historial completo
+* Respuesta manual
+* Respuesta IA
+
+FASE 6: ANALÍTICA
+
+Dashboard Telegram:
+
+* Conversaciones
+* Leads creados
+* Leads convertidos
+* Tiempo medio de respuesta
+* Usuarios activos
+* Tasa de conversión
+
+REQUISITOS TÉCNICOS
+
+* Arquitectura modular.
+* Preparada para Telegram, WhatsApp, Web Chat y Ava Omni.
+* Base de datos real.
+* Logs completos.
+* Escalable.
+* Documentar todo lo implementado.
+
+Al finalizar:
+Generar informe técnico completo indicando:
+
+* Qué se ha creado.
+* Qué se ha modificado.
+* Qué falta por implementar.
+* Riesgos detectados.
+* Próximos pasos recomendados.

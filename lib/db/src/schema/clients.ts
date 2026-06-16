@@ -18,6 +18,9 @@ export const clientsTable = pgTable("clients", {
   notes: text("notes"),
   value: real("value"),
   telegramChatId: text("telegram_chat_id"),
+  leadScore: text("lead_score").default("cold"),
+  leadIntent: text("lead_intent"),
+  updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

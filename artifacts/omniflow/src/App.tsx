@@ -29,6 +29,7 @@ import IntegrationsPage from "@/pages/integrations";
 import WhatsAppLogsPage from "@/pages/whatsapp-logs";
 import TelegramInboxPage from "@/pages/telegram-inbox";
 import TelegramSettingsPage from "@/pages/telegram-settings";
+import KnowledgeBasePage from "@/pages/knowledge-base";
 import ControlCenterDashboard from "@/pages/control-center/index";
 import WorkspacesPage from "@/pages/control-center/workspaces";
 import WorkspaceDetailPage from "@/pages/control-center/workspace-detail";
@@ -316,6 +317,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <TelegramInboxPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/knowledge-base">
+        <ProtectedRoute>
+          <MainLayout>
+            <KnowledgeBasePage />
           </MainLayout>
         </ProtectedRoute>
       </Route>

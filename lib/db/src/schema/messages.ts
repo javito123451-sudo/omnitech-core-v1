@@ -15,6 +15,7 @@ export const messagesTable = pgTable("messages", {
     .references(() => clientsTable.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
   direction: text("direction").notNull().default("outbound"),
+  channel: text("channel").default("telegram"),
   isAi: boolean("is_ai").default(false),
   status: text("status"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

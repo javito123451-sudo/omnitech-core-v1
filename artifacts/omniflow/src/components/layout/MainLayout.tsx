@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
-  MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot,
+  MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot, BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -37,7 +37,7 @@ const sidebarGroups = [
     items: [
       { icon: MessageSquare, label: "Asistente",       href: "/assistant" },
       { icon: CalendarDays,  label: "Calendario",      href: "/calendar" },
-      { icon: Bot,           label: "Telegram Inbox",  href: "/telegram-inbox" },
+      { icon: Bot,           label: "Conversaciones",   href: "/telegram-inbox" },
     ],
   },
   {
@@ -51,7 +51,8 @@ const sidebarGroups = [
     label: "Sistema",
     items: [
       { icon: Sparkles, label: "Omni Import AI", href: "/import" },
-      { icon: Brain,    label: "Memoria",        href: "/memory" },
+      { icon: Brain,    label: "Memoria",         href: "/memory" },
+      { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base" },
       { icon: Puzzle,   label: "Integraciones",  href: "/integrations" },
     ],
   },
@@ -61,7 +62,8 @@ const moreItems = [
   { icon: LayoutDashboard, label: "Panel",           href: "/dashboard",            group: "Principal" },
   { icon: MessageSquare,   label: "Asistente",       href: "/assistant",            group: "Trabajo" },
   { icon: CalendarDays,    label: "Calendario",      href: "/calendar",             group: "Trabajo" },
-  { icon: Bot,             label: "Telegram Inbox",  href: "/telegram-inbox",       group: "Trabajo" },
+  { icon: Bot,             label: "Conversaciones",   href: "/telegram-inbox",       group: "Trabajo" },
+  { icon: BookOpen,        label: "Base de Conoc.",   href: "/knowledge-base",        group: "Sistema" },
   { icon: Zap,             label: "Intelligence",    href: "/executive",            group: "Análisis" },
   { icon: BarChart3,       label: "Estadísticas",    href: "/statistics",           group: "Análisis" },
   { icon: Sparkles,        label: "Omni Import AI",  href: "/import",               group: "Sistema" },

@@ -22,6 +22,7 @@ import { controlCenterRouter } from "./control-center";
 import { importAiRouter } from "./import-ai";
 import { requireModule } from "../middlewares/requireModule";
 import { backupRouter } from "./backup";
+import { knowledgeBaseRouter } from "./knowledge-base";
 
 const router: IRouter = Router();
 
@@ -74,5 +75,6 @@ router.use("/whatsapp", whatsappRouter);
 router.use("/telegram", telegramRouter);
 router.use("/integrations", integrationsRouter);
 router.use("/import", importAiRouter);
+router.use("/knowledge-base", knowledgeBaseRouter);
 
 export default router;
