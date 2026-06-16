@@ -6,7 +6,7 @@ import {
   clientsTable, quotesTable, agentMemoryTable, organizationsTable, messagesTable,
   knowledgeBaseTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, isNotNull, ne } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 
 // ── Two routers: one public (webhook), one authenticated ─────────────────────
@@ -76,56 +76,70 @@ const LEAD_HOT_RE  = /\b(presupuesto|precio|coste|costo|cuánto cuesta|cuanto va
 const LEAD_WARM_RE = /\b(información|más info|más información|me interesa|interesado|interesada|saber más|cómo funciona|qué ofrecéis|qué servicios|qué hacéis|qué incluye|cuéntame más|qué es|podéis ayudarme)\b/i;
 
 async function generateTelegramAIReply(params: {
-  orgId:      number;
-  orgName:    string;
-  text:       string;
-  senderName: string;
-  client:     { id: number; name: string; status: string; leadScore?: string | null; company?: string | null; tags?: string | null; notes?: string | null } | null;
+  orgId:         number;
+  orgName:       string;
+  text:          string;
+  senderName:    string;
+  excludeMsgId?: number;  // ID of the just-saved inbound message — exclude from history
+  client:        { id: number; name: string; status: string; leadScore?: string | null; company?: string | null; tags?: string | null; notes?: string | null } | null;
 }): Promise<string | null> {
   const apiKey = process.env["OPENAI_API_KEY"];
   if (!apiKey) return null;
 
-  const { orgId, orgName, text, senderName, client } = params;
+  const { orgId, orgName, text, senderName, excludeMsgId, client } = params;
 
-  // 1. Knowledge base (Phase 2) — company services & info
-  const kbEntries = await db
-    .select()
-    .from(knowledgeBaseTable)
-    .where(and(eq(knowledgeBaseTable.orgId, orgId), eq(knowledgeBaseTable.isActive, true)))
-    .orderBy(asc(knowledgeBaseTable.sortOrder))
-    .limit(25);
+  // ── 1. Fetch concurrently: KB, memory, and conversation history ──────────────
+  const [kbEntries, memories, rawHistoryRows] = await Promise.all([
+    // Knowledge base — company info the bot can cite
+    db.select()
+      .from(knowledgeBaseTable)
+      .where(and(eq(knowledgeBaseTable.orgId, orgId), eq(knowledgeBaseTable.isActive, true)))
+      .orderBy(asc(knowledgeBaseTable.sortOrder))
+      .limit(25),
 
-  // 2. Org agent memory (business context)
-  const memories = await db
-    .select()
-    .from(agentMemoryTable)
-    .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, "operator")))
-    .orderBy(desc(agentMemoryTable.updatedAt))
-    .limit(8);
+    // Agent memory — business context from operator
+    db.select()
+      .from(agentMemoryTable)
+      .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, "operator")))
+      .orderBy(desc(agentMemoryTable.updatedAt))
+      .limit(8),
 
-  // 3. Conversation history (Phase 1) — last 20 messages for continuity
-  let convHistory: { role: "user" | "assistant"; content: string }[] = [];
-  if (client) {
-    const historyRows = await db
-      .select()
-      .from(messagesTable)
-      .where(and(
-        eq(messagesTable.orgId, orgId),
-        eq(messagesTable.clientId, client.id),
-      ))
-      .orderBy(desc(messagesTable.createdAt))
-      .limit(21); // +1 to exclude the current message just saved
+    // Conversation history — explicitly exclude current message by ID
+    client
+      ? db.select()
+          .from(messagesTable)
+          .where(
+            excludeMsgId
+              ? and(eq(messagesTable.orgId, orgId), eq(messagesTable.clientId, client.id), ne(messagesTable.id, excludeMsgId))
+              : and(eq(messagesTable.orgId, orgId), eq(messagesTable.clientId, client.id)),
+          )
+          .orderBy(desc(messagesTable.createdAt))
+          .limit(20)
+      : Promise.resolve([]),
+  ]);
 
-    convHistory = historyRows
-      .slice(1)  // skip the message we just inserted (current)
-      .reverse()
-      .map((m) => ({
-        role:    m.direction === "outbound" ? ("assistant" as const) : ("user" as const),
-        content: m.content,
-      }));
+  // Build chronological history (oldest → newest)
+  const convHistory: { role: "user" | "assistant"; content: string }[] = (rawHistoryRows as typeof rawHistoryRows)
+    .reverse()
+    .map((m) => ({
+      role:    m.direction === "outbound" ? ("assistant" as const) : ("user" as const),
+      content: m.content,
+    }));
+
+  // ── Debug logging ────────────────────────────────────────────────────────────
+  console.log(
+    `[TG Memoria] clientId=${client?.id ?? "null"} | excludeMsgId=${excludeMsgId ?? "none"} | ` +
+    `historyRows=${rawHistoryRows.length} | kbEntries=${kbEntries.length} | memories=${memories.length}`,
+  );
+  if (convHistory.length > 0) {
+    console.log(`[TG Memoria] Historial (${convHistory.length} msgs):`,
+      convHistory.map((m, i) => `[${i}] ${m.role}: "${m.content.slice(0, 60)}"`).join(" | "),
+    );
+  } else {
+    console.log(`[TG Memoria] ⚠️  Historial VACÍO — primera interacción o sin mensajes previos`);
   }
 
-  // 4. Build blocks
+  // ── 2. Build context blocks ──────────────────────────────────────────────────
   const kbBlock = kbEntries.length > 0
     ? "\n\nBASE DE CONOCIMIENTO DE LA EMPRESA:\n" +
       kbEntries.map((e) => `[${e.category.toUpperCase()}] **${e.title}**\n${e.content.slice(0, 400)}`).join("\n\n")
@@ -143,7 +157,7 @@ async function generateTelegramAIReply(params: {
 - Lead Score: ${client.leadScore ?? "cold"}${client.company ? `\n- Empresa: ${client.company}` : ""}${client.tags ? `\n- Etiquetas: ${client.tags}` : ""}${client.notes ? `\n- Historial: ${String(client.notes).slice(0, 300)}` : ""}`
     : "";
 
-  // 5. Commercial flow system prompt (Phase 4)
+  // ── 3. System prompt with commercial flow ────────────────────────────────────
   const systemPrompt = `Eres el asistente comercial inteligente de *${orgName}* en Telegram. Actúas como comercial consultivo senior.
 
 MISIÓN: Convertir cada conversación en una oportunidad de negocio real.
@@ -166,19 +180,22 @@ REGLAS OBLIGATORIAS:
 - NO menciones que eres IA ni GPT — eres el asistente del equipo
 - NO inventes precios, datos o servicios no documentados
 - Si detectas interés comercial → recoge datos de contacto
-- Si no puedes resolver → escala: "Te pongo en contacto con un asesor"${kbBlock}${memoryBlock}${clientBlock}`;
+- Si no puedes resolver → escala: "Te pongo en contacto con un asesor"
+- IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}`;
 
-  // 6. Build message array with full conversation history
-  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+  // ── 4. Build final messages array ────────────────────────────────────────────
+  // IMPORTANT: history messages use raw content (same format as current message)
+  // to ensure consistent speaker identity across the conversation
+  const openaiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: systemPrompt },
     ...convHistory,
-    {
-      role:    "user",
-      content: client
-        ? `${client.name} dice: "${text}"`
-        : `${senderName || "Un usuario"} escribe: "${text}"`,
-    },
+    { role: "user", content: text },  // raw text — NO "Juan dice:" prefix
   ];
+
+  console.log(
+    `[TG Memoria] OpenAI call: ${openaiMessages.length} messages total ` +
+    `(1 system + ${convHistory.length} history + 1 current)`,
+  );
 
   try {
     const openai = new OpenAI({ apiKey });
@@ -186,9 +203,12 @@ REGLAS OBLIGATORIAS:
       model:       "gpt-4o-mini",
       temperature: 0.72,
       max_tokens:  400,
-      messages,
+      messages:    openaiMessages,
     });
-    return (completion.choices[0]?.message?.content ?? "").trim() || null;
+    const tokensUsed = completion.usage?.total_tokens ?? 0;
+    const reply = (completion.choices[0]?.message?.content ?? "").trim();
+    console.log(`[TG Memoria] Respuesta generada | tokens=${tokensUsed} | len=${reply.length}`);
+    return reply || null;
   } catch (err) {
     console.error("[Telegram AI] OpenAI error:", err);
     return null;
@@ -264,6 +284,9 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     isRejected,
   };
 
+  // ID of the just-saved inbound message (used to exclude it from history query)
+  let savedInboundId: number | undefined;
+
   // 2. If client found, link telegram_chat_id and save inbound message to messages table
   if (client) {
     // Persist chat_id on client if not already set
@@ -272,8 +295,8 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
         .set({ telegramChatId: chatIdStr, updatedAt: new Date() })
         .where(eq(clientsTable.id, client.id));
     }
-    // Save inbound message
-    await db.insert(messagesTable).values({
+    // Save inbound message — use .returning() to get ID for history exclusion
+    const [savedInbound] = await db.insert(messagesTable).values({
       orgId,
       clientId:  client.id,
       content:   text.slice(0, 2000),
@@ -281,7 +304,9 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
       channel:   "telegram",
       isAi:      false,
       status:    "received",
-    });
+    }).returning({ id: messagesTable.id });
+    savedInboundId = savedInbound?.id;
+    console.log(`[TG Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client.id}`);
 
     // ── Phase 3: Lead Intelligence detection ─────────────────────────────────
     const trimmedLower = text.toLowerCase();
@@ -341,6 +366,7 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
       orgName,
       text,
       senderName,
+      excludeMsgId: savedInboundId,
       client: client ?? null,
     });
 
@@ -844,6 +870,82 @@ telegramRouter.post("/send", async (req, res) => {
     res.json({ success: true, message: "Mensaje enviado correctamente." });
   } catch (err) {
     res.status(500).json({ success: false, message: String(err) });
+  }
+});
+
+// ── GET /api/telegram/debug/:clientId — memory debug panel ───────────────────
+telegramRouter.get("/debug/:clientId", async (req, res) => {
+  const orgId    = (req as any).orgId as number;
+  const clientId = Number(req.params.clientId);
+
+  try {
+    const [client, rawMessages, kbEntries, memories] = await Promise.all([
+      db.select().from(clientsTable)
+        .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, clientId)))
+        .then((r) => r[0] ?? null),
+      db.select().from(messagesTable)
+        .where(and(eq(messagesTable.orgId, orgId), eq(messagesTable.clientId, clientId)))
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(30),
+      db.select({ title: knowledgeBaseTable.title, category: knowledgeBaseTable.category })
+        .from(knowledgeBaseTable)
+        .where(and(eq(knowledgeBaseTable.orgId, orgId), eq(knowledgeBaseTable.isActive, true)))
+        .limit(10),
+      db.select({ key: agentMemoryTable.memoryKey })
+        .from(agentMemoryTable)
+        .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, "operator")))
+        .limit(8),
+    ]);
+
+    if (!client) {
+      res.status(404).json({ error: "Cliente no encontrado." });
+      return;
+    }
+
+    // Simulate the history that would be sent to OpenAI
+    // (as if we just received a new message and are about to reply)
+    const simulatedHistory = [...rawMessages]
+      .reverse()
+      .map((m) => ({
+        role:      m.direction === "outbound" ? "assistant" : "user",
+        content:   m.content,
+        isAi:      m.isAi,
+        createdAt: m.createdAt,
+        id:        m.id,
+      }));
+
+    res.json({
+      client: {
+        id:        client.id,
+        name:      client.name,
+        leadScore: client.leadScore,
+        chatId:    client.telegramChatId,
+      },
+      summary: {
+        totalMessages:  rawMessages.length,
+        inboundCount:   rawMessages.filter((m) => m.direction === "inbound").length,
+        outboundCount:  rawMessages.filter((m) => m.direction === "outbound").length,
+        aiReplies:      rawMessages.filter((m) => m.isAi).length,
+        kbEntries:      kbEntries.length,
+        memories:       memories.length,
+      },
+      messages: rawMessages.map((m) => ({
+        id:        m.id,
+        direction: m.direction,
+        isAi:      m.isAi,
+        content:   m.content.slice(0, 200),
+        createdAt: m.createdAt,
+      })),
+      contextSentToModel: {
+        description: "Lo que se enviaría a OpenAI en el siguiente mensaje (excluye el último mensaje inbound)",
+        historyMessages: simulatedHistory.slice(0, simulatedHistory.length > 1 ? simulatedHistory.length - 1 : 0),
+        totalHistory: Math.max(0, simulatedHistory.length - 1),
+        kbTitles: kbEntries.map((e) => `[${e.category}] ${e.title}`),
+        memoryKeys: memories.map((m) => m.key),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 

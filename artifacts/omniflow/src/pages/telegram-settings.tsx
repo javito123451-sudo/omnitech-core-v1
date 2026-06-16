@@ -3,7 +3,8 @@ import { motion } from "framer-motion";
 import {
   Bot, CheckCircle2, XCircle, RefreshCw, AlertCircle, ArrowLeft,
   Globe, Zap, Settings, Send, Hash, User, Link2, ClipboardCopy,
-  Users, MessageSquare, UserPlus, ShieldCheck,
+  Users, MessageSquare, UserPlus, ShieldCheck, Brain, ChevronDown,
+  Database,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,239 @@ function copyToClipboard(text: string, toast: ReturnType<typeof useToast>["toast
   navigator.clipboard.writeText(text).then(() =>
     toast({ title: "Copiado al portapapeles" }),
   ).catch(() => {});
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface TgClient {
+  id:             number;
+  name:           string;
+  leadScore:      string | null;
+  chatId:         string | null;   // from debug endpoint
+  telegramChatId: string | null;   // from /api/clients
+}
+
+interface DebugMsg {
+  id:        number;
+  direction: string;
+  isAi:      boolean;
+  content:   string;
+  createdAt: string;
+}
+
+interface DebugData {
+  client:   TgClient;
+  summary: {
+    totalMessages: number;
+    inboundCount:  number;
+    outboundCount: number;
+    aiReplies:     number;
+    kbEntries:     number;
+    memories:      number;
+  };
+  messages: DebugMsg[];
+  contextSentToModel: {
+    description:     string;
+    historyMessages: { role: string; content: string }[];
+    totalHistory:    number;
+    kbTitles:        string[];
+    memoryKeys:      string[];
+  };
+}
+
+// ── Memoria IA debug panel ────────────────────────────────────────────────────
+function MemoriaIAPanel() {
+  const [clients,     setClients]     = useState<TgClient[]>([]);
+  const [selectedId,  setSelectedId]  = useState<number | null>(null);
+  const [debug,       setDebug]       = useState<DebugData | null>(null);
+  const [loading,     setLoading]     = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+  const [open,        setOpen]        = useState(false);
+
+  const loadClients = useCallback(async () => {
+    setLoadingList(true);
+    try {
+      const res = await authFetch(`${BASE}/api/clients`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { clients?: TgClient[]; data?: TgClient[] } | TgClient[];
+      const arr: TgClient[] = Array.isArray(data) ? data : ((data as any).clients ?? (data as any).data ?? []);
+      setClients(arr.filter((c) => c.telegramChatId ?? c.chatId));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoadingList(false);
+    }
+  }, []);
+
+  const loadDebug = useCallback(async (clientId: number) => {
+    setLoading(true);
+    setError(null);
+    setDebug(null);
+    try {
+      const res = await authFetch(`${BASE}/api/telegram/debug/${clientId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as DebugData;
+      setDebug(data);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleSelect = (id: number) => {
+    setSelectedId(id);
+    setOpen(false);
+    loadDebug(id);
+  };
+
+  useEffect(() => { loadClients(); }, [loadClients]);
+
+  const selectedClient = clients.find((c) => c.id === selectedId);
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
+        <div className="flex items-center gap-2">
+          <Brain className="w-4 h-4 text-violet-400" />
+          <span className="text-sm font-semibold">Memoria IA</span>
+          <span className="text-[10px] text-muted-foreground bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">debug</span>
+        </div>
+        <Button size="sm" variant="ghost" onClick={loadClients} disabled={loadingList} className="h-7 px-2">
+          <RefreshCw className={cn("w-3.5 h-3.5", loadingList && "animate-spin")} />
+        </Button>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* Client selector */}
+        <div>
+          <label className="text-xs text-muted-foreground mb-1.5 block">Selecciona un contacto de Telegram</label>
+          <div className="relative">
+            <button
+              onClick={() => setOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 text-sm bg-background border border-border rounded-lg px-3 py-2 hover:border-violet-500/40 transition-colors"
+            >
+              <span className={cn(selectedClient ? "text-white" : "text-muted-foreground")}>
+                {selectedClient ? `${selectedClient.name} (chat ${selectedClient.telegramChatId ?? selectedClient.chatId ?? "?"})` : "— elige un contacto —"}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+            </button>
+            {open && (
+              <div className="absolute z-20 mt-1 w-full bg-popover border border-border rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                {clients.length === 0 && (
+                  <p className="text-xs text-muted-foreground px-3 py-2">No hay contactos con Telegram vinculado.</p>
+                )}
+                {clients.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => handleSelect(c.id)}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition-colors"
+                  >
+                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span>{c.name}</span>
+                    <span className="text-[10px] text-muted-foreground ml-auto font-mono">{c.telegramChatId ?? c.chatId}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {loading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            Cargando diagnóstico…
+          </div>
+        )}
+
+        {error && (
+          <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        {debug && (
+          <div className="space-y-3">
+            {/* Summary stats */}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "Mensajes totales", value: debug.summary.totalMessages, color: "sky" },
+                { label: "Recibidos",        value: debug.summary.inboundCount,  color: "emerald" },
+                { label: "Respuestas IA",    value: debug.summary.aiReplies,     color: "violet" },
+              ].map(({ label, value, color }) => (
+                <div key={label} className={`bg-${color}-500/5 border border-${color}-500/20 rounded-lg p-2.5 text-center`}>
+                  <p className={`text-xl font-bold text-${color}-400`}>{value}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* KB + Memory */}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5" />
+                Base de conocimiento: <strong className="text-white ml-1">{debug.summary.kbEntries} entradas</strong>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Brain className="w-3.5 h-3.5" />
+                Memoria del negocio: <strong className="text-white ml-1">{debug.summary.memories} ítems</strong>
+              </span>
+            </div>
+
+            {/* Context sent to model */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-semibold text-violet-300">Contexto enviado al modelo</span>
+                <span className="text-[10px] text-muted-foreground">({debug.contextSentToModel.totalHistory} mensajes de historial)</span>
+              </div>
+              <div className="bg-background/60 rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40 max-h-60 overflow-y-auto">
+                {debug.contextSentToModel.historyMessages.length === 0 && (
+                  <p className="text-xs text-muted-foreground px-3 py-3">
+                    Sin historial previo — el modelo sólo verá el mensaje actual.
+                  </p>
+                )}
+                {debug.contextSentToModel.historyMessages.map((m, i) => (
+                  <div key={i} className={cn(
+                    "px-3 py-2 flex gap-2 items-start",
+                    m.role === "user" ? "bg-sky-500/5" : "bg-violet-500/5",
+                  )}>
+                    <span className={cn(
+                      "text-[9px] font-bold shrink-0 mt-0.5 uppercase tracking-wide",
+                      m.role === "user" ? "text-sky-400" : "text-violet-400",
+                    )}>
+                      {m.role === "user" ? "USR" : "BOT"}
+                    </span>
+                    <span className="text-xs text-muted-foreground line-clamp-2">{m.content}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Raw message log */}
+            <details className="group">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-white transition-colors py-1 select-none">
+                Ver log completo de mensajes ({debug.messages.length})
+              </summary>
+              <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                {debug.messages.map((m) => (
+                  <div key={m.id} className="text-[10px] font-mono flex gap-2 items-start">
+                    <span className={cn(
+                      "shrink-0 w-14 text-right",
+                      m.direction === "inbound" ? "text-sky-500" : "text-violet-500",
+                    )}>
+                      {m.direction === "inbound" ? "← IN" : "→ OUT"}{m.isAi ? " 🤖" : ""}
+                    </span>
+                    <span className="text-muted-foreground truncate">{m.content}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Status section ────────────────────────────────────────────────────────────
@@ -528,6 +762,14 @@ export default function TelegramSettingsPage() {
               </div>
             </div>
           )}
+
+          {/* Memoria IA debug panel */}
+          <div>
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Diagnóstico de Memoria IA
+            </h2>
+            <MemoriaIAPanel />
+          </div>
         </motion.div>
       )}
     </div>
