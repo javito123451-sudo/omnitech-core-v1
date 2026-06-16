@@ -27,6 +27,8 @@ import ExecutivePage from "@/pages/executive";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 import IntegrationsPage from "@/pages/integrations";
 import WhatsAppLogsPage from "@/pages/whatsapp-logs";
+import TelegramInboxPage from "@/pages/telegram-inbox";
+import TelegramSettingsPage from "@/pages/telegram-settings";
 import ControlCenterDashboard from "@/pages/control-center/index";
 import WorkspacesPage from "@/pages/control-center/workspaces";
 import WorkspaceDetailPage from "@/pages/control-center/workspace-detail";
@@ -300,6 +302,20 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <WhatsAppLogsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/integrations/telegram">
+        <ProtectedRoute>
+          <MainLayout>
+            <TelegramSettingsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/telegram-inbox">
+        <ProtectedRoute>
+          <MainLayout>
+            <TelegramInboxPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>

@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { scheduleAutoBackups } from "./utils/backupEngine";
+import { autoSetupTelegramWebhooks } from "./routes/telegram";
 
 const rawPort = process.env["PORT"];
 
@@ -24,4 +25,13 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   scheduleAutoBackups();
+
+  // Auto-register Telegram webhooks for all configured orgs
+  const publicBase =
+    process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.PUBLIC_URL ?? `http://localhost:${port}`;
+  autoSetupTelegramWebhooks(publicBase).catch((e) =>
+    logger.error({ err: e }, "Telegram auto-webhook setup failed"),
+  );
 });

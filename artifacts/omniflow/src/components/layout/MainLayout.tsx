@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
-  MoreHorizontal, X, ChevronRight, Shield, Sparkles,
+  MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -35,8 +35,9 @@ const sidebarGroups = [
   {
     label: "Trabajo",
     items: [
-      { icon: MessageSquare, label: "Asistente",  href: "/assistant" },
-      { icon: CalendarDays,  label: "Calendario", href: "/calendar" },
+      { icon: MessageSquare, label: "Asistente",       href: "/assistant" },
+      { icon: CalendarDays,  label: "Calendario",      href: "/calendar" },
+      { icon: Bot,           label: "Telegram Inbox",  href: "/telegram-inbox" },
     ],
   },
   {
@@ -57,15 +58,16 @@ const sidebarGroups = [
 ];
 
 const moreItems = [
-  { icon: LayoutDashboard, label: "Panel",          href: "/dashboard",            group: "Principal" },
-  { icon: MessageSquare,   label: "Asistente",      href: "/assistant",            group: "Trabajo" },
-  { icon: CalendarDays,    label: "Calendario",     href: "/calendar",             group: "Trabajo" },
-  { icon: Zap,             label: "Intelligence",   href: "/executive",            group: "Análisis" },
-  { icon: BarChart3,       label: "Estadísticas",   href: "/statistics",           group: "Análisis" },
-  { icon: Sparkles,        label: "Omni Import AI", href: "/import",               group: "Sistema" },
-  { icon: Brain,           label: "Memoria",        href: "/memory",               group: "Sistema" },
-  { icon: Puzzle,          label: "Integraciones",  href: "/integrations",         group: "Sistema" },
-  { icon: Settings,        label: "Configuración",  href: "/settings",             group: "Sistema" },
+  { icon: LayoutDashboard, label: "Panel",           href: "/dashboard",            group: "Principal" },
+  { icon: MessageSquare,   label: "Asistente",       href: "/assistant",            group: "Trabajo" },
+  { icon: CalendarDays,    label: "Calendario",      href: "/calendar",             group: "Trabajo" },
+  { icon: Bot,             label: "Telegram Inbox",  href: "/telegram-inbox",       group: "Trabajo" },
+  { icon: Zap,             label: "Intelligence",    href: "/executive",            group: "Análisis" },
+  { icon: BarChart3,       label: "Estadísticas",    href: "/statistics",           group: "Análisis" },
+  { icon: Sparkles,        label: "Omni Import AI",  href: "/import",               group: "Sistema" },
+  { icon: Brain,           label: "Memoria",         href: "/memory",               group: "Sistema" },
+  { icon: Puzzle,          label: "Integraciones",   href: "/integrations",         group: "Sistema" },
+  { icon: Settings,        label: "Configuración",   href: "/settings",             group: "Sistema" },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

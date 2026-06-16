@@ -53,7 +53,7 @@ async function tgSend(token: string, chatId: number, text: string): Promise<bool
   }
 }
 
-// ── Helper: get token for an org ─────────────────────────────────────────────
+// ── Helper: get token for an org (DB first, then env var fallback) ───────────
 async function getTelegramToken(orgId: number): Promise<string | null> {
   const [conn] = await db
     .select()
@@ -62,9 +62,12 @@ async function getTelegramToken(orgId: number): Promise<string | null> {
       eq(orgIntegrationsTable.orgId, orgId),
       eq(orgIntegrationsTable.integrationSlug, "telegram"),
     ));
-  if (!conn?.credentialsEnc) return null;
-  const creds = decryptCredentials(conn.credentialsEnc);
-  return (creds.botToken as string | undefined) ?? null;
+  if (conn?.credentialsEnc) {
+    const creds = decryptCredentials(conn.credentialsEnc);
+    if (creds.botToken) return creds.botToken as string;
+  }
+  // Fallback to environment variable
+  return process.env.TELEGRAM_BOT_TOKEN ?? null;
 }
 
 // ── AI reply for general Telegram messages ────────────────────────────────────
@@ -166,6 +169,32 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
       const parts = c.name.toLowerCase().split(/\s+/);
       return parts.some((p) => nameLower.includes(p) || p.includes(nameLower.split(/\s+/)[0] ?? ""));
     });
+  }
+
+  // Auto-create contact if not found (task 4)
+  if (!client && (senderName || username)) {
+    try {
+      const newName = senderName || username || `Telegram ${chatIdStr}`;
+      const [created] = await db.insert(clientsTable).values({
+        orgId,
+        name:           newName,
+        phone:          null,
+        email:          null,
+        status:         "prospect",
+        telegramChatId: chatIdStr,
+        notes:          `Contacto creado automáticamente desde Telegram\nChat ID: ${chatIdStr}${username ? `\nUsername: ${username}` : ""}\nUser ID: ${msg.from?.id ?? "?"}`,
+      }).returning();
+      client = created;
+      console.log(`[Telegram] ✅ Auto-created contact: ${newName} (id=${created?.id})`);
+      logIntegrationEvent({
+        orgId, integrationSlug: "telegram", direction: "inbound",
+        eventType: "contact_created", status: "processed",
+        summary: `Contacto creado automáticamente: ${newName} (chat_id: ${chatIdStr})`,
+        payloadJson: JSON.stringify({ chatId, senderName, username, userId: msg.from?.id }),
+      });
+    } catch (err) {
+      console.error("[Telegram] Auto-create contact failed:", err);
+    }
   }
 
   const basePayload: Record<string, unknown> = {
@@ -577,3 +606,220 @@ telegramRouter.post("/test-send", async (req, res) => {
     res.status(500).json({ success: false, message: String(err) });
   }
 });
+
+// ── GET /api/telegram/audit — event log for Telegram Inbox ───────────────────
+telegramRouter.get("/audit", async (req, res) => {
+  const orgId = (req as any).orgId as number;
+  const limit = Math.min(Number(req.query.limit ?? 200), 500);
+  try {
+    const events = await db
+      .select()
+      .from(integrationEventsTable)
+      .where(and(
+        eq(integrationEventsTable.orgId, orgId),
+        eq(integrationEventsTable.integrationSlug, "telegram"),
+      ))
+      .orderBy(desc(integrationEventsTable.createdAt))
+      .limit(limit);
+    res.json(events);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── GET /api/telegram/status — bot + webhook info + stats ────────────────────
+telegramRouter.get("/status", async (req, res) => {
+  const orgId = (req as any).orgId as number;
+  try {
+    const token = await getTelegramToken(orgId);
+
+    // Bot info
+    let botInfo: Record<string, unknown> | null = null;
+    if (token) {
+      try {
+        const r = await fetch(TG(token, "getMe"));
+        const j = await r.json() as { ok: boolean; result?: Record<string, unknown> };
+        if (j.ok) botInfo = j.result ?? null;
+      } catch { /* ignore */ }
+    }
+
+    // Webhook info
+    let webhookInfo: Record<string, unknown> | null = null;
+    if (token) {
+      try {
+        const r = await fetch(TG(token, "getWebhookInfo"));
+        const j = await r.json() as { ok: boolean; result?: Record<string, unknown> };
+        if (j.ok) webhookInfo = j.result ?? null;
+      } catch { /* ignore */ }
+    }
+
+    // Conversation stats from integration_events
+    const [row] = await db
+      .select()
+      .from(orgIntegrationsTable)
+      .where(and(
+        eq(orgIntegrationsTable.orgId, orgId),
+        eq(orgIntegrationsTable.integrationSlug, "telegram"),
+      ));
+
+    const events = await db
+      .select()
+      .from(integrationEventsTable)
+      .where(and(
+        eq(integrationEventsTable.orgId, orgId),
+        eq(integrationEventsTable.integrationSlug, "telegram"),
+      ));
+
+    const totalMessages  = events.filter((e) => e.eventType === "message_received").length;
+    const totalReplied   = events.filter((e) => e.eventType === "message_sent").length;
+    const totalAccepted  = events.filter((e) => e.eventType === "quote_accepted").length;
+    const contactsCreated = events.filter((e) => e.eventType === "contact_created").length;
+
+    // Unique conversations (by chatId in payloadJson)
+    const chatIds = new Set<string>();
+    for (const e of events) {
+      if (e.payloadJson) {
+        try {
+          const p = JSON.parse(e.payloadJson as string);
+          if (p.chatId) chatIds.add(String(p.chatId));
+        } catch { /* ignore */ }
+      }
+    }
+
+    res.json({
+      connected:       !!token,
+      hasCredentials:  !!token,
+      envTokenPresent: !!process.env.TELEGRAM_BOT_TOKEN,
+      botInfo,
+      webhookInfo,
+      config:          row?.config ?? null,
+      connectedSince:  row?.createdAt ?? null,
+      stats: {
+        totalMessages,
+        totalReplied,
+        totalAccepted,
+        contactsCreated,
+        uniqueConversations: chatIds.size,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /api/telegram/send — send from CRM to a chat_id ─────────────────────
+telegramRouter.post("/send", async (req, res) => {
+  const orgId  = (req as any).orgId as number;
+  const { chatId, message } = req.body as { chatId: number | string; message: string };
+
+  if (!chatId || !message?.trim()) {
+    res.status(400).json({ success: false, message: "Se requiere chatId y message." });
+    return;
+  }
+
+  try {
+    const token = await getTelegramToken(orgId);
+    if (!token) {
+      res.status(404).json({ success: false, message: "Bot token no configurado." });
+      return;
+    }
+
+    const sent = await tgSend(token, Number(chatId), message.trim());
+    if (!sent) {
+      await logIntegrationEvent({
+        orgId, integrationSlug: "telegram", direction: "outbound",
+        eventType: "message_send_failed", status: "error",
+        summary: `Envío fallido → chat_id ${chatId}`,
+        payloadJson: JSON.stringify({ chatId }),
+      });
+      res.json({ success: false, message: "No se pudo enviar el mensaje." });
+      return;
+    }
+
+    // Save to messages table
+    try {
+      const client = await db.select().from(clientsTable).where(and(
+        eq(clientsTable.orgId, orgId),
+        eq(clientsTable.telegramChatId, String(chatId)),
+      )).then((r) => r[0] ?? null);
+
+      if (client) {
+        await db.insert(messagesTable).values({
+          clientId: client.id,
+          channel:  "telegram",
+          direction: "outbound",
+          body:      message.trim(),
+          status:    "sent",
+          isAi:      false,
+        });
+      }
+    } catch { /* non-critical */ }
+
+    await logIntegrationEvent({
+      orgId, integrationSlug: "telegram", direction: "outbound",
+      eventType: "message_sent", status: "processed",
+      summary: `Mensaje enviado desde CRM → chat_id ${chatId}`,
+      payloadJson: JSON.stringify({ chatId, preview: message.slice(0, 80) }),
+    });
+
+    res.json({ success: true, message: "Mensaje enviado correctamente." });
+  } catch (err) {
+    res.status(500).json({ success: false, message: String(err) });
+  }
+});
+
+// ── Auto-webhook setup (called on server startup) ─────────────────────────────
+export async function autoSetupTelegramWebhooks(baseUrl: string): Promise<void> {
+  try {
+    // Find all orgs with telegram integration
+    const integrations = await db
+      .select()
+      .from(orgIntegrationsTable)
+      .where(eq(orgIntegrationsTable.integrationSlug, "telegram"));
+
+    for (const integration of integrations) {
+      const orgId = integration.orgId;
+      const token = await getTelegramToken(orgId);
+      if (!token) continue;
+
+      // Get or create webhook secret
+      let config = (integration.config ?? {}) as Record<string, unknown>;
+      let secret = config.webhookSecret as string | undefined;
+      if (!secret) {
+        secret = randomBytes(24).toString("hex");
+        config = { ...config, webhookSecret: secret };
+        await db.update(orgIntegrationsTable).set({ config }).where(eq(orgIntegrationsTable.id, integration.id));
+      }
+
+      const webhookUrl = `${baseUrl}/api/telegram/webhook/${secret}`;
+
+      // Check current webhook
+      try {
+        const infoRes  = await fetch(TG(token, "getWebhookInfo"));
+        const infoJson = await infoRes.json() as { ok: boolean; result?: { url?: string } };
+        const currentUrl = infoJson.result?.url ?? "";
+
+        if (currentUrl === webhookUrl) {
+          console.log(`[Telegram] Org ${orgId}: webhook already set → ${webhookUrl}`);
+          continue;
+        }
+
+        const setRes  = await fetch(TG(token, "setWebhook"), {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ url: webhookUrl }),
+        });
+        const setJson = await setRes.json() as { ok: boolean; description?: string };
+        if (setJson.ok) {
+          console.log(`[Telegram] ✅ Org ${orgId}: webhook set → ${webhookUrl}`);
+        } else {
+          console.error(`[Telegram] ❌ Org ${orgId}: setWebhook failed — ${setJson.description}`);
+        }
+      } catch (err) {
+        console.error(`[Telegram] ❌ Org ${orgId}: auto-webhook error:`, err);
+      }
+    }
+  } catch (err) {
+    console.error("[Telegram] autoSetupTelegramWebhooks error:", err);
+  }
+}
