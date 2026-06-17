@@ -4,9 +4,9 @@ import OpenAI from "openai";
 import {
   db, orgIntegrationsTable, integrationEventsTable,
   clientsTable, quotesTable, agentMemoryTable, organizationsTable, messagesTable,
-  knowledgeBaseTable,
+  knowledgeBaseTable, appointmentsTable, activityTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, isNotNull, ne } from "drizzle-orm";
+import { eq, and, desc, asc, isNotNull, ne, ilike } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 
 // ── Two routers: one public (webhook), one authenticated ─────────────────────
@@ -157,7 +157,13 @@ async function generateTelegramAIReply(params: {
 - Lead Score: ${client.leadScore ?? "cold"}${client.company ? `\n- Empresa: ${client.company}` : ""}${client.tags ? `\n- Etiquetas: ${client.tags}` : ""}${client.notes ? `\n- Historial: ${String(client.notes).slice(0, 300)}` : ""}`
     : "";
 
-  // ── 3. System prompt with commercial flow ────────────────────────────────────
+  // Madrid date/time block so AI resolves "este jueves", "mañana", etc.
+  const now    = new Date();
+  const dateStr = now.toLocaleDateString("es-ES", { timeZone: "Europe/Madrid", weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const timeStr = now.toLocaleTimeString("es-ES", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit" });
+  const dateBlock = `\n\n🗓️ FECHA Y HORA ACTUAL (Madrid): ${dateStr}, ${timeStr}. Usa esta fecha para interpretar "hoy", "mañana", "este jueves" etc. al agendar citas.`;
+
+  // ── 3. System prompt ─────────────────────────────────────────────────────────
   const systemPrompt = `Eres el asistente comercial inteligente de *${orgName}* en Telegram. Actúas como comercial consultivo senior.
 
 MISIÓN: Convertir cada conversación en una oportunidad de negocio real.
@@ -181,15 +187,63 @@ REGLAS OBLIGATORIAS:
 - NO inventes precios, datos o servicios no documentados
 - Si detectas interés comercial → recoge datos de contacto
 - Si no puedes resolver → escala: "Te pongo en contacto con un asesor"
-- IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}`;
+- CITAS: Cuando el usuario proponga una fecha/hora para reunión, llamada o demo → llama SIEMPRE a create_appointment para guardarla en el CRM. No respondas confirmando sin haberla creado.
+- IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
 
-  // ── 4. Build final messages array ────────────────────────────────────────────
-  // IMPORTANT: history messages use raw content (same format as current message)
-  // to ensure consistent speaker identity across the conversation
-  const openaiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
+  // ── 4. Tool definition: create_appointment ───────────────────────────────────
+  const tgTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "create_appointment",
+        description:
+          "Crea una cita real en el calendario del CRM vinculada al cliente actual. " +
+          "Úsala SIEMPRE que el usuario proponga una fecha y hora para reunión, llamada, demo o visita. " +
+          "Interpreta fechas relativas ('este jueves', 'mañana', 'el lunes') usando la fecha actual del sistema.",
+        parameters: {
+          type: "object" as const,
+          properties: {
+            title: {
+              type: "string",
+              description: "Título de la cita. Ej: 'Llamada de presentación', 'Demo OmniTech', 'Reunión de seguimiento'.",
+            },
+            date: {
+              type: "string",
+              description: "Fecha en formato YYYY-MM-DD. Resuelve 'este jueves', 'mañana', etc. con la fecha actual del sistema.",
+            },
+            start_time: {
+              type: "string",
+              description: "Hora de inicio en formato HH:MM (24h). Ejemplo: '13:00'.",
+            },
+            duration_minutes: {
+              type: "number",
+              description: "Duración en minutos. Por defecto 60.",
+            },
+            description: {
+              type: "string",
+              description: "Notas o motivo de la cita. Opcional.",
+            },
+            location: {
+              type: "string",
+              description: "Lugar o enlace de videollamada. Opcional.",
+            },
+            type: {
+              type: "string",
+              enum: ["meeting", "call", "demo", "follow_up", "other"],
+              description: "Tipo de cita. Por defecto 'call'.",
+            },
+          },
+          required: ["title", "date", "start_time"],
+        },
+      },
+    },
+  ];
+
+  // ── 5. Build messages array ───────────────────────────────────────────────────
+  const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
     ...convHistory,
-    { role: "user", content: text },  // raw text — NO "Juan dice:" prefix
+    { role: "user", content: text },
   ];
 
   console.log(
@@ -199,19 +253,169 @@ REGLAS OBLIGATORIAS:
 
   try {
     const openai = new OpenAI({ apiKey });
-    const completion = await openai.chat.completions.create({
+
+    // ── First call: may return text OR a tool call ────────────────────────────
+    const firstCall = await openai.chat.completions.create({
       model:       "gpt-4o-mini",
       temperature: 0.72,
-      max_tokens:  400,
+      max_tokens:  600,
       messages:    openaiMessages,
+      tools:       tgTools,
+      tool_choice: "auto",
     });
-    const tokensUsed = completion.usage?.total_tokens ?? 0;
-    const reply = (completion.choices[0]?.message?.content ?? "").trim();
-    console.log(`[TG Memoria] Respuesta generada | tokens=${tokensUsed} | len=${reply.length}`);
-    return reply || null;
+
+    const firstMsg = firstCall.choices[0]?.message;
+    if (!firstMsg) return null;
+
+    // ── Case A: direct text response (no tool call) ───────────────────────────
+    if (!firstMsg.tool_calls || firstMsg.tool_calls.length === 0) {
+      const reply = (firstMsg.content ?? "").trim();
+      console.log(`[TG Memoria] Respuesta generada | tokens=${firstCall.usage?.total_tokens ?? 0} | len=${reply.length}`);
+      return reply || null;
+    }
+
+    // ── Case B: tool call → execute it ───────────────────────────────────────
+    const toolCall  = firstMsg.tool_calls[0]!;
+    const toolName  = toolCall.function.name;
+    const toolCallId = toolCall.id;
+    let toolResult  = "";
+
+    console.log(`[TG Tool] calling ${toolName} | args: ${toolCall.function.arguments}`);
+
+    if (toolName === "create_appointment") {
+      toolResult = await executeTelegramCreateAppointment(
+        JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
+        orgId,
+        client,
+      );
+    } else {
+      toolResult = JSON.stringify({ error: `Tool '${toolName}' no disponible en Telegram` });
+    }
+
+    console.log(`[TG Tool] ${toolName} result: ${toolResult.slice(0, 200)}`);
+
+    // ── Second call: generate final human reply using tool result ─────────────
+    const secondMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      ...openaiMessages,
+      firstMsg,
+      {
+        role:         "tool",
+        tool_call_id: toolCallId,
+        content:      toolResult,
+      },
+    ];
+
+    const secondCall = await openai.chat.completions.create({
+      model:       "gpt-4o-mini",
+      temperature: 0.65,
+      max_tokens:  400,
+      messages:    secondMessages,
+    });
+
+    const finalReply = (secondCall.choices[0]?.message?.content ?? "").trim();
+    const totalTokens = (firstCall.usage?.total_tokens ?? 0) + (secondCall.usage?.total_tokens ?? 0);
+    console.log(`[TG Memoria] Respuesta generada | tokens=${totalTokens} | len=${finalReply.length}`);
+    return finalReply || null;
+
   } catch (err) {
     console.error("[Telegram AI] OpenAI error:", err);
     return null;
+  }
+}
+
+// ── Execute create_appointment for Telegram bot ────────────────────────────────
+async function executeTelegramCreateAppointment(
+  args: Record<string, unknown>,
+  orgId: number,
+  client: { id: number; name: string } | null,
+): Promise<string> {
+  try {
+    const title           = String(args["title"]            ?? "Cita");
+    const dateStr         = String(args["date"]             ?? "");
+    const startTimeStr    = String(args["start_time"]       ?? "10:00");
+    const durationMinutes = Number(args["duration_minutes"] ?? 60);
+    const description     = args["description"] ? String(args["description"]) : null;
+    const location        = args["location"]    ? String(args["location"])    : null;
+    const apptType        = String(args["type"] ?? "call");
+
+    if (!dateStr) {
+      return JSON.stringify({ error: "Falta la fecha de la cita (format YYYY-MM-DD)." });
+    }
+
+    // Parse date + time → UTC timestamp
+    const [h = "10", m = "00"] = startTimeStr.split(":");
+    const [y, mo, d]           = dateStr.split("-").map(Number);
+    if (!y || !mo || !d) {
+      return JSON.stringify({ error: `Formato de fecha inválido: "${dateStr}". Usa YYYY-MM-DD.` });
+    }
+    const startTime = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+    const endTime   = new Date(startTime.getTime() + durationMinutes * 60_000);
+
+    // Resolve client: prefer the current Telegram client, fallback to org-wide search
+    let resolvedClient = client
+      ? await db.select().from(clientsTable)
+          .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, client.id)))
+          .then((r) => r[0] ?? null)
+      : null;
+
+    if (!resolvedClient) {
+      return JSON.stringify({ error: "No se pudo identificar el cliente para esta cita. Asegúrate de que el contacto esté registrado en el CRM." });
+    }
+
+    const [appointment] = await db.insert(appointmentsTable).values({
+      orgId,
+      clientId:    resolvedClient.id,
+      title,
+      description,
+      startTime,
+      endTime,
+      status:      "pending",
+      type:        apptType,
+      location,
+      reminder:    false,
+    }).returning();
+
+    // Log activity (non-critical)
+    const localDate = startTime.toLocaleDateString("es-ES", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+      timeZone: "Europe/Madrid",
+    });
+    const localTime = `${h}:${m}`;
+
+    await db.insert(activityTable).values({
+      orgId,
+      type:        "appointment_scheduled",
+      description: `Cita "${title}" agendada con ${resolvedClient.name} para el ${localDate} a las ${localTime} (vía Telegram)`,
+      clientName:  resolvedClient.name,
+    }).catch(() => {/* non-critical */});
+
+    // Log integration event
+    await logIntegrationEvent({
+      orgId, integrationSlug: "telegram", direction: "inbound",
+      eventType: "appointment_created", status: "processed",
+      summary:     `Cita #${appointment!.id} creada: "${title}" con ${resolvedClient.name} el ${localDate} a las ${localTime}`,
+      payloadJson: JSON.stringify({ appointmentId: appointment!.id, clientId: resolvedClient.id, date: dateStr, startTime: startTimeStr }),
+    }).catch(() => {/* non-critical */});
+
+    console.log(`[TG Appointment] ✅ Created appointment #${appointment!.id} | client=${resolvedClient.name} | ${dateStr} ${startTimeStr}`);
+
+    return JSON.stringify({
+      success:       true,
+      appointmentId: appointment!.id,
+      clientName:    resolvedClient.name,
+      title,
+      date:          localDate,
+      time:          localTime,
+      duration:      durationMinutes,
+      status:        "pending",
+      type:          apptType,
+      description,
+      location,
+      message:       `Cita #${appointment!.id} creada en el CRM para ${resolvedClient.name} el ${localDate} a las ${localTime}.`,
+    });
+  } catch (err) {
+    console.error("[TG Appointment] Error creating appointment:", err);
+    return JSON.stringify({ error: String(err) });
   }
 }
 
