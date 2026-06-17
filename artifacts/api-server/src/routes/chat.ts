@@ -282,9 +282,10 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           },
           status_filter: {
             type: "string",
-            enum: ["all", "pending", "confirmed", "completed", "cancelled"],
+            enum: ["active", "all", "pending", "confirmed", "completed", "cancelled", "rescheduled"],
             description:
-              "Filtra por estado de cita. 'pending' = pendientes de confirmar · 'all' = cualquier estado.",
+              "'active' (por defecto) = solo pendientes + confirmadas (nunca reprogramadas/canceladas/completadas) · " +
+              "'pending' = solo pendientes · 'confirmed' = solo confirmadas · 'all' = cualquier estado.",
           },
           limit: {
             type: "number",
@@ -579,7 +580,7 @@ async function executeCrmTool(
     // ── get_appointments ────────────────────────────────────────────────────
     if (toolName === "get_appointments") {
       const dateFilter   = (args["date_filter"]   as string | undefined) ?? "all";
-      const statusFilter = (args["status_filter"] as string | undefined) ?? "all";
+      const statusFilter = (args["status_filter"] as string | undefined) ?? "active";
       const limit        = Math.min(Number(args["limit"] ?? 20), 50);
       const now          = new Date();
 
@@ -601,8 +602,12 @@ async function executeCrmTool(
       }
 
       // Build status condition
+      // "active" (default) = pending + confirmed only — never rescheduled/cancelled/completed
+      const activeStatuses = ["pending", "confirmed"];
       const statusCondition =
-        statusFilter !== "all" ? eq(appointmentsTable.status, statusFilter) : undefined;
+        statusFilter === "all"    ? undefined :
+        statusFilter === "active" ? inArray(appointmentsTable.status, activeStatuses) :
+        /* specific status */       eq(appointmentsTable.status, statusFilter);
 
       // Combine all conditions
       const conditions = [
@@ -1115,42 +1120,74 @@ async function executeCrmTool(
       const effectiveDur  = durationArg ?? existingDur;
       const newEndTime    = new Date(newStartTime.getTime() + effectiveDur * 60_000);
 
-      // ── WRITE ────────────────────────────────────────────────────────────────
+      // ── STEP 1: Mark old appointment as "rescheduled" ────────────────────────
+      if (existing.status === "rescheduled" || existing.status === "cancelled") {
+        return JSON.stringify({
+          error: `La cita #${existing.id} ya está "${existing.status}". ` +
+                 `Usa get_appointments para ver las citas activas del cliente.`,
+        });
+      }
       await db.update(appointmentsTable)
-        .set({ startTime: newStartTime, endTime: newEndTime })
+        .set({ status: "rescheduled" })
         .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
 
-      // ── DB READ-BACK VALIDATION ───────────────────────────────────────────────
-      const [verified] = await db.select().from(appointmentsTable)
-        .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+      // ── STEP 2: Create NEW appointment with new date/time ─────────────────────
+      const [newAppt] = await db.insert(appointmentsTable).values({
+        orgId,
+        clientId:    existing.clientId,
+        title:       existing.title,
+        description: existing.description ?? undefined,
+        type:        existing.type        ?? undefined,
+        location:    existing.location    ?? undefined,
+        tags:        existing.tags        ?? undefined,
+        startTime:   newStartTime,
+        endTime:     newEndTime,
+        status:      "pending",
+        reminder:    existing.reminder,
+      }).returning();
 
-      if (!verified || Math.abs(verified.startTime.getTime() - newStartTime.getTime()) > 60_000) {
-        return JSON.stringify({ error: "Error de validación: la cita no se actualizó correctamente en la base de datos." });
+      if (!newAppt) {
+        await db.update(appointmentsTable)
+          .set({ status: existing.status })
+          .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+        return JSON.stringify({ error: "Error al crear la nueva cita. Se restauró la cita original." });
       }
 
-      const localDate = verified.startTime.toLocaleDateString("es-ES", {
+      // ── DB READ-BACK VALIDATION on new appointment ────────────────────────────
+      const [verified] = await db.select().from(appointmentsTable)
+        .where(and(eq(appointmentsTable.id, newAppt.id), eq(appointmentsTable.orgId, orgId)));
+
+      if (!verified || Math.abs(verified.startTime.getTime() - newStartTime.getTime()) > 60_000) {
+        return JSON.stringify({ error: "Error de validación: la nueva cita no se creó correctamente en la base de datos." });
+      }
+
+      // Use raw ISO slice — DB stores wall-clock value as UTC-naive (no conversion)
+      const isoDate  = verified.startTime.toISOString().slice(0, 10);
+      const [vyr, vmo, vdy] = isoDate.split("-").map(Number);
+      const localDate = new Date(vyr!, vmo! - 1, vdy!, 12, 0, 0).toLocaleDateString("es-ES", {
         weekday: "long", day: "numeric", month: "long", year: "numeric",
       });
-      const localTime = `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+      const localTime = verified.startTime.toISOString().slice(11, 16);
 
       await db.insert(activityTable).values({
         orgId,
         type:        "appointment_rescheduled",
-        description: `Cita #${existing.id} "${existing.title}" reprogramada → ${localDate} a las ${localTime}`,
+        description: `Cita #${existing.id} "${existing.title}" marcada como reprogramada → nueva cita #${newAppt.id}: ${localDate} a las ${localTime}`,
         clientName:  null,
       }).catch(() => {/* non-critical */});
 
       return JSON.stringify({
-        success:       true,
-        verified:      true,
-        appointmentId: existing.id,
-        title:         existing.title,
-        newDate:       localDate,
-        newTime:       localTime,
-        duration:      effectiveDur,
-        status:        verified.status,
-        dbConfirmedAt: verified.startTime.toISOString(),
-        message:       `✅ Cita #${existing.id} "${existing.title}" reprogramada y confirmada en la base de datos: ${localDate} a las ${localTime}.`,
+        success:          true,
+        verified:         true,
+        oldAppointmentId: existing.id,
+        newAppointmentId: newAppt.id,
+        title:            existing.title,
+        newDate:          localDate,
+        newTime:          localTime,
+        duration:         effectiveDur,
+        status:           "pending",
+        dbConfirmedAt:    verified.startTime.toISOString(),
+        message:          `✅ Cita reprogramada. La anterior (#${existing.id}) ha sido marcada como reprogramada. Nueva cita #${newAppt.id} confirmada: ${localDate} a las ${localTime}.`,
       });
     }
 
