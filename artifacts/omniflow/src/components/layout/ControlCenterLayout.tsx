@@ -4,6 +4,7 @@ import {
   Shield, LayoutDashboard, Building2, Users, Puzzle,
   Lock, ChevronRight, LogOut, Menu, X, Hexagon,
   Crown, Bot, Plug, ClipboardList, HardDrive,
+  Key, Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
@@ -28,6 +29,7 @@ const ccNav = [
       { icon: Puzzle,          label: "Módulos",         href: "/control-center/modules"      },
       { icon: Bot,             label: "IA",              href: "/control-center/ai-center"    },
       { icon: Plug,            label: "Integraciones",   href: "/control-center/integrations" },
+      { icon: Key,             label: "Licencias",       href: "/control-center/licenses"     },
     ],
   },
   {
@@ -36,6 +38,7 @@ const ccNav = [
       { icon: Lock,            label: "Seguridad",       href: "/control-center/security"     },
       { icon: ClipboardList,   label: "Auditoría",       href: "/control-center/audit"        },
       { icon: HardDrive,       label: "Backups",         href: "/control-center/backups"      },
+      { icon: Activity,        label: "Diagnóstico",     href: "/control-center/diagnostics"  },
     ],
   },
 ];

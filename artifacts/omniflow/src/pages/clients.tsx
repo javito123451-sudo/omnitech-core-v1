@@ -319,6 +319,7 @@ function ClientProfileDialog({
         className="bg-card border-border text-white max-w-md w-full max-h-[90dvh] overflow-y-auto"
         onInteractOutside={(e) => { if (showQuote || showWhatsApp) e.preventDefault(); }}
       >
+        <DialogTitle className="sr-only">{client.name}</DialogTitle>
         {/* Header */}
         <div className="flex items-start gap-4 pt-2">
           <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-xl shrink-0", avatarColor(client.name))}>

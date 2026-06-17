@@ -589,6 +589,7 @@ function QuoteDetailModal({
     return (
       <Dialog open onOpenChange={v => !v && onClose()}>
         <DialogContent className="max-w-2xl">
+          <DialogTitle className="sr-only">Cargando presupuesto</DialogTitle>
           <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
             Cargando presupuesto...
           </div>
