@@ -952,6 +952,7 @@ telegramRouter.get("/debug/:clientId", async (req, res) => {
 // ── GET /api/telegram/conversations — Phase 5 inbox list ─────────────────────
 telegramRouter.get("/conversations", async (req, res) => {
   const orgId = (req as any).orgId as number;
+  console.log(`[Telegram/conversations] orgId=${orgId}`);
   try {
     const clients = await db
       .select()
@@ -961,6 +962,8 @@ telegramRouter.get("/conversations", async (req, res) => {
         isNotNull(clientsTable.telegramChatId),
       ));
 
+    console.log(`[Telegram/conversations] clients with telegram_chat_id: ${clients.length}`);
+
     const conversations = await Promise.all(clients.map(async (c) => {
       const [lastMsg] = await db
         .select()
@@ -968,6 +971,7 @@ telegramRouter.get("/conversations", async (req, res) => {
         .where(and(
           eq(messagesTable.orgId, orgId),
           eq(messagesTable.clientId, c.id),
+          eq(messagesTable.channel, "telegram"),
         ))
         .orderBy(desc(messagesTable.createdAt))
         .limit(1);
@@ -978,6 +982,7 @@ telegramRouter.get("/conversations", async (req, res) => {
         .where(and(
           eq(messagesTable.orgId, orgId),
           eq(messagesTable.clientId, c.id),
+          eq(messagesTable.channel, "telegram"),
         ));
 
       return {
@@ -1005,8 +1010,10 @@ telegramRouter.get("/conversations", async (req, res) => {
       return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
     });
 
+    console.log(`[Telegram/conversations] returning ${conversations.length} conversations`);
     res.json(conversations);
   } catch (err) {
+    console.error("[Telegram/conversations] error:", err);
     res.status(500).json({ error: String(err) });
   }
 });
@@ -1100,12 +1107,16 @@ export async function autoSetupTelegramWebhooks(baseUrl: string): Promise<void> 
       if (!token) continue;
 
       // Get or create webhook secret
-      let config = (integration.config ?? {}) as Record<string, unknown>;
+      // config column is TEXT (JSON string) — must parse before spreading
+      let config: Record<string, unknown> = {};
+      try { config = JSON.parse(integration.config ?? "{}"); } catch { config = {}; }
       let secret = config.webhookSecret as string | undefined;
       if (!secret) {
         secret = randomBytes(24).toString("hex");
         config = { ...config, webhookSecret: secret };
-        await db.update(orgIntegrationsTable).set({ config }).where(eq(orgIntegrationsTable.id, integration.id));
+        await db.update(orgIntegrationsTable)
+          .set({ config: JSON.stringify(config) })
+          .where(eq(orgIntegrationsTable.id, integration.id));
       }
 
       const webhookUrl = `${baseUrl}/api/telegram/webhook/${secret}`;

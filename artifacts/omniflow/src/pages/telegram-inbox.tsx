@@ -5,7 +5,7 @@ import {
   Send, RefreshCw, Bot, MessageSquare, User, Building2,
   Phone, Mail, Flame, Thermometer, Snowflake, ArrowLeft,
   Settings, ChevronRight, Search, CheckCheck, Sparkles,
-  LayoutList, AlertCircle,
+  LayoutList, AlertCircle, Activity,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -321,21 +321,41 @@ export default function TelegramInboxPage() {
   return (
     <div className="flex flex-col h-[calc(100dvh-130px)] -mt-1">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-1 pb-3 shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between px-1 pb-3 shrink-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {/* On mobile show back-to-list arrow when a conv is selected */}
+          {selected ? (
+            <button
+              onClick={() => setSelected(null)}
+              className="text-muted-foreground hover:text-white transition-colors md:hidden shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setLocation("/integrations/telegram")}
+              className="text-muted-foreground hover:text-white transition-colors shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+          {/* Desktop: always show back button pointing to settings */}
           <button
             onClick={() => setLocation("/integrations/telegram")}
-            className="text-muted-foreground hover:text-white transition-colors"
+            className="text-muted-foreground hover:text-white transition-colors hidden md:block shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-sky-500/15 border border-sky-500/25 flex items-center justify-center">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-sky-500/15 border border-sky-500/25 flex items-center justify-center shrink-0">
               <Bot className="w-4 h-4 text-sky-400" />
             </div>
-            <div>
-              <h1 className="text-base font-bold text-white leading-none">Telegram Inbox</h1>
-              <p className="text-[11px] text-muted-foreground">
+            <div className="min-w-0">
+              <h1 className="text-base font-bold text-white leading-none truncate">
+                {selected ? <span className="md:hidden">{selected.clientName}</span> : null}
+                <span className={cn(selected ? "hidden md:inline" : "")}>Telegram Inbox</span>
+              </h1>
+              <p className="text-[11px] text-muted-foreground truncate">
                 {convs.length} conversaciones
                 {hotCount > 0 && <> · <span className="text-red-400">{hotCount} calientes</span></>}
                 {warmCount > 0 && <> · <span className="text-amber-400">{warmCount} tibios</span></>}
@@ -343,18 +363,18 @@ export default function TelegramInboxPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={loadConvs} disabled={convLoading}>
-            <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", convLoading && "animate-spin")} />
-            Actualizar
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button size="sm" variant="outline" onClick={loadConvs} disabled={convLoading} className="h-8 px-2 sm:px-3">
+            <RefreshCw className={cn("w-3.5 h-3.5 sm:mr-1.5", convLoading && "animate-spin")} />
+            <span className="hidden sm:inline">Actualizar</span>
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setLocation("/integrations/telegram")}>
-            <Settings className="w-3.5 h-3.5 mr-1.5" />
-            Config
+          <Button size="sm" variant="outline" onClick={() => setLocation("/integrations/telegram/diagnostico")} className="h-8 px-2 sm:px-3">
+            <Activity className="w-3.5 h-3.5 sm:mr-1.5" />
+            <span className="hidden sm:inline">Diagnóstico</span>
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setLocation("/knowledge-base")}>
-            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-            KB
+          <Button size="sm" variant="outline" onClick={() => setLocation("/integrations/telegram")} className="h-8 px-2 sm:px-3">
+            <Settings className="w-3.5 h-3.5 sm:mr-1.5" />
+            <span className="hidden sm:inline">Config</span>
           </Button>
         </div>
       </div>
@@ -362,8 +382,11 @@ export default function TelegramInboxPage() {
       {/* ── Split panel ── */}
       <div className="flex flex-1 min-h-0 rounded-xl border border-border overflow-hidden bg-card/30">
 
-        {/* ── LEFT: Conversation list ── */}
-        <div className="w-72 xl:w-80 border-r border-border flex flex-col shrink-0">
+        {/* ── LEFT: Conversation list (hidden on mobile when conv selected) ── */}
+        <div className={cn(
+          "w-full md:w-72 xl:w-80 border-r border-border flex flex-col shrink-0",
+          selected ? "hidden md:flex" : "flex",
+        )}>
           {/* Search */}
           <div className="p-3 border-b border-border">
             <div className="relative">
@@ -406,8 +429,11 @@ export default function TelegramInboxPage() {
           </div>
         </div>
 
-        {/* ── RIGHT: Message thread ── */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* ── RIGHT: Message thread (hidden on mobile when no conv selected) ── */}
+        <div className={cn(
+          "flex-1 flex flex-col min-w-0",
+          selected ? "flex" : "hidden md:flex",
+        )}>
           {!selected ? (
             <EmptyThread />
           ) : (

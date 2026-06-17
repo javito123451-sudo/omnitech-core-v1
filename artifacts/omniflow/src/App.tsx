@@ -29,6 +29,7 @@ import IntegrationsPage from "@/pages/integrations";
 import WhatsAppLogsPage from "@/pages/whatsapp-logs";
 import TelegramInboxPage from "@/pages/telegram-inbox";
 import TelegramSettingsPage from "@/pages/telegram-settings";
+import TelegramDiagnosticoPage from "@/pages/telegram-diagnostico";
 import KnowledgeBasePage from "@/pages/knowledge-base";
 import ControlCenterDashboard from "@/pages/control-center/index";
 import WorkspacesPage from "@/pages/control-center/workspaces";
@@ -324,6 +325,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <TelegramSettingsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/integrations/telegram/diagnostico">
+        <ProtectedRoute>
+          <MainLayout>
+            <TelegramDiagnosticoPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>
