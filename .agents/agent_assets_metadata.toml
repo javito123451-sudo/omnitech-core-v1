@@ -24,3 +24,9 @@ id = "c5v36AaoNHG6n2QaAsoHW"
 uri = "file://OmniTech_Core_Telegram_Ownership_Report.md"
 type = "text"
 title = "Telegram Ownership Investigation Report"
+
+[[outputs]]
+id = "d4rHe8lz2HRnx9mU3_QSu"
+uri = "file://OmniTech_Core_Consolidation_Final_Report.md"
+type = "text"
+title = "Consolidation Final Validation Report"
