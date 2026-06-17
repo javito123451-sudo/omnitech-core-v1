@@ -48,3 +48,9 @@ id = "B2WfySB_q_ks6p1qxyBfd"
 uri = "file://OmniTech_Validation_Report.md"
 type = "text"
 title = "Validation Report — Bug Cerrado · Listo para Cliente"
+
+[[outputs]]
+id = "-DbYyeB-26Fuou_sukQLv"
+uri = "file://OmniTech_Technical_Operational_Report.md"
+type = "text"
+title = "Informe Técnico y Operativo Completo — OmniTech Core"
