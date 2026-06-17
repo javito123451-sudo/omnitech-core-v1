@@ -12,3 +12,9 @@ id = "3aIwWX2JPSl3q_0e7V_uo"
 uri = "file://OmniTech_Core_v1.0_Audit_Report.md"
 type = "text"
 title = "OmniTech Core v1.0 — Audit Report"
+
+[[outputs]]
+id = "XDNM9tzfd4HT3c9nGvDjv"
+uri = "file://OmniTech_Core_Integration_Readiness_Report.md"
+type = "text"
+title = "Integration Production Readiness Report"
