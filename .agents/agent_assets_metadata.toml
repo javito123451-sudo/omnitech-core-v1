@@ -30,3 +30,15 @@ id = "d4rHe8lz2HRnx9mU3_QSu"
 uri = "file://OmniTech_Core_Consolidation_Final_Report.md"
 type = "text"
 title = "Consolidation Final Validation Report"
+
+[[outputs]]
+id = "f1KIuyYV6gC2phTmL9CNG"
+uri = "file://OmniTech_Verification_Report.md"
+type = "text"
+title = "Verification Report — Post-Consolidation State"
+
+[[outputs]]
+id = "5QkGoEzMi6BcSmREzWqVH"
+uri = "file://OmniTech_Architecture_Auth_Report.md"
+type = "text"
+title = "Architecture Report — Auto-Org Creation Bug"
