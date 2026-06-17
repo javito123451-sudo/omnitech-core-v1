@@ -187,10 +187,11 @@ REGLAS OBLIGATORIAS:
 - NO inventes precios, datos o servicios no documentados
 - Si detectas interés comercial → recoge datos de contacto
 - Si no puedes resolver → escala: "Te pongo en contacto con un asesor"
+- CITAS — CONSULTAR: Si el usuario pregunta cuándo es su cita, qué citas tiene, o dice "¿seguro?" sobre una fecha/hora → SIEMPRE llama get_client_appointments para leer los datos reales de la base de datos. NUNCA respondas fechas u horas de citas desde tu memoria.
 - CITAS — CREAR: Si el usuario propone una reunión/llamada/demo con fecha+hora que NO existe aún → llama create_appointment.
 - CITAS — REPROGRAMAR: Si el usuario pide cambiar/mover/reprogramar una cita existente → 1) llama get_client_appointments para ver las citas y obtener el ID, 2) llama reschedule_appointment con ese ID. NUNCA crees una cita nueva si el usuario pide modificar una existente.
 - CITAS — CANCELAR: Si el usuario pide cancelar → 1) get_client_appointments para obtener ID, 2) cancel_appointment.
-- REGLA CRÍTICA: Después de cualquier operación con citas, SOLO confirma al usuario lo que el tool devuelva en su campo "message". Si el tool devuelve un error, comunícalo honestamente.
+- REGLA CRÍTICA: Después de cualquier operación con citas, SOLO confirma al usuario la fecha/hora que el tool devuelva en su campo "message". Si el tool devuelve un error, comunícalo honestamente. NUNCA inventes ni recuerdes horas de memoria.
 - IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
 
   // ── 4. Tool definitions ───────────────────────────────────────────────────────
@@ -409,12 +410,10 @@ async function executeTelegramCreateAppointment(
       reminder:    false,
     }).returning();
 
-    // Log activity (non-critical)
-    const localDate = startTime.toLocaleDateString("es-ES", {
-      weekday: "long", day: "numeric", month: "long", year: "numeric",
-      timeZone: "Europe/Madrid",
-    });
-    const localTime = `${h}:${m}`;
+    // Display time: read back from DB to ensure consistency (stored value = displayed value)
+    const savedAppt = appointment!;
+    const localDate = apptDateDisplay(savedAppt.startTime);
+    const localTime = apptTimeDisplay(savedAppt.startTime);
 
     await db.insert(activityTable).values({
       orgId,
@@ -427,15 +426,15 @@ async function executeTelegramCreateAppointment(
     await logIntegrationEvent({
       orgId, integrationSlug: "telegram", direction: "inbound",
       eventType: "appointment_created", status: "processed",
-      summary:     `Cita #${appointment!.id} creada: "${title}" con ${resolvedClient.name} el ${localDate} a las ${localTime}`,
-      payloadJson: JSON.stringify({ appointmentId: appointment!.id, clientId: resolvedClient.id, date: dateStr, startTime: startTimeStr }),
+      summary:     `Cita #${savedAppt.id} creada: "${title}" con ${resolvedClient.name} el ${localDate} a las ${localTime}`,
+      payloadJson: JSON.stringify({ appointmentId: savedAppt.id, clientId: resolvedClient.id, date: dateStr, startTime: startTimeStr }),
     }).catch(() => {/* non-critical */});
 
-    console.log(`[TG Appointment] ✅ Created appointment #${appointment!.id} | client=${resolvedClient.name} | ${dateStr} ${startTimeStr}`);
+    console.log(`[TG Appointment] ✅ Created appointment #${savedAppt.id} | client=${resolvedClient.name} | ${dateStr} ${localTime}`);
 
     return JSON.stringify({
       success:       true,
-      appointmentId: appointment!.id,
+      appointmentId: savedAppt.id,
       clientName:    resolvedClient.name,
       title,
       date:          localDate,
@@ -445,12 +444,32 @@ async function executeTelegramCreateAppointment(
       type:          apptType,
       description,
       location,
-      message:       `Cita #${appointment!.id} creada en el CRM para ${resolvedClient.name} el ${localDate} a las ${localTime}.`,
+      message:       `Cita #${savedAppt.id} creada en el CRM para ${resolvedClient.name} el ${localDate} a las ${localTime}.`,
     });
   } catch (err) {
     console.error("[TG Appointment] Error creating appointment:", err);
     return JSON.stringify({ error: String(err) });
   }
+}
+
+// ── Appointment time/date display helpers ─────────────────────────────────────
+// The DB column is `timestamp without time zone`. Values are stored as the user
+// intended wall-clock time (e.g. "10:00" stored = "10:00" displayed).
+// We must NOT apply any timezone conversion when reading back — just extract the
+// raw HH:MM from the ISO string that pg returns.
+function apptTimeDisplay(d: Date): string {
+  // pg gives us the stored wall-clock value as a UTC Date on Replit (server=UTC).
+  // Slice the ISO string directly to get HH:MM without any offset conversion.
+  return d.toISOString().slice(11, 16); // "HH:MM"
+}
+function apptDateDisplay(d: Date): string {
+  // Extract YYYY-MM-DD from ISO, then format with Spanish day name.
+  // Use local noon to avoid any DST-boundary issues.
+  const [yr, mo, dy] = d.toISOString().slice(0, 10).split("-").map(Number);
+  const local = new Date(yr!, mo! - 1, dy!, 12, 0, 0);
+  return local.toLocaleDateString("es-ES", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
 }
 
 // ── Execute get_client_appointments for Telegram bot ──────────────────────────
@@ -473,23 +492,38 @@ async function executeTelegramGetClientAppointments(
       ...(statusFilter !== "all" ? [eq(appointmentsTable.status, statusFilter)] : []),
     ];
 
+    // ASC order — nearest upcoming appointment first
     const rows = await db.select().from(appointmentsTable)
       .where(and(...conditions as Parameters<typeof and>))
-      .orderBy(desc(appointmentsTable.startTime))
+      .orderBy(asc(appointmentsTable.startTime))
       .limit(10);
 
-    console.log(`[TG Appointment] get_client_appointments → ${rows.length} rows for client #${client.id}`);
+    // Identify the single next upcoming non-cancelled appointment
+    const now    = new Date();
+    const upcoming = rows.filter(r => r.status !== "cancelled" && r.startTime > now);
+    const next   = upcoming[0] ?? null;
+
+    console.log(`[TG Appointment] get_client_appointments → ${rows.length} rows for client #${client.id} | next=#${next?.id ?? "none"}`);
 
     return JSON.stringify({
-      total:  rows.length,
-      client: client.name,
+      total:          rows.length,
+      client:         client.name,
+      nextUpcoming: next
+        ? {
+            id:          next.id,
+            title:       next.title,
+            date:        apptDateDisplay(next.startTime),
+            time:        apptTimeDisplay(next.startTime),
+            status:      next.status,
+            type:        next.type ?? "meeting",
+            location:    next.location ?? null,
+          }
+        : null,
       appointments: rows.map(r => ({
         id:          r.id,
         title:       r.title,
-        date:        r.startTime.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Madrid" }),
-        time:        r.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" }),
-        startTimeISO: r.startTime.toISOString(),
-        endTimeISO:   r.endTime.toISOString(),
+        date:        apptDateDisplay(r.startTime),
+        time:        apptTimeDisplay(r.startTime),
         status:      r.status,
         type:        r.type ?? "meeting",
         location:    r.location ?? null,
@@ -558,10 +592,9 @@ async function executeTelegramRescheduleAppointment(
       });
     }
 
-    const localDate = verified.startTime.toLocaleDateString("es-ES", {
-      weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Madrid",
-    });
-    const localTime = `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+    // Use helpers to extract display time from DB read-back (no timezone conversion)
+    const localDate = apptDateDisplay(verified.startTime);
+    const localTime = apptTimeDisplay(verified.startTime);
 
     // Log activity (non-critical)
     await db.insert(activityTable).values({
@@ -578,7 +611,7 @@ async function executeTelegramRescheduleAppointment(
       payloadJson: JSON.stringify({ appointmentId, newDate: newDateStr, newStartTime: newStartTimeStr, dbVerified: verified.startTime.toISOString() }),
     }).catch(() => {/* non-critical */});
 
-    console.log(`[TG Appointment] ✅ Rescheduled #${appointmentId} → ${newDateStr} ${newStartTimeStr} | DB verified: ${verified.startTime.toISOString()}`);
+    console.log(`[TG Appointment] ✅ Rescheduled #${appointmentId} → DB=${verified.startTime.toISOString()} display=${localDate} ${localTime}`);
 
     return JSON.stringify({
       success:       true,
