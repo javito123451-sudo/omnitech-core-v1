@@ -54,3 +54,9 @@ id = "-DbYyeB-26Fuou_sukQLv"
 uri = "file://OmniTech_Technical_Operational_Report.md"
 type = "text"
 title = "Informe Técnico y Operativo Completo — OmniTech Core"
+
+[[outputs]]
+id = "t_xcS02Tf08vCWT37RWCp"
+uri = "file://OmniTech_Security_Final_Report.md"
+type = "text"
+title = "Informe Final de Seguridad — a3servicio Cerrado"

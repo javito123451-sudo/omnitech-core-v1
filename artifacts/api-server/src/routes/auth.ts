@@ -1,10 +1,22 @@
 import { Router } from "express";
 import { clerkClient } from "@clerk/express";
 import { db, usersTable, orgMembersTable, organizationsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { hasPlatformRole } from "../middlewares/superAdmin";
 import { logAudit, shouldLogLogin } from "../utils/auditLogger";
+
+// ── Blocklist check — returns true if the Clerk ID is permanently blocked ─────
+async function isBlockedClerkId(clerkUserId: string): Promise<boolean> {
+  try {
+    const rows = await db.execute(
+      sql`SELECT 1 FROM blocked_clerk_ids WHERE clerk_id = ${clerkUserId} LIMIT 1`
+    );
+    return (rows as { rows: unknown[] }).rows.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 export const authRouter = Router();
 
@@ -32,6 +44,16 @@ authRouter.get("/me", requireAuth, async (req, res) => {
   const clerkUserId = req.clerkUserId!;
 
   try {
+    // ── BLOCKLIST: permanently blocked Clerk IDs cannot re-provision ──────────
+    if (await isBlockedClerkId(clerkUserId)) {
+      console.warn(`[Auth/me] Blocked Clerk ID attempted login: ${clerkUserId}`);
+      res.status(403).json({
+        error:   "account_blocked",
+        message: "Esta cuenta ha sido bloqueada. Contacta con el administrador.",
+      });
+      return;
+    }
+
     let [user] = await db
       .select()
       .from(usersTable)
