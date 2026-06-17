@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useOrg } from "@/lib/orgContext";
+import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { authFetch } from "@/lib/authFetch";
 import { useLocation } from "wouter";
-import { Hexagon, Building2, ArrowRight, Loader2 } from "lucide-react";
+import { Hexagon, Building2, ArrowRight, Loader2, ShieldOff } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function Setup() {
   const { org, loading, refetch } = useOrg();
+  const { isSuperAdmin, loading: adminLoading } = useSuperAdmin();
   const [, setLocation] = useLocation();
   const [orgName, setOrgName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -18,10 +20,28 @@ export default function Setup() {
     return null;
   }
 
-  if (loading) {
+  if (loading || adminLoading) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
+        <div className="w-full max-w-md text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 mb-6">
+            <ShieldOff className="w-8 h-8 text-destructive" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground mb-3">Sin acceso</h1>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            No tienes un workspace asignado.
+            <br />
+            Contacta con tu administrador para recibir una invitación.
+          </p>
+        </div>
       </div>
     );
   }

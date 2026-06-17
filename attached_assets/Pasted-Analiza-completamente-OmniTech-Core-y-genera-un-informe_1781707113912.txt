@@ -1,0 +1,102 @@
+Analiza completamente OmniTech Core y genera un informe técnico y operativo.
+
+CONTEXTO
+
+Estoy preparando OmniTech para incorporar el primer cliente real.
+
+He detectado que cuando inicio sesión con algunas cuentas se crean organizaciones nuevas automáticamente y necesito entender si esto es correcto o un error de arquitectura.
+
+OBJETIVOS
+
+1. Analizar la autenticación actual.
+2. Analizar el sistema de organizaciones/workspaces.
+3. Verificar si existe un rol Super Admin global.
+4. Preparar OmniTech para gestionar múltiples clientes.
+5. Crear un manual de administración para el propietario de la plataforma.
+
+ANÁLISIS TÉCNICO
+
+Necesito que me indiques:
+
+* Qué sistema de autenticación utiliza el proyecto.
+* Qué tablas intervienen.
+* Qué archivos intervienen.
+* Qué servicios intervienen.
+* Cómo se crea actualmente una organización.
+* Qué proceso crea organizaciones automáticamente.
+* Qué ocurre cuando un usuario inicia sesión por primera vez.
+* Qué ocurre cuando un usuario es invitado.
+* Si el comportamiento actual es correcto o incorrecto para una plataforma SaaS multiempresa.
+
+SUPER ADMIN
+
+Analiza si existe actualmente:
+
+* Super Admin global.
+* Admin de Workspace.
+* Usuario estándar.
+
+Indica:
+
+* Cómo acceder al modo Super Admin.
+* Qué permisos tiene.
+* Qué limitaciones tiene.
+* Qué falta por implementar.
+
+MÓDULOS
+
+Necesito un manual detallado para:
+
+* Activar módulos.
+* Desactivar módulos.
+* Asignar módulos por Workspace.
+* Crear nuevos módulos.
+* Ocultar módulos.
+* Gestionar licencias.
+* Gestionar límites de uso.
+
+Indica exactamente:
+
+* Pantallas.
+* Menús.
+* Componentes.
+* Archivos implicados.
+
+MULTITENANT
+
+Diseña la arquitectura recomendada:
+
+OmniTech HQ
+│
+├── Cliente A
+├── Cliente B
+├── Cliente C
+└── Cliente N
+
+Explica:
+
+* Cómo crear un Workspace.
+* Cómo crear usuarios.
+* Cómo invitar usuarios.
+* Cómo evitar que se creen organizaciones duplicadas.
+* Cómo asegurar que los usuarios entren en el Workspace correcto.
+
+RIESGOS
+
+Genera una lista de riesgos si seguimos creando usuarios y organizaciones antes de corregir la arquitectura.
+
+MANUAL OPERATIVO
+
+Finalmente genera un manual paso a paso para que Fran pueda:
+
+1. Entrar como Super Admin.
+2. Crear un Workspace.
+3. Crear un cliente.
+4. Crear usuarios.
+5. Activar módulos.
+6. Desactivar módulos.
+7. Gestionar permisos.
+8. Acceder a cualquier Workspace.
+9. Supervisar toda la plataforma.
+
+Incluye nombres exactos de archivos, rutas, tablas y componentes encontrados en el proyecto.

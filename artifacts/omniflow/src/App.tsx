@@ -44,6 +44,7 @@ import DiagnosticsPage from "@/pages/control-center/diagnostics";
 import AiCenterPage from "@/pages/control-center/ai-center";
 import BackupsPage from "@/pages/control-center/backups";
 import ImportAiPage from "@/pages/import-ai";
+import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 
 const clerkPubKey = publishableKeyFromHost(
@@ -160,12 +161,17 @@ function HomeRedirect() {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
   const { needsSetup, loading } = useOrg();
+  const { isSuperAdmin, loading: adminLoading } = useSuperAdmin();
 
   useEffect(() => {
-    if (!loading && needsSetup) {
-      setLocation("/setup");
+    if (!loading && !adminLoading && needsSetup) {
+      if (isSuperAdmin) {
+        setLocation("/setup");
+      } else {
+        setLocation("/no-access");
+      }
     }
-  }, [loading, needsSetup, setLocation]);
+  }, [loading, adminLoading, needsSetup, isSuperAdmin, setLocation]);
 
   return (
     <>
@@ -216,6 +222,14 @@ function AppRoutes() {
       <Route path="/setup">
         <Show when="signed-in">
           <Setup />
+        </Show>
+        <Show when="signed-out">
+          <Redirect to="/sign-in" />
+        </Show>
+      </Route>
+      <Route path="/no-access">
+        <Show when="signed-in">
+          <NoAccess />
         </Show>
         <Show when="signed-out">
           <Redirect to="/sign-in" />

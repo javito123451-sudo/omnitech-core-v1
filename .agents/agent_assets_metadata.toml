@@ -42,3 +42,9 @@ id = "5QkGoEzMi6BcSmREzWqVH"
 uri = "file://OmniTech_Architecture_Auth_Report.md"
 type = "text"
 title = "Architecture Report — Auto-Org Creation Bug"
+
+[[outputs]]
+id = "B2WfySB_q_ks6p1qxyBfd"
+uri = "file://OmniTech_Validation_Report.md"
+type = "text"
+title = "Validation Report — Bug Cerrado · Listo para Cliente"

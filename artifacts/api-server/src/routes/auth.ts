@@ -3,6 +3,7 @@ import { clerkClient } from "@clerk/express";
 import { db, usersTable, orgMembersTable, organizationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
+import { hasPlatformRole } from "../middlewares/superAdmin";
 import { logAudit, shouldLogLogin } from "../utils/auditLogger";
 
 export const authRouter = Router();
@@ -162,6 +163,16 @@ authRouter.post("/setup-org", requireAuth, async (req, res) => {
   }
 
   try {
+    // ── GUARD: solo SUPER_ADMIN puede crear organizaciones ─────────────────
+    const platformRole = await hasPlatformRole(clerkUserId);
+    if (platformRole !== "SUPER_ADMIN") {
+      res.status(403).json({
+        error: "setup_not_allowed",
+        message: "No tienes un workspace asignado. Contacta con tu administrador para recibir una invitación.",
+      });
+      return;
+    }
+
     const [user] = await db
       .select()
       .from(usersTable)
