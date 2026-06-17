@@ -6,7 +6,7 @@ import {
   clientsTable, quotesTable, agentMemoryTable, organizationsTable, messagesTable,
   knowledgeBaseTable, appointmentsTable, activityTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, isNotNull, ne, ilike } from "drizzle-orm";
+import { eq, and, desc, asc, isNotNull, ne, ilike, gte } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 
 // ── Two routers: one public (webhook), one authenticated ─────────────────────
@@ -187,53 +187,88 @@ REGLAS OBLIGATORIAS:
 - NO inventes precios, datos o servicios no documentados
 - Si detectas interés comercial → recoge datos de contacto
 - Si no puedes resolver → escala: "Te pongo en contacto con un asesor"
-- CITAS: Cuando el usuario proponga una fecha/hora para reunión, llamada o demo → llama SIEMPRE a create_appointment para guardarla en el CRM. No respondas confirmando sin haberla creado.
+- CITAS — CREAR: Si el usuario propone una reunión/llamada/demo con fecha+hora que NO existe aún → llama create_appointment.
+- CITAS — REPROGRAMAR: Si el usuario pide cambiar/mover/reprogramar una cita existente → 1) llama get_client_appointments para ver las citas y obtener el ID, 2) llama reschedule_appointment con ese ID. NUNCA crees una cita nueva si el usuario pide modificar una existente.
+- CITAS — CANCELAR: Si el usuario pide cancelar → 1) get_client_appointments para obtener ID, 2) cancel_appointment.
+- REGLA CRÍTICA: Después de cualquier operación con citas, SOLO confirma al usuario lo que el tool devuelva en su campo "message". Si el tool devuelve un error, comunícalo honestamente.
 - IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
 
-  // ── 4. Tool definition: create_appointment ───────────────────────────────────
+  // ── 4. Tool definitions ───────────────────────────────────────────────────────
   const tgTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
       type: "function",
       function: {
         name: "create_appointment",
         description:
-          "Crea una cita real en el calendario del CRM vinculada al cliente actual. " +
-          "Úsala SIEMPRE que el usuario proponga una fecha y hora para reunión, llamada, demo o visita. " +
-          "Interpreta fechas relativas ('este jueves', 'mañana', 'el lunes') usando la fecha actual del sistema.",
+          "Crea una cita nueva en el calendario del CRM vinculada al cliente actual. " +
+          "Úsala SOLO cuando el usuario proponga una fecha/hora para una cita que NO existe todavía. " +
+          "Si el usuario quiere cambiar o mover una cita existente, usa reschedule_appointment en su lugar. " +
+          "Interpreta fechas relativas usando la fecha actual del sistema.",
         parameters: {
           type: "object" as const,
           properties: {
-            title: {
-              type: "string",
-              description: "Título de la cita. Ej: 'Llamada de presentación', 'Demo OmniTech', 'Reunión de seguimiento'.",
-            },
-            date: {
-              type: "string",
-              description: "Fecha en formato YYYY-MM-DD. Resuelve 'este jueves', 'mañana', etc. con la fecha actual del sistema.",
-            },
-            start_time: {
-              type: "string",
-              description: "Hora de inicio en formato HH:MM (24h). Ejemplo: '13:00'.",
-            },
-            duration_minutes: {
-              type: "number",
-              description: "Duración en minutos. Por defecto 60.",
-            },
-            description: {
-              type: "string",
-              description: "Notas o motivo de la cita. Opcional.",
-            },
-            location: {
-              type: "string",
-              description: "Lugar o enlace de videollamada. Opcional.",
-            },
-            type: {
-              type: "string",
-              enum: ["meeting", "call", "demo", "follow_up", "other"],
-              description: "Tipo de cita. Por defecto 'call'.",
-            },
+            title:            { type: "string", description: "Título de la cita. Ej: 'Llamada de presentación', 'Demo OmniTech'." },
+            date:             { type: "string", description: "Fecha en formato YYYY-MM-DD." },
+            start_time:       { type: "string", description: "Hora de inicio en formato HH:MM (24h). Ejemplo: '13:00'." },
+            duration_minutes: { type: "number", description: "Duración en minutos. Por defecto 60." },
+            description:      { type: "string", description: "Notas o motivo. Opcional." },
+            location:         { type: "string", description: "Lugar o enlace. Opcional." },
+            type:             { type: "string", enum: ["meeting", "call", "demo", "follow_up", "other"], description: "Tipo. Por defecto 'call'." },
           },
           required: ["title", "date", "start_time"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_client_appointments",
+        description:
+          "Consulta las citas actuales del cliente. Úsala ANTES de reprogramar o cancelar " +
+          "para obtener el ID exacto de la cita a modificar.",
+        parameters: {
+          type: "object" as const,
+          properties: {
+            status: { type: "string", enum: ["pending", "confirmed", "all"], description: "Filtra por estado. Por defecto 'all'." },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "reschedule_appointment",
+        description:
+          "Reprograma (cambia la fecha y/u hora) de una cita ya existente en el CRM. " +
+          "SIEMPRE usa get_client_appointments primero para obtener el appointment_id. " +
+          "Realiza una lectura de verificación en la base de datos tras la escritura y solo confirma si los datos coinciden.",
+        parameters: {
+          type: "object" as const,
+          properties: {
+            appointment_id:   { type: "number", description: "ID de la cita a reprogramar, obtenido de get_client_appointments." },
+            new_date:         { type: "string", description: "Nueva fecha en formato YYYY-MM-DD." },
+            new_start_time:   { type: "string", description: "Nueva hora de inicio en formato HH:MM (24h)." },
+            duration_minutes: { type: "number", description: "Nueva duración en minutos. Si no se indica, mantiene la duración original." },
+          },
+          required: ["appointment_id", "new_date", "new_start_time"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "cancel_appointment",
+        description:
+          "Cancela una cita existente en el CRM. " +
+          "SIEMPRE usa get_client_appointments primero para obtener el appointment_id.",
+        parameters: {
+          type: "object" as const,
+          properties: {
+            appointment_id: { type: "number", description: "ID de la cita a cancelar." },
+            reason:         { type: "string", description: "Motivo de la cancelación. Opcional." },
+          },
+          required: ["appointment_id"],
         },
       },
     },
@@ -254,68 +289,67 @@ REGLAS OBLIGATORIAS:
   try {
     const openai = new OpenAI({ apiKey });
 
-    // ── First call: may return text OR a tool call ────────────────────────────
-    const firstCall = await openai.chat.completions.create({
-      model:       "gpt-4o-mini",
-      temperature: 0.72,
-      max_tokens:  600,
-      messages:    openaiMessages,
-      tools:       tgTools,
-      tool_choice: "auto",
-    });
+    // ── Multi-round tool calling loop (max 4 rounds) ──────────────────────────
+    // Supports sequential patterns like: get_client_appointments → reschedule_appointment
+    const loopMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [...openaiMessages];
+    let totalTokens = 0;
+    const MAX_ROUNDS = 4;
 
-    const firstMsg = firstCall.choices[0]?.message;
-    if (!firstMsg) return null;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const response = await openai.chat.completions.create({
+        model:       "gpt-4o-mini",
+        temperature: round === 0 ? 0.72 : 0.65,
+        max_tokens:  round < MAX_ROUNDS - 1 ? 600 : 400,
+        messages:    loopMessages,
+        tools:       tgTools,
+        tool_choice: "auto",
+      });
 
-    // ── Case A: direct text response (no tool call) ───────────────────────────
-    if (!firstMsg.tool_calls || firstMsg.tool_calls.length === 0) {
-      const reply = (firstMsg.content ?? "").trim();
-      console.log(`[TG Memoria] Respuesta generada | tokens=${firstCall.usage?.total_tokens ?? 0} | len=${reply.length}`);
-      return reply || null;
-    }
+      totalTokens += response.usage?.total_tokens ?? 0;
+      const msg = response.choices[0]?.message;
+      if (!msg) break;
 
-    // ── Case B: tool call → execute it ───────────────────────────────────────
-    const toolCall  = firstMsg.tool_calls[0]!;
-    const toolName  = toolCall.function.name;
-    const toolCallId = toolCall.id;
-    let toolResult  = "";
+      // ── No tool call → this is the final text reply ───────────────────────
+      if (!msg.tool_calls || msg.tool_calls.length === 0) {
+        const reply = (msg.content ?? "").trim();
+        console.log(`[TG Memoria] Respuesta generada | round=${round} | tokens=${totalTokens} | len=${reply.length}`);
+        return reply || null;
+      }
 
-    console.log(`[TG Tool] calling ${toolName} | args: ${toolCall.function.arguments}`);
+      // ── Execute the tool call ──────────────────────────────────────────────
+      const toolCall  = msg.tool_calls[0]!;
+      const toolName  = toolCall.function.name;
+      const args      = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
 
-    if (toolName === "create_appointment") {
-      toolResult = await executeTelegramCreateAppointment(
-        JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
-        orgId,
-        client,
-      );
-    } else {
-      toolResult = JSON.stringify({ error: `Tool '${toolName}' no disponible en Telegram` });
-    }
+      console.log(`[TG Tool] round=${round} calling=${toolName} | args=${toolCall.function.arguments.slice(0, 200)}`);
 
-    console.log(`[TG Tool] ${toolName} result: ${toolResult.slice(0, 200)}`);
+      let toolResult = "";
+      if (toolName === "create_appointment") {
+        toolResult = await executeTelegramCreateAppointment(args, orgId, client);
+      } else if (toolName === "get_client_appointments") {
+        toolResult = await executeTelegramGetClientAppointments(args, orgId, client);
+      } else if (toolName === "reschedule_appointment") {
+        toolResult = await executeTelegramRescheduleAppointment(args, orgId);
+      } else if (toolName === "cancel_appointment") {
+        toolResult = await executeTelegramCancelAppointment(args, orgId);
+      } else {
+        toolResult = JSON.stringify({ error: `Tool '${toolName}' no disponible en Telegram` });
+      }
 
-    // ── Second call: generate final human reply using tool result ─────────────
-    const secondMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      ...openaiMessages,
-      firstMsg,
-      {
+      console.log(`[TG Tool] ${toolName} → ${toolResult.slice(0, 250)}`);
+
+      // Append assistant message + tool result for next round
+      loopMessages.push(msg);
+      loopMessages.push({
         role:         "tool",
-        tool_call_id: toolCallId,
+        tool_call_id: toolCall.id,
         content:      toolResult,
-      },
-    ];
+      });
+    }
 
-    const secondCall = await openai.chat.completions.create({
-      model:       "gpt-4o-mini",
-      temperature: 0.65,
-      max_tokens:  400,
-      messages:    secondMessages,
-    });
-
-    const finalReply = (secondCall.choices[0]?.message?.content ?? "").trim();
-    const totalTokens = (firstCall.usage?.total_tokens ?? 0) + (secondCall.usage?.total_tokens ?? 0);
-    console.log(`[TG Memoria] Respuesta generada | tokens=${totalTokens} | len=${finalReply.length}`);
-    return finalReply || null;
+    // Safety fallback if loop exhausted without a text reply
+    console.warn("[TG Memoria] Tool loop exhausted without text reply");
+    return null;
 
   } catch (err) {
     console.error("[Telegram AI] OpenAI error:", err);
@@ -416,6 +450,219 @@ async function executeTelegramCreateAppointment(
   } catch (err) {
     console.error("[TG Appointment] Error creating appointment:", err);
     return JSON.stringify({ error: String(err) });
+  }
+}
+
+// ── Execute get_client_appointments for Telegram bot ──────────────────────────
+async function executeTelegramGetClientAppointments(
+  args: Record<string, unknown>,
+  orgId: number,
+  client: { id: number; name: string } | null,
+): Promise<string> {
+  if (!client) {
+    return JSON.stringify({ error: "Cliente no identificado. El contacto debe estar registrado en el CRM." });
+  }
+  try {
+    const statusFilter = String(args["status"] ?? "all");
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+
+    const conditions = [
+      eq(appointmentsTable.orgId, orgId),
+      eq(appointmentsTable.clientId, client.id),
+      gte(appointmentsTable.startTime, sevenDaysAgo), // last 7 days + all future
+      ...(statusFilter !== "all" ? [eq(appointmentsTable.status, statusFilter)] : []),
+    ];
+
+    const rows = await db.select().from(appointmentsTable)
+      .where(and(...conditions as Parameters<typeof and>))
+      .orderBy(desc(appointmentsTable.startTime))
+      .limit(10);
+
+    console.log(`[TG Appointment] get_client_appointments → ${rows.length} rows for client #${client.id}`);
+
+    return JSON.stringify({
+      total:  rows.length,
+      client: client.name,
+      appointments: rows.map(r => ({
+        id:          r.id,
+        title:       r.title,
+        date:        r.startTime.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Madrid" }),
+        time:        r.startTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" }),
+        startTimeISO: r.startTime.toISOString(),
+        endTimeISO:   r.endTime.toISOString(),
+        status:      r.status,
+        type:        r.type ?? "meeting",
+        location:    r.location ?? null,
+        description: r.description ?? null,
+      })),
+    });
+  } catch (err) {
+    console.error("[TG Appointment] get_client_appointments error:", err);
+    return JSON.stringify({ error: String(err) });
+  }
+}
+
+// ── Execute reschedule_appointment for Telegram bot ───────────────────────────
+async function executeTelegramRescheduleAppointment(
+  args: Record<string, unknown>,
+  orgId: number,
+): Promise<string> {
+  try {
+    const appointmentId   = Number(args["appointment_id"]);
+    const newDateStr      = String(args["new_date"]       ?? "");
+    const newStartTimeStr = String(args["new_start_time"] ?? "10:00");
+    const durationArg     = args["duration_minutes"] != null ? Number(args["duration_minutes"]) : null;
+
+    if (!appointmentId || !newDateStr || !newStartTimeStr) {
+      return JSON.stringify({ error: "Se necesitan appointment_id, new_date y new_start_time." });
+    }
+
+    // Fetch existing appointment (validates it belongs to this org)
+    const [existing] = await db.select().from(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+
+    if (!existing) {
+      return JSON.stringify({ error: `Cita #${appointmentId} no encontrada en esta organización.` });
+    }
+
+    // Parse new date + time into UTC
+    const [h = "10", m = "00"] = newStartTimeStr.split(":");
+    const [y, mo, d]           = newDateStr.split("-").map(Number);
+    if (!y || !mo || !d) {
+      return JSON.stringify({ error: `Fecha inválida: "${newDateStr}". Usa formato YYYY-MM-DD.` });
+    }
+    const newStartTime = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+
+    // Duration: use provided value OR preserve existing
+    const existingDuration = Math.round((existing.endTime.getTime() - existing.startTime.getTime()) / 60_000);
+    const effectiveDuration = durationArg ?? existingDuration;
+    const newEndTime = new Date(newStartTime.getTime() + effectiveDuration * 60_000);
+
+    // ── WRITE to DB ────────────────────────────────────────────────────────────
+    await db.update(appointmentsTable)
+      .set({ startTime: newStartTime, endTime: newEndTime })
+      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+
+    // ── DB READ-BACK VALIDATION ────────────────────────────────────────────────
+    const [verified] = await db.select().from(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+
+    if (!verified) {
+      return JSON.stringify({ error: "Error crítico: no se pudo releer la cita tras la actualización." });
+    }
+
+    // Strict validation: DB stored time must match what we wrote (within 1 minute)
+    if (Math.abs(verified.startTime.getTime() - newStartTime.getTime()) > 60_000) {
+      return JSON.stringify({
+        error: `Error de validación: la hora guardada (${verified.startTime.toISOString()}) no coincide con la solicitada (${newStartTime.toISOString()}). Intenta de nuevo.`,
+      });
+    }
+
+    const localDate = verified.startTime.toLocaleDateString("es-ES", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Madrid",
+    });
+    const localTime = `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+
+    // Log activity (non-critical)
+    await db.insert(activityTable).values({
+      orgId,
+      type:        "appointment_rescheduled",
+      description: `Cita #${appointmentId} "${existing.title}" reprogramada → ${localDate} a las ${localTime} (vía Telegram)`,
+      clientName:  null,
+    }).catch(() => {/* non-critical */});
+
+    await logIntegrationEvent({
+      orgId, integrationSlug: "telegram", direction: "inbound",
+      eventType: "appointment_rescheduled", status: "processed",
+      summary:     `Cita #${appointmentId} reprogramada: ${localDate} a las ${localTime}`,
+      payloadJson: JSON.stringify({ appointmentId, newDate: newDateStr, newStartTime: newStartTimeStr, dbVerified: verified.startTime.toISOString() }),
+    }).catch(() => {/* non-critical */});
+
+    console.log(`[TG Appointment] ✅ Rescheduled #${appointmentId} → ${newDateStr} ${newStartTimeStr} | DB verified: ${verified.startTime.toISOString()}`);
+
+    return JSON.stringify({
+      success:       true,
+      verified:      true,
+      appointmentId,
+      title:         existing.title,
+      newDate:       localDate,
+      newTime:       localTime,
+      duration:      effectiveDuration,
+      status:        verified.status,
+      dbConfirmedAt: verified.startTime.toISOString(),
+      message:       `✅ Cita #${appointmentId} "${existing.title}" reprogramada correctamente. Nueva fecha confirmada en la base de datos: ${localDate} a las ${localTime}.`,
+    });
+  } catch (err) {
+    console.error("[TG Appointment] Error rescheduling:", err);
+    return JSON.stringify({ error: `Error al reprogramar: ${String(err)}` });
+  }
+}
+
+// ── Execute cancel_appointment for Telegram bot ───────────────────────────────
+async function executeTelegramCancelAppointment(
+  args: Record<string, unknown>,
+  orgId: number,
+): Promise<string> {
+  try {
+    const appointmentId = Number(args["appointment_id"]);
+    const reason        = args["reason"] ? String(args["reason"]) : null;
+
+    if (!appointmentId) {
+      return JSON.stringify({ error: "Se necesita appointment_id." });
+    }
+
+    const [existing] = await db.select().from(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+
+    if (!existing) {
+      return JSON.stringify({ error: `Cita #${appointmentId} no encontrada en esta organización.` });
+    }
+
+    if (existing.status === "cancelled") {
+      return JSON.stringify({ error: `La cita #${appointmentId} ya estaba cancelada.` });
+    }
+
+    // ── WRITE ──────────────────────────────────────────────────────────────────
+    await db.update(appointmentsTable)
+      .set({ status: "cancelled" })
+      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+
+    // ── DB READ-BACK VALIDATION ────────────────────────────────────────────────
+    const [verified] = await db.select().from(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+
+    if (!verified || verified.status !== "cancelled") {
+      return JSON.stringify({ error: "Error de validación: no se pudo confirmar la cancelación en la base de datos." });
+    }
+
+    await db.insert(activityTable).values({
+      orgId,
+      type:        "appointment_cancelled",
+      description: `Cita #${appointmentId} "${existing.title}" cancelada${reason ? `: ${reason}` : ""} (vía Telegram)`,
+      clientName:  null,
+    }).catch(() => {/* non-critical */});
+
+    await logIntegrationEvent({
+      orgId, integrationSlug: "telegram", direction: "inbound",
+      eventType: "appointment_cancelled", status: "processed",
+      summary:     `Cita #${appointmentId} "${existing.title}" cancelada`,
+      payloadJson: JSON.stringify({ appointmentId, reason }),
+    }).catch(() => {/* non-critical */});
+
+    console.log(`[TG Appointment] ✅ Cancelled #${appointmentId} | DB verified status=cancelled`);
+
+    return JSON.stringify({
+      success:       true,
+      verified:      true,
+      appointmentId,
+      title:         existing.title,
+      status:        "cancelled",
+      reason,
+      message:       `✅ Cita #${appointmentId} "${existing.title}" cancelada y confirmada en la base de datos.`,
+    });
+  } catch (err) {
+    console.error("[TG Appointment] Error cancelling:", err);
+    return JSON.stringify({ error: `Error al cancelar: ${String(err)}` });
   }
 }
 

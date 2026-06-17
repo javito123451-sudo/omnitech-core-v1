@@ -392,6 +392,70 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "reschedule_appointment",
+      description:
+        "Reprograma (cambia la fecha y/u hora) de una cita ya existente en el CRM. " +
+        "Úsala cuando el usuario diga 'cambia la cita', 'mueve la reunión', 'reprograma para', etc. " +
+        "Usa get_appointments primero para obtener el ID si no lo tienes. " +
+        "Verifica en la base de datos tras escribir y solo confirma si los datos coinciden.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          appointment_id: {
+            type: "number",
+            description: "ID de la cita a reprogramar.",
+          },
+          client_name: {
+            type: "string",
+            description: "Nombre del cliente (alternativa al ID). Se buscará la cita más reciente.",
+          },
+          new_date: {
+            type: "string",
+            description: "Nueva fecha en formato YYYY-MM-DD.",
+          },
+          new_start_time: {
+            type: "string",
+            description: "Nueva hora de inicio en formato HH:MM (24h).",
+          },
+          duration_minutes: {
+            type: "number",
+            description: "Nueva duración en minutos. Si no se indica, mantiene la duración original.",
+          },
+        },
+        required: ["new_date", "new_start_time"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_appointment",
+      description:
+        "Cancela una cita existente en el CRM (cambia su estado a 'cancelled'). " +
+        "Úsala cuando el usuario diga 'cancela la cita', 'no vamos a poder', etc.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          appointment_id: {
+            type: "number",
+            description: "ID de la cita a cancelar.",
+          },
+          client_name: {
+            type: "string",
+            description: "Nombre del cliente (alternativa al ID). Se buscará la cita más próxima.",
+          },
+          reason: {
+            type: "string",
+            description: "Motivo de la cancelación. Opcional.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_quote",
       description:
         "Crea un presupuesto real y lo guarda en el CRM. " +
@@ -1000,6 +1064,155 @@ async function executeCrmTool(
         })),
         downloadPath: `/api/quotes/${quote!.id}/pdf`,
         message: `Presupuesto #${String(quote!.id).padStart(5, "0")} creado con éxito. Disponible en la sección Presupuestos.`,
+      });
+    }
+
+    // ── reschedule_appointment ──────────────────────────────────────────────
+    if (toolName === "reschedule_appointment") {
+      const appointmentIdArg = args["appointment_id"] ? Number(args["appointment_id"]) : null;
+      const clientNameArg    = args["client_name"]    ? String(args["client_name"])    : null;
+      const newDateStr       = String(args["new_date"]       ?? "");
+      const newStartTimeStr  = String(args["new_start_time"] ?? "10:00");
+      const durationArg      = args["duration_minutes"] != null ? Number(args["duration_minutes"]) : null;
+
+      if (!newDateStr || !newStartTimeStr) {
+        return JSON.stringify({ error: "Se necesitan new_date y new_start_time." });
+      }
+
+      // Resolve appointment: by ID or by client name (most recent pending/confirmed)
+      let existing: typeof appointmentsTable.$inferSelect | undefined;
+      if (appointmentIdArg) {
+        [existing] = await db.select().from(appointmentsTable)
+          .where(and(eq(appointmentsTable.id, appointmentIdArg), eq(appointmentsTable.orgId, orgId)));
+      } else if (clientNameArg) {
+        const matchedClients = await db.select().from(clientsTable)
+          .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientNameArg}%`)))
+          .limit(3);
+        if (matchedClients.length > 0) {
+          const clientIds = matchedClients.map(c => c.id);
+          const candidates = await db.select().from(appointmentsTable)
+            .where(and(
+              eq(appointmentsTable.orgId, orgId),
+              // pick the most recent pending/confirmed appointment for this client
+            ))
+            .orderBy(desc(appointmentsTable.startTime))
+            .limit(10);
+          existing = candidates.find(a => clientIds.includes(a.clientId) && a.status !== "cancelled");
+        }
+      }
+
+      if (!existing) {
+        return JSON.stringify({ error: "No encontré la cita a reprogramar. Usa get_appointments con el cliente para obtener el ID." });
+      }
+
+      const [h = "10", m = "00"] = newStartTimeStr.split(":");
+      const [y, mo, d]           = newDateStr.split("-").map(Number);
+      if (!y || !mo || !d) {
+        return JSON.stringify({ error: `Fecha inválida: "${newDateStr}". Usa YYYY-MM-DD.` });
+      }
+      const newStartTime  = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+      const existingDur   = Math.round((existing.endTime.getTime() - existing.startTime.getTime()) / 60_000);
+      const effectiveDur  = durationArg ?? existingDur;
+      const newEndTime    = new Date(newStartTime.getTime() + effectiveDur * 60_000);
+
+      // ── WRITE ────────────────────────────────────────────────────────────────
+      await db.update(appointmentsTable)
+        .set({ startTime: newStartTime, endTime: newEndTime })
+        .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+
+      // ── DB READ-BACK VALIDATION ───────────────────────────────────────────────
+      const [verified] = await db.select().from(appointmentsTable)
+        .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+
+      if (!verified || Math.abs(verified.startTime.getTime() - newStartTime.getTime()) > 60_000) {
+        return JSON.stringify({ error: "Error de validación: la cita no se actualizó correctamente en la base de datos." });
+      }
+
+      const localDate = verified.startTime.toLocaleDateString("es-ES", {
+        weekday: "long", day: "numeric", month: "long", year: "numeric",
+      });
+      const localTime = `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+
+      await db.insert(activityTable).values({
+        orgId,
+        type:        "appointment_rescheduled",
+        description: `Cita #${existing.id} "${existing.title}" reprogramada → ${localDate} a las ${localTime}`,
+        clientName:  null,
+      }).catch(() => {/* non-critical */});
+
+      return JSON.stringify({
+        success:       true,
+        verified:      true,
+        appointmentId: existing.id,
+        title:         existing.title,
+        newDate:       localDate,
+        newTime:       localTime,
+        duration:      effectiveDur,
+        status:        verified.status,
+        dbConfirmedAt: verified.startTime.toISOString(),
+        message:       `✅ Cita #${existing.id} "${existing.title}" reprogramada y confirmada en la base de datos: ${localDate} a las ${localTime}.`,
+      });
+    }
+
+    // ── cancel_appointment ──────────────────────────────────────────────────
+    if (toolName === "cancel_appointment") {
+      const appointmentIdArg = args["appointment_id"] ? Number(args["appointment_id"]) : null;
+      const clientNameArg    = args["client_name"]    ? String(args["client_name"])    : null;
+      const reason           = args["reason"]         ? String(args["reason"])         : null;
+
+      let existing: typeof appointmentsTable.$inferSelect | undefined;
+      if (appointmentIdArg) {
+        [existing] = await db.select().from(appointmentsTable)
+          .where(and(eq(appointmentsTable.id, appointmentIdArg), eq(appointmentsTable.orgId, orgId)));
+      } else if (clientNameArg) {
+        const matchedClients = await db.select().from(clientsTable)
+          .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientNameArg}%`)))
+          .limit(3);
+        if (matchedClients.length > 0) {
+          const clientIds = matchedClients.map(c => c.id);
+          const candidates = await db.select().from(appointmentsTable)
+            .where(eq(appointmentsTable.orgId, orgId))
+            .orderBy(desc(appointmentsTable.startTime))
+            .limit(10);
+          existing = candidates.find(a => clientIds.includes(a.clientId) && a.status !== "cancelled");
+        }
+      }
+
+      if (!existing) {
+        return JSON.stringify({ error: "No encontré la cita a cancelar. Usa get_appointments con el cliente para obtener el ID." });
+      }
+
+      if (existing.status === "cancelled") {
+        return JSON.stringify({ error: `La cita #${existing.id} ya estaba cancelada.` });
+      }
+
+      await db.update(appointmentsTable)
+        .set({ status: "cancelled" })
+        .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+
+      // ── DB READ-BACK VALIDATION ───────────────────────────────────────────────
+      const [verified] = await db.select().from(appointmentsTable)
+        .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+
+      if (!verified || verified.status !== "cancelled") {
+        return JSON.stringify({ error: "Error de validación: no se pudo confirmar la cancelación en la base de datos." });
+      }
+
+      await db.insert(activityTable).values({
+        orgId,
+        type:        "appointment_cancelled",
+        description: `Cita #${existing.id} "${existing.title}" cancelada${reason ? `: ${reason}` : ""}`,
+        clientName:  null,
+      }).catch(() => {/* non-critical */});
+
+      return JSON.stringify({
+        success:       true,
+        verified:      true,
+        appointmentId: existing.id,
+        title:         existing.title,
+        status:        "cancelled",
+        reason,
+        message:       `✅ Cita #${existing.id} "${existing.title}" cancelada y confirmada en la base de datos.`,
       });
     }
 
