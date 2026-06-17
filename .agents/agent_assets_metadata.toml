@@ -18,3 +18,9 @@ id = "XDNM9tzfd4HT3c9nGvDjv"
 uri = "file://OmniTech_Core_Integration_Readiness_Report.md"
 type = "text"
 title = "Integration Production Readiness Report"
+
+[[outputs]]
+id = "c5v36AaoNHG6n2QaAsoHW"
+uri = "file://OmniTech_Core_Telegram_Ownership_Report.md"
+type = "text"
+title = "Telegram Ownership Investigation Report"
