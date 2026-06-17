@@ -38,7 +38,8 @@ const upload = multer({
 
 const IMAGE_EXTS       = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic"]);
 const DOCUMENT_EXTS    = new Set(["pdf"]);
-const SPREADSHEET_EXTS = new Set(["xlsx", "xls"]);
+const SPREADSHEET_EXTS = new Set(["xlsx"]);
+const LEGACY_SPREADSHEET_EXTS = new Set(["xls"]);
 const CSV_EXTS         = new Set(["csv"]);
 
 function getExt(filename: string): string {
@@ -297,6 +298,10 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
     name: file.originalname, size: file.size, ext, orgId,
   });
 
+  if (LEGACY_SPREADSHEET_EXTS.has(ext)) {
+    return res.status(400).json({ error: "El formato .xls no está soportado. Por favor convierta el archivo a .xlsx e intente de nuevo." });
+  }
+
   const branch = IMAGE_EXTS.has(ext) ? "IMAGE"
     : DOCUMENT_EXTS.has(ext)         ? "PDF"
     : SPREADSHEET_EXTS.has(ext)      ? "XLSX"
@@ -322,11 +327,26 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
 
     // ── XLSX/XLS — HYBRID: AI column mapping + client-side row mapping ────────
     } else if (branch === "XLSX") {
-      let XLSX: typeof import("xlsx");
-      XLSX = await import("xlsx");
-      const wb   = XLSX.read(file.buffer, { type: "buffer" });
-      const ws   = wb.Sheets[wb.SheetNames[0]!];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws!, { defval: "" });
+      const { default: ExcelJS } = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(file.buffer);
+      const worksheet = workbook.worksheets[0];
+      const rows: Record<string, unknown>[] = [];
+      const headers: string[] = [];
+      if (worksheet) {
+        worksheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
+          headers.push(String(cell.value ?? ""));
+        });
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return;
+          const rowObj: Record<string, unknown> = {};
+          headers.forEach((h, i) => {
+            const cell = row.getCell(i + 1);
+            rowObj[h] = cell.value ?? "";
+          });
+          rows.push(rowObj);
+        });
+      }
 
       console.log("[ImportAI][XLSX] Parsed", rows.length, "rows, cols:", Object.keys(rows[0] ?? {}));
       rawTextForDB = JSON.stringify(rows.slice(0, 5), null, 2);

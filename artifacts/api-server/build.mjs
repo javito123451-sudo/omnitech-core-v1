@@ -103,7 +103,7 @@ async function buildAll() {
       "pdfkit",
       "fontkit",
       "pdf-parse",
-      "xlsx",
+      "exceljs",
       "multer",
       "csv-parse",
     ],
