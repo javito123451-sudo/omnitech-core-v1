@@ -1,0 +1,158 @@
+REGLA OFICIAL OMNITECH - GESTIÓN DE CITAS POR INTENCIONES
+
+Objetivo
+
+Las acciones sobre citas NO deben depender exclusivamente de la interpretación libre de la IA.
+
+Antes de generar una respuesta, Ava debe detectar la intención del usuario y ejecutar el flujo CRM correspondiente.
+
+⸻
+
+INTENCIÓN: CONSULTAR CITA
+
+Ejemplos:
+
+* ¿Cuándo tengo cita?
+* ¿Qué citas tengo?
+* ¿Cuál es mi próxima reunión?
+* ¿Cuándo me llamáis?
+* ¿Qué tengo agendado?
+
+Acción:
+
+getUpcomingAppointments()
+
+Resultado:
+
+Mostrar únicamente citas con estado:
+
+* pending
+* confirmed
+
+Ignorar:
+
+* cancelled
+* rescheduled
+* completed
+
+⸻
+
+INTENCIÓN: CANCELAR CITA
+
+Ejemplos:
+
+* Cancela mi cita
+* Cancelar cita
+* Anula mi cita
+* Anular cita
+* No puedo asistir
+* No voy a poder acudir
+* Cancela la reunión
+* Cancela la llamada
+* Elimina mi cita
+
+Acción:
+
+cancelAppointment()
+
+Flujo:
+
+1. Buscar próxima cita activa.
+2. Cambiar estado a cancelled.
+3. Registrar fecha y motivo.
+4. Confirmar cancelación.
+
+Respuesta:
+
+“Tu cita ha sido cancelada correctamente.”
+
+⸻
+
+INTENCIÓN: REPROGRAMAR CITA
+
+Ejemplos:
+
+* Cambia mi cita
+* Reprograma mi cita
+* Mueve mi cita
+* Pásala al lunes
+* Cambia la fecha
+* Cambia la hora
+* Necesito otro horario
+
+Acción:
+
+rescheduleAppointment()
+
+Flujo:
+
+1. Buscar próxima cita activa.
+2. Marcar cita actual como rescheduled.
+3. Crear o actualizar nueva cita.
+4. Confirmar nueva fecha y hora.
+
+Respuesta:
+
+“Tu cita ha sido reprogramada para [fecha y hora].”
+
+⸻
+
+INTENCIÓN: NUEVA CITA
+
+Ejemplos:
+
+* Quiero una cita
+* Agenda una reunión
+* Reserva una llamada
+* Programa una reunión
+* Quiero hablar con un asesor
+* Necesito una demo
+
+Acción:
+
+createAppointment()
+
+Flujo:
+
+1. Crear nueva cita.
+2. Asociar al contacto.
+3. Registrar origen Telegram.
+4. Confirmar fecha y hora.
+
+⸻
+
+REGLA DE VALIDACIÓN OBLIGATORIA
+
+Después de:
+
+* createAppointment
+* updateAppointment
+* rescheduleAppointment
+* cancelAppointment
+
+Ava debe consultar nuevamente la base de datos.
+
+No puede responder éxito o error hasta verificar el estado real.
+
+⸻
+
+REGLA DE VISIBILIDAD
+
+Ava solo debe considerar activas:
+
+* pending
+* confirmed
+
+Estados ocultos:
+
+* cancelled
+* rescheduled
+* completed
+
+⸻
+
+REGLA DE HISTORIAL
+
+Las citas canceladas o reprogramadas NO se eliminan.
+
+Se conservan para auditoría e historial CRM.

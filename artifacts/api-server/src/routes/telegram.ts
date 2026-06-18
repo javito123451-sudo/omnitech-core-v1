@@ -187,11 +187,24 @@ REGLAS OBLIGATORIAS:
 - NO inventes precios, datos o servicios no documentados
 - Si detectas interés comercial → recoge datos de contacto
 - Si no puedes resolver → escala: "Te pongo en contacto con un asesor"
-- CITAS — CONSULTAR: Si el usuario pregunta cuándo es su cita, qué citas tiene, o dice "¿seguro?" sobre una fecha/hora → SIEMPRE llama get_client_appointments para leer los datos reales de la base de datos. NUNCA respondas fechas u horas de citas desde tu memoria.
-- CITAS — CREAR: Si el usuario propone una reunión/llamada/demo con fecha+hora que NO existe aún → llama create_appointment.
-- CITAS — REPROGRAMAR: Si el usuario pide cambiar/mover/reprogramar una cita existente → 1) llama get_client_appointments para ver las citas activas y obtener el ID, 2) llama reschedule_appointment con ese ID. El sistema marcará la cita antigua como "reprogramada" y creará una nueva. NUNCA crees una cita nueva manualmente si el usuario pide modificar una existente.
-- CITAS — CANCELAR: Si el usuario pide cancelar → 1) get_client_appointments para obtener ID, 2) cancel_appointment.
-- REGLA CRÍTICA: Después de cualquier operación con citas, SOLO confirma al usuario la fecha/hora que el tool devuelva en su campo "message". Si el tool devuelve un error, comunícalo honestamente. NUNCA inventes ni recuerdes horas de memoria.
+REGLAS DE CITAS — DETECCIÓN DE INTENCIÓN (NO interpretar libremente, seguir estas reglas exactas):
+
+INTENCIÓN CONSULTAR ("¿Cuándo tengo cita?", "¿Qué citas tengo?", "¿Cuál es mi próxima reunión?", "¿Cuándo me llamáis?", "¿Qué tengo agendado?", "¿seguro?"):
+→ Llama get_client_appointments. Muestra SOLO citas pending o confirmed. Ignora cancelled/rescheduled/completed. NUNCA respondas fechas desde tu memoria.
+
+INTENCIÓN CANCELAR ("Cancela mi cita", "Cancelar cita", "Anula mi cita", "No puedo asistir", "No voy a poder acudir", "Cancela la reunión", "Cancela la llamada", "Elimina mi cita"):
+→ Llama cancel_appointment DIRECTAMENTE (sin paso previo de get_client_appointments). El tool encuentra automáticamente la próxima cita activa.
+→ Respuesta obligatoria tras éxito: "Tu cita ha sido cancelada correctamente."
+
+INTENCIÓN REPROGRAMAR ("Cambia mi cita", "Reprograma mi cita", "Mueve mi cita", "Pásala al...", "Cambia la fecha", "Cambia la hora", "Necesito otro horario"):
+→ Llama reschedule_appointment DIRECTAMENTE con la nueva fecha/hora (sin paso previo de get_client_appointments). El tool encuentra automáticamente la próxima cita activa.
+→ Respuesta obligatoria tras éxito: "Tu cita ha sido reprogramada para [fecha y hora]."
+
+INTENCIÓN NUEVA CITA ("Quiero una cita", "Agenda una reunión", "Reserva una llamada", "Quiero hablar con un asesor", "Necesito una demo"):
+→ Llama create_appointment con la fecha/hora que indique el usuario.
+
+REGLA DE VALIDACIÓN: Después de create_appointment/reschedule_appointment/cancel_appointment, el tool ya verifica en la base de datos. SOLO confirma éxito si el tool devuelve success:true. NUNCA confirmes desde tu memoria.
+REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres cancelled/rescheduled/completed.
 - IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
 
   // ── 4. Tool definitions ───────────────────────────────────────────────────────
@@ -247,18 +260,19 @@ REGLAS OBLIGATORIAS:
       function: {
         name: "reschedule_appointment",
         description:
-          "Reprograma (cambia la fecha y/u hora) de una cita ya existente en el CRM. " +
-          "SIEMPRE usa get_client_appointments primero para obtener el appointment_id. " +
-          "Realiza una lectura de verificación en la base de datos tras la escritura y solo confirma si los datos coinciden.",
+          "Reprograma la próxima cita activa del cliente (cambia la fecha y/u hora). " +
+          "Si el usuario dice 'cambia mi cita', 'mueve mi cita', 'pásala al...', 'cambia la hora', llama este tool DIRECTAMENTE. " +
+          "NO es necesario llamar get_client_appointments antes — el tool encuentra la cita activa automáticamente. " +
+          "Marca la cita antigua como 'rescheduled' y crea una nueva. Verifica en DB antes de confirmar.",
         parameters: {
           type: "object" as const,
           properties: {
-            appointment_id:   { type: "number", description: "ID de la cita a reprogramar, obtenido de get_client_appointments." },
+            appointment_id:   { type: "number", description: "ID de la cita (opcional). Si no se proporciona, se usa la próxima cita activa del cliente." },
             new_date:         { type: "string", description: "Nueva fecha en formato YYYY-MM-DD." },
             new_start_time:   { type: "string", description: "Nueva hora de inicio en formato HH:MM (24h)." },
             duration_minutes: { type: "number", description: "Nueva duración en minutos. Si no se indica, mantiene la duración original." },
           },
-          required: ["appointment_id", "new_date", "new_start_time"],
+          required: ["new_date", "new_start_time"],
         },
       },
     },
@@ -267,15 +281,17 @@ REGLAS OBLIGATORIAS:
       function: {
         name: "cancel_appointment",
         description:
-          "Cancela una cita existente en el CRM. " +
-          "SIEMPRE usa get_client_appointments primero para obtener el appointment_id.",
+          "Cancela la próxima cita activa del cliente. " +
+          "Si el usuario dice 'cancela mi cita', 'anula mi cita', 'no puedo asistir', 'cancela la llamada', llama este tool DIRECTAMENTE. " +
+          "NO es necesario llamar get_client_appointments antes — el tool encuentra la cita activa automáticamente. " +
+          "Verifica en DB antes de confirmar. Respuesta tras éxito: 'Tu cita ha sido cancelada correctamente.'",
         parameters: {
           type: "object" as const,
           properties: {
-            appointment_id: { type: "number", description: "ID de la cita a cancelar." },
+            appointment_id: { type: "number", description: "ID de la cita (opcional). Si no se proporciona, se usa la próxima cita activa del cliente." },
             reason:         { type: "string", description: "Motivo de la cancelación. Opcional." },
           },
-          required: ["appointment_id"],
+          required: [],
         },
       },
     },
@@ -336,9 +352,9 @@ REGLAS OBLIGATORIAS:
       } else if (toolName === "get_client_appointments") {
         toolResult = await executeTelegramGetClientAppointments(args, orgId, client);
       } else if (toolName === "reschedule_appointment") {
-        toolResult = await executeTelegramRescheduleAppointment(args, orgId);
+        toolResult = await executeTelegramRescheduleAppointment(args, orgId, client);
       } else if (toolName === "cancel_appointment") {
-        toolResult = await executeTelegramCancelAppointment(args, orgId);
+        toolResult = await executeTelegramCancelAppointment(args, orgId, client);
       } else {
         toolResult = JSON.stringify({ error: `Tool '${toolName}' no disponible en Telegram` });
       }
@@ -429,12 +445,12 @@ async function executeTelegramCreateAppointment(
     }).catch(() => {/* non-critical */});
 
     // Log integration event
-    await logIntegrationEvent({
+    logIntegrationEvent({
       orgId, integrationSlug: "telegram", direction: "inbound",
       eventType: "appointment_created", status: "processed",
       summary:     `Cita #${savedAppt.id} creada: "${title}" con ${resolvedClient.name} el ${localDate} a las ${localTime}`,
-      payloadJson: JSON.stringify({ appointmentId: savedAppt.id, clientId: resolvedClient.id, date: dateStr, startTime: startTimeStr }),
-    }).catch(() => {/* non-critical */});
+      payloadJson: { appointmentId: savedAppt.id, clientId: resolvedClient.id, date: dateStr, startTime: startTimeStr },
+    });
 
     console.log(`[TG Appointment] ✅ Created appointment #${savedAppt.id} | client=${resolvedClient.name} | ${dateStr} ${localTime}`);
 
@@ -551,33 +567,65 @@ async function executeTelegramGetClientAppointments(
 
 // ── Execute reschedule_appointment for Telegram bot ───────────────────────────
 // Strategy: mark old appointment as "rescheduled" + create a NEW appointment.
-// This avoids leaving two active appointments for the same purpose and keeps
-// a clean audit trail — the old record is preserved with status="rescheduled".
+// Auto-resolves the next active appointment for the client when no ID is given.
 async function executeTelegramRescheduleAppointment(
   args: Record<string, unknown>,
   orgId: number,
+  client: { id: number; name: string } | null,
 ): Promise<string> {
   try {
-    const appointmentId   = Number(args["appointment_id"]);
-    const newDateStr      = String(args["new_date"]       ?? "");
-    const newStartTimeStr = String(args["new_start_time"] ?? "10:00");
-    const durationArg     = args["duration_minutes"] != null ? Number(args["duration_minutes"]) : null;
+    const appointmentIdArg = args["appointment_id"] ? Number(args["appointment_id"]) : null;
+    const newDateStr       = String(args["new_date"]       ?? "");
+    const newStartTimeStr  = String(args["new_start_time"] ?? "10:00");
+    const durationArg      = args["duration_minutes"] != null ? Number(args["duration_minutes"]) : null;
 
-    if (!appointmentId || !newDateStr || !newStartTimeStr) {
-      return JSON.stringify({ error: "Se necesitan appointment_id, new_date y new_start_time." });
+    if (!newDateStr || !newStartTimeStr) {
+      return JSON.stringify({ error: "Se necesitan new_date y new_start_time." });
     }
 
-    // Fetch existing appointment (validates it belongs to this org)
-    const [existing] = await db.select().from(appointmentsTable)
-      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+    // Resolve which appointment to reschedule
+    let existing: typeof appointmentsTable.$inferSelect | undefined;
+
+    if (appointmentIdArg) {
+      // Explicit ID provided
+      [existing] = await db.select().from(appointmentsTable)
+        .where(and(eq(appointmentsTable.id, appointmentIdArg), eq(appointmentsTable.orgId, orgId)));
+    } else if (client) {
+      // Auto-resolve: find next upcoming active appointment for this client
+      const now = new Date();
+      const candidates = await db.select().from(appointmentsTable)
+        .where(and(
+          eq(appointmentsTable.orgId, orgId),
+          eq(appointmentsTable.clientId, client.id),
+          inArray(appointmentsTable.status, ["pending", "confirmed"]),
+          gte(appointmentsTable.startTime, now),
+        ))
+        .orderBy(asc(appointmentsTable.startTime))
+        .limit(1);
+      existing = candidates[0];
+      if (!existing) {
+        // Try without future filter (includes recent past)
+        const all = await db.select().from(appointmentsTable)
+          .where(and(
+            eq(appointmentsTable.orgId, orgId),
+            eq(appointmentsTable.clientId, client.id),
+            inArray(appointmentsTable.status, ["pending", "confirmed"]),
+          ))
+          .orderBy(asc(appointmentsTable.startTime))
+          .limit(1);
+        existing = all[0];
+      }
+    }
 
     if (!existing) {
-      return JSON.stringify({ error: `Cita #${appointmentId} no encontrada en esta organización.` });
+      return JSON.stringify({ error: client
+        ? `No se encontró ninguna cita activa (pending/confirmed) para ${client.name}. El cliente no tiene citas que reprogramar.`
+        : "Se necesita appointment_id o el cliente debe estar identificado." });
     }
     if (existing.status === "rescheduled" || existing.status === "cancelled") {
       return JSON.stringify({
-        error: `La cita #${appointmentId} ya está "${existing.status}" y no se puede reprogramar. ` +
-               `Usa get_client_appointments para ver las citas activas del cliente.`,
+        error: `La cita #${existing.id} ya está "${existing.status}" y no se puede reprogramar. ` +
+               `El cliente no tiene citas activas que reprogramar.`,
       });
     }
 
@@ -597,7 +645,7 @@ async function executeTelegramRescheduleAppointment(
     // ── STEP 1: Mark old appointment as "rescheduled" ──────────────────────────
     await db.update(appointmentsTable)
       .set({ status: "rescheduled" })
-      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+      .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
 
     // ── STEP 2: Create NEW appointment with the new date/time ──────────────────
     const [newAppt] = await db.insert(appointmentsTable).values({
@@ -618,7 +666,7 @@ async function executeTelegramRescheduleAppointment(
       // Rollback: restore original status
       await db.update(appointmentsTable)
         .set({ status: existing.status })
-        .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+        .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
       return JSON.stringify({ error: "Error al crear la nueva cita. Se restauró la cita original." });
     }
 
@@ -638,16 +686,16 @@ async function executeTelegramRescheduleAppointment(
     await db.insert(activityTable).values({
       orgId,
       type:        "appointment_rescheduled",
-      description: `Cita #${appointmentId} "${existing.title}" marcada como reprogramada → nueva cita #${newAppt.id}: ${localDate} a las ${localTime} (vía Telegram)`,
+      description: `Cita #${existing.id} "${existing.title}" marcada como reprogramada → nueva cita #${newAppt.id}: ${localDate} a las ${localTime} (vía Telegram)`,
       clientName:  null,
     }).catch(() => {/* non-critical */});
 
     logIntegrationEvent({
       orgId, integrationSlug: "telegram", direction: "inbound",
       eventType: "appointment_rescheduled", status: "processed",
-      summary:     `Cita #${appointmentId} → reprogramada | nueva cita #${newAppt.id}: ${localDate} a las ${localTime}`,
+      summary:     `Cita #${existing.id} → reprogramada | nueva cita #${newAppt.id}: ${localDate} a las ${localTime}`,
       payloadJson: {
-        oldAppointmentId: appointmentId,
+        oldAppointmentId: existing.id,
         newAppointmentId: newAppt.id,
         newDate:          newDateStr,
         newStartTime:     newStartTimeStr,
@@ -655,19 +703,19 @@ async function executeTelegramRescheduleAppointment(
       },
     });
 
-    console.log(`[TG Appointment] ✅ Reschedule: #${appointmentId} → status=rescheduled | new #${newAppt.id} → ${localDate} ${localTime}`);
+    console.log(`[TG Appointment] ✅ Reschedule: #${existing.id} → status=rescheduled | new #${newAppt.id} → ${localDate} ${localTime}`);
 
     return JSON.stringify({
       success:          true,
       verified:         true,
-      oldAppointmentId: appointmentId,
+      oldAppointmentId: existing.id,
       newAppointmentId: newAppt.id,
       title:            existing.title,
       newDate:          localDate,
       newTime:          localTime,
       duration:         effectiveDuration,
       status:           "pending",
-      message:          `✅ Cita reprogramada. La anterior (#${appointmentId}) ha sido marcada como reprogramada. Nueva cita #${newAppt.id} confirmada en base de datos: ${localDate} a las ${localTime}.`,
+      message:          `Tu cita ha sido reprogramada para ${localDate} a las ${localTime}.`,
     });
   } catch (err) {
     console.error("[TG Appointment] Error rescheduling:", err);
@@ -676,66 +724,103 @@ async function executeTelegramRescheduleAppointment(
 }
 
 // ── Execute cancel_appointment for Telegram bot ───────────────────────────────
+// Auto-resolves the next active appointment for the client when no ID is given.
 async function executeTelegramCancelAppointment(
   args: Record<string, unknown>,
   orgId: number,
+  client: { id: number; name: string } | null,
 ): Promise<string> {
   try {
-    const appointmentId = Number(args["appointment_id"]);
-    const reason        = args["reason"] ? String(args["reason"]) : null;
+    const appointmentIdArg = args["appointment_id"] ? Number(args["appointment_id"]) : null;
+    const reason           = args["reason"] ? String(args["reason"]) : null;
 
-    if (!appointmentId) {
-      return JSON.stringify({ error: "Se necesita appointment_id." });
+    // Resolve which appointment to cancel
+    let existing: typeof appointmentsTable.$inferSelect | undefined;
+
+    if (appointmentIdArg) {
+      // Explicit ID provided
+      [existing] = await db.select().from(appointmentsTable)
+        .where(and(eq(appointmentsTable.id, appointmentIdArg), eq(appointmentsTable.orgId, orgId)));
+    } else if (client) {
+      // Auto-resolve: find next upcoming active appointment for this client
+      const now = new Date();
+      const candidates = await db.select().from(appointmentsTable)
+        .where(and(
+          eq(appointmentsTable.orgId, orgId),
+          eq(appointmentsTable.clientId, client.id),
+          inArray(appointmentsTable.status, ["pending", "confirmed"]),
+          gte(appointmentsTable.startTime, now),
+        ))
+        .orderBy(asc(appointmentsTable.startTime))
+        .limit(1);
+      existing = candidates[0];
+      if (!existing) {
+        // Fallback: most recent active (even if in the past)
+        const all = await db.select().from(appointmentsTable)
+          .where(and(
+            eq(appointmentsTable.orgId, orgId),
+            eq(appointmentsTable.clientId, client.id),
+            inArray(appointmentsTable.status, ["pending", "confirmed"]),
+          ))
+          .orderBy(asc(appointmentsTable.startTime))
+          .limit(1);
+        existing = all[0];
+      }
     }
 
-    const [existing] = await db.select().from(appointmentsTable)
-      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
-
     if (!existing) {
-      return JSON.stringify({ error: `Cita #${appointmentId} no encontrada en esta organización.` });
+      return JSON.stringify({ error: client
+        ? `No se encontró ninguna cita activa (pending/confirmed) para ${client.name}. El cliente no tiene citas que cancelar.`
+        : "Se necesita appointment_id o el cliente debe estar identificado." });
     }
 
     if (existing.status === "cancelled") {
-      return JSON.stringify({ error: `La cita #${appointmentId} ya estaba cancelada.` });
+      return JSON.stringify({ error: `La cita #${existing.id} "${existing.title}" ya estaba cancelada.` });
     }
 
     // ── WRITE ──────────────────────────────────────────────────────────────────
     await db.update(appointmentsTable)
       .set({ status: "cancelled" })
-      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+      .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
 
     // ── DB READ-BACK VALIDATION ────────────────────────────────────────────────
     const [verified] = await db.select().from(appointmentsTable)
-      .where(and(eq(appointmentsTable.id, appointmentId), eq(appointmentsTable.orgId, orgId)));
+      .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
 
     if (!verified || verified.status !== "cancelled") {
       return JSON.stringify({ error: "Error de validación: no se pudo confirmar la cancelación en la base de datos." });
     }
 
+    // Display helpers for activity log
+    const cancelledDate = apptDateDisplay(existing.startTime);
+    const cancelledTime = apptTimeDisplay(existing.startTime);
+
     await db.insert(activityTable).values({
       orgId,
       type:        "appointment_cancelled",
-      description: `Cita #${appointmentId} "${existing.title}" cancelada${reason ? `: ${reason}` : ""} (vía Telegram)`,
-      clientName:  null,
+      description: `Cita #${existing.id} "${existing.title}" (${cancelledDate} ${cancelledTime}) cancelada${reason ? `: ${reason}` : ""} (vía Telegram)`,
+      clientName:  client?.name ?? null,
     }).catch(() => {/* non-critical */});
 
-    await logIntegrationEvent({
+    logIntegrationEvent({
       orgId, integrationSlug: "telegram", direction: "inbound",
       eventType: "appointment_cancelled", status: "processed",
-      summary:     `Cita #${appointmentId} "${existing.title}" cancelada`,
-      payloadJson: JSON.stringify({ appointmentId, reason }),
-    }).catch(() => {/* non-critical */});
+      summary:     `Cita #${existing.id} "${existing.title}" cancelada`,
+      payloadJson: { appointmentId: existing.id, reason, date: cancelledDate, time: cancelledTime },
+    });
 
-    console.log(`[TG Appointment] ✅ Cancelled #${appointmentId} | DB verified status=cancelled`);
+    console.log(`[TG Appointment] ✅ Cancelled #${existing.id} | DB verified status=cancelled`);
 
     return JSON.stringify({
       success:       true,
       verified:      true,
-      appointmentId,
+      appointmentId: existing.id,
       title:         existing.title,
+      cancelledDate,
+      cancelledTime,
       status:        "cancelled",
       reason,
-      message:       `✅ Cita #${appointmentId} "${existing.title}" cancelada y confirmada en la base de datos.`,
+      message:       "Tu cita ha sido cancelada correctamente.",
     });
   } catch (err) {
     console.error("[TG Appointment] Error cancelling:", err);

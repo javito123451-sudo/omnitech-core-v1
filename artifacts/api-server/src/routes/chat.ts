@@ -12,7 +12,7 @@ import {
   quotesTable,
   quoteItemsTable,
 } from "@workspace/db";
-import { eq, and, desc, gte, lt, inArray, ilike } from "drizzle-orm";
+import { eq, and, asc, desc, gte, lt, inArray, ilike } from "drizzle-orm";
 
 const router = Router();
 const AGENT_SLUG = "operator";
@@ -1084,7 +1084,7 @@ async function executeCrmTool(
         return JSON.stringify({ error: "Se necesitan new_date y new_start_time." });
       }
 
-      // Resolve appointment: by ID or by client name (most recent pending/confirmed)
+      // Resolve appointment: by ID or by client name (next upcoming pending/confirmed)
       let existing: typeof appointmentsTable.$inferSelect | undefined;
       if (appointmentIdArg) {
         [existing] = await db.select().from(appointmentsTable)
@@ -1095,19 +1095,33 @@ async function executeCrmTool(
           .limit(3);
         if (matchedClients.length > 0) {
           const clientIds = matchedClients.map(c => c.id);
-          const candidates = await db.select().from(appointmentsTable)
+          // Find next upcoming active appointment (ASC, future first)
+          const now = new Date();
+          const futureActive = await db.select().from(appointmentsTable)
             .where(and(
               eq(appointmentsTable.orgId, orgId),
-              // pick the most recent pending/confirmed appointment for this client
+              inArray(appointmentsTable.status, ["pending", "confirmed"]),
+              gte(appointmentsTable.startTime, now),
             ))
-            .orderBy(desc(appointmentsTable.startTime))
-            .limit(10);
-          existing = candidates.find(a => clientIds.includes(a.clientId) && a.status !== "cancelled");
+            .orderBy(asc(appointmentsTable.startTime))
+            .limit(20);
+          existing = futureActive.find(a => clientIds.includes(a.clientId));
+          if (!existing) {
+            // Fallback: any active (including past)
+            const anyActive = await db.select().from(appointmentsTable)
+              .where(and(
+                eq(appointmentsTable.orgId, orgId),
+                inArray(appointmentsTable.status, ["pending", "confirmed"]),
+              ))
+              .orderBy(asc(appointmentsTable.startTime))
+              .limit(20);
+            existing = anyActive.find(a => clientIds.includes(a.clientId));
+          }
         }
       }
 
       if (!existing) {
-        return JSON.stringify({ error: "No encontré la cita a reprogramar. Usa get_appointments con el cliente para obtener el ID." });
+        return JSON.stringify({ error: "No encontré ninguna cita activa (pending/confirmed) para reprogramar. Verifica que el cliente tenga citas activas." });
       }
 
       const [h = "10", m = "00"] = newStartTimeStr.split(":");
@@ -1187,7 +1201,7 @@ async function executeCrmTool(
         duration:         effectiveDur,
         status:           "pending",
         dbConfirmedAt:    verified.startTime.toISOString(),
-        message:          `✅ Cita reprogramada. La anterior (#${existing.id}) ha sido marcada como reprogramada. Nueva cita #${newAppt.id} confirmada: ${localDate} a las ${localTime}.`,
+        message:          `Tu cita ha sido reprogramada para ${localDate} a las ${localTime}.`,
       });
     }
 
@@ -1207,16 +1221,32 @@ async function executeCrmTool(
           .limit(3);
         if (matchedClients.length > 0) {
           const clientIds = matchedClients.map(c => c.id);
-          const candidates = await db.select().from(appointmentsTable)
-            .where(eq(appointmentsTable.orgId, orgId))
-            .orderBy(desc(appointmentsTable.startTime))
-            .limit(10);
-          existing = candidates.find(a => clientIds.includes(a.clientId) && a.status !== "cancelled");
+          // Find next upcoming active appointment (ASC, future first)
+          const now = new Date();
+          const futureActive = await db.select().from(appointmentsTable)
+            .where(and(
+              eq(appointmentsTable.orgId, orgId),
+              inArray(appointmentsTable.status, ["pending", "confirmed"]),
+              gte(appointmentsTable.startTime, now),
+            ))
+            .orderBy(asc(appointmentsTable.startTime))
+            .limit(20);
+          existing = futureActive.find(a => clientIds.includes(a.clientId));
+          if (!existing) {
+            const anyActive = await db.select().from(appointmentsTable)
+              .where(and(
+                eq(appointmentsTable.orgId, orgId),
+                inArray(appointmentsTable.status, ["pending", "confirmed"]),
+              ))
+              .orderBy(asc(appointmentsTable.startTime))
+              .limit(20);
+            existing = anyActive.find(a => clientIds.includes(a.clientId));
+          }
         }
       }
 
       if (!existing) {
-        return JSON.stringify({ error: "No encontré la cita a cancelar. Usa get_appointments con el cliente para obtener el ID." });
+        return JSON.stringify({ error: "No encontré ninguna cita activa (pending/confirmed) para cancelar." });
       }
 
       if (existing.status === "cancelled") {
@@ -1249,7 +1279,7 @@ async function executeCrmTool(
         title:         existing.title,
         status:        "cancelled",
         reason,
-        message:       `✅ Cita #${existing.id} "${existing.title}" cancelada y confirmada en la base de datos.`,
+        message:       "Tu cita ha sido cancelada correctamente.",
       });
     }
 
