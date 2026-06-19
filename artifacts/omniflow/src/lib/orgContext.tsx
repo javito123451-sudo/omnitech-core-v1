@@ -71,8 +71,12 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     getToken()
       .then(token => {
-        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
-        return fetch(`${BASE_URL}/api/auth/me`, { credentials: "include", headers });
+        const headers: HeadersInit = {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "Cache-Control": "no-cache",
+          "Pragma": "no-cache",
+        };
+        return fetch(`${BASE_URL}/api/auth/me`, { credentials: "include", headers, cache: "no-store" });
       })
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
