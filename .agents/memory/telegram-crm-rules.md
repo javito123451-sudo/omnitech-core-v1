@@ -3,6 +3,21 @@ name: Telegram CRM intent audit rules
 description: CRM-001/002/003 guard rules in telegram.ts preventing junk contacts and phantom appointments.
 ---
 
+## CRM-LEAD-001/002/003/004 — Gated lead creation (implemented after CRM-001)
+
+**Root cause of bug:** `GREETING_ONLY_RE` only filtered pure greetings. Substantive informational messages ("necesito saber qué servicio ofrecéis", "Transformación digital") bypassed the filter and auto-created junk leads.
+
+**Three-way decision in auto-create block:**
+1. `isGreetingOnly || isCommandMsg` → CRM-001: static welcome, no lead
+2. `isTransactionalIntent || hasContactData` → CRM-LEAD-003/002: create lead
+3. else (informational) → CRM-LEAD-004: anonymous AI reply, no lead
+
+**`TRANSACTIONAL_INTENT_RE`** covers: cita, reunión, reservar, agendar, presupuesto, precio, contratar, demo, llamada, contactar, quiero empezar, me interesa contratar.
+
+**`COMMAND_RE`** covers: `/start`, `/help`, etc. — bot commands never create leads.
+
+**Anonymous AI path:** `client = null`, AI responds without history. No messages saved to DB. When user later expresses transactional intent → new message matches TRANSACTIONAL_INTENT_RE → lead created then.
+
 ## CRM-001 — No auto-create from greeting-only messages
 
 **Rule:** `GREETING_ONLY_RE` constant + `hasValidContactData()` helper (near top of telegram.ts).

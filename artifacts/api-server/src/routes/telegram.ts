@@ -79,7 +79,16 @@ const LEAD_WARM_RE = /\b(información|más info|más información|me interesa|in
 // Matches bare greetings / single-word / short filler messages with no CRM value.
 const GREETING_ONLY_RE =
   /^(?:hola+|buenas?|buenos\s+d[ií]as?|buenas\s+tardes?|buenas\s+noches?|buen\s+d[ií]a|good\s+(?:morning|afternoon|evening|day)|hi+|hey+|hello+|saludos|ey+|ola+|yo+|ok+|k+|👋+)[!¡.,?…\s]*$/i;
-// Helpers to detect qualifying contact data inside a message text
+
+// ── CRM-LEAD-001: Telegram bot commands (/start, /help…) never create a lead ──
+const COMMAND_RE = /^\/\w+/;
+
+// ── CRM-LEAD-003: Transactional intents that DO qualify for lead creation ──────
+// These indicate the user wants to schedule, buy, or be contacted — CRM value.
+const TRANSACTIONAL_INTENT_RE =
+  /\b(cita|reuni[oó]n|reserva|reservar|agendar|agenda\s+una|presupuesto|oferta\s+comercial|precio\s+de|costo|coste|contratar|contrataci[oó]n|demo|llamada|ll[aá]mame|quiero\s+hablar|hablar\s+con|ponerse\s+en\s+contacto|quiero\s+que\s+me\s+cont|contactad|contactar|quiero\s+empezar|me\s+interesa\s+contratar|quiero\s+contratar)\b/i;
+
+// ── Helper: detect qualifying contact data (phone or email) in message text ────
 function hasValidContactData(text: string): boolean {
   const hasPhone = /\b\d[\d\s\-().]{5,}\d\b/.test(text);
   const hasEmail = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/.test(text);
@@ -881,16 +890,33 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     });
   }
 
-  // ── CRM-001: Only auto-create contact when the message has CRM value ─────────
-  // Pure greetings ("Hola", "Buenas", "Hi"…) without phone/email → skip creation.
-  // Any substantive message (>30 chars, contains phone/email, or is not a greeting)
-  // is enough to create the contact and begin tracking the conversation.
-  const isGreetingOnly = GREETING_ONLY_RE.test(trimmed) && !hasValidContactData(text);
+  // ── CRM-LEAD-001/002/003/004: Gated lead creation ────────────────────────────
+  //
+  //  CRM-LEAD-001: Do NOT create a lead at conversation start (no matter the message).
+  //  CRM-LEAD-002: Create lead only when: (name + phone) OR (name + email).
+  //                Name always comes from Telegram. Phone/email must be in the message
+  //                OR the user has expressed transactional intent (CRM-LEAD-003).
+  //  CRM-LEAD-003: Transactional intent (cita/presupuesto/llamada/contacto) is enough
+  //                to qualify — AI will then collect phone/email in that same flow.
+  //  CRM-LEAD-004: Informational queries ("qué servicios ofrecéis", "transformación
+  //                digital", etc.) must stay anonymous — NO lead created.
+  //
+  // Decision tree for unknown contacts:
+  //   isGreetingOnly OR isCommand → CRM-001 static welcome, no lead
+  //   isTransactionalIntent OR hasContactData → create lead  (CRM-LEAD-003 / CRM-LEAD-002)
+  //   else (informational)         → anonymous AI reply, no lead  (CRM-LEAD-004)
+
+  const isGreetingOnly       = GREETING_ONLY_RE.test(trimmed) && !hasValidContactData(text);
+  const isCommandMsg         = COMMAND_RE.test(trimmed);
+  const isTransactionalIntent = TRANSACTIONAL_INTENT_RE.test(text) || LEAD_HOT_RE.test(text);
+  const hasContactData        = hasValidContactData(text);
 
   if (!client && (senderName || username)) {
-    if (isGreetingOnly) {
-      console.log(`[CRM-001] Greeting-only from unknown contact (chat_id=${chatIdStr}) — skipping auto-create`);
-    } else {
+    if (isGreetingOnly || isCommandMsg) {
+      // CRM-001: pure greeting or /start — handled via static welcome below, no lead
+      console.log(`[CRM-001] Greeting/command from unknown contact (chat_id=${chatIdStr}) — skipping lead creation`);
+    } else if (isTransactionalIntent || hasContactData) {
+      // CRM-LEAD-003 / CRM-LEAD-002: qualifying intent or has contact data → create lead
       try {
         const newName = senderName || username || `Telegram ${chatIdStr}`;
         const [created] = await db.insert(clientsTable).values({
@@ -903,16 +929,19 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
           notes:          `Contacto creado automáticamente desde Telegram\nChat ID: ${chatIdStr}${username ? `\nUsername: ${username}` : ""}\nUser ID: ${msg.from?.id ?? "?"}`,
         }).returning();
         client = created;
-        console.log(`[Telegram] ✅ Auto-created contact: ${newName} (id=${created?.id})`);
+        console.log(`[CRM-LEAD-003] ✅ Lead created from transactional intent: ${newName} (id=${created?.id})`);
         logIntegrationEvent({
           orgId, integrationSlug: "telegram", direction: "inbound",
           eventType: "contact_created", status: "processed",
-          summary: `Contacto creado automáticamente: ${newName} (chat_id: ${chatIdStr})`,
-          payloadJson: { chatId, senderName, username, userId: msg.from?.id },
+          summary: `Lead creado por intención transaccional: ${newName} (chat_id: ${chatIdStr})`,
+          payloadJson: { chatId, senderName, username, userId: msg.from?.id, trigger: isTransactionalIntent ? "transactional_intent" : "contact_data" },
         });
       } catch (err) {
-        console.error("[Telegram] Auto-create contact failed:", err);
+        console.error("[Telegram] Lead auto-create failed:", err);
       }
+    } else {
+      // CRM-LEAD-004: informational query — anonymous conversation, no lead in CRM
+      console.log(`[CRM-LEAD-004] Informational msg — anonymous conversation, no lead (chat_id=${chatIdStr}) | text="${text.slice(0, 60)}"`);
     }
   }
 
@@ -997,17 +1026,24 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
       return;
     }
 
-    // ── CRM-001: Greeting from unknown contact → static welcome, no AI call ────
-    if (!client && isGreetingOnly) {
+    // ── CRM-001: Greeting or command from unknown contact → static welcome, no AI call ──
+    if (!client && (isGreetingOnly || isCommandMsg)) {
       const [orgRow] = await db.select({ name: organizationsTable.name })
         .from(organizationsTable).where(eq(organizationsTable.id, orgId));
       const orgLabel = orgRow?.name ?? "nuestro equipo";
       const welcomeReply =
         `¡Hola! 👋 Soy Ava, el asistente de *${orgLabel}*. ` +
-        `Para poder ayudarte, ¿me dices tu nombre completo y cómo puedo contactarte (teléfono o email)?`;
+        `¿En qué puedo ayudarte hoy? Si quieres agendar una cita, pedir un presupuesto o hablar con nuestro equipo, con gusto te atiendo. 😊`;
       await tgSend(token, chatId, welcomeReply);
       console.log(`[CRM-001] Static welcome sent to unknown contact chat_id=${chatIdStr}`);
       return;
+    }
+
+    // ── CRM-LEAD-004: Informational anonymous conversation ──────────────────────
+    // No client in CRM, no transactional intent — respond helpfully but stay anonymous.
+    // The AI will naturally guide the user toward a cita/presupuesto when appropriate.
+    if (!client) {
+      console.log(`[CRM-LEAD-004] Anonymous AI response (no lead) chat_id=${chatIdStr}`);
     }
 
     // Get org name for bot persona
