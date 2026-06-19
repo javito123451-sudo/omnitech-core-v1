@@ -129,7 +129,7 @@ function SignInPage() {
         routing="path"
         path={`${basePath}/sign-in`}
         signUpUrl={`${basePath}/sign-up`}
-        fallbackRedirectUrl={`${basePath}/executive-dashboard`}
+        fallbackRedirectUrl={`${basePath}/`}
       />
     </div>
   );
@@ -142,22 +142,28 @@ function SignUpPage() {
         routing="path"
         path={`${basePath}/sign-up`}
         signInUrl={`${basePath}/sign-in`}
-        fallbackRedirectUrl={`${basePath}/executive-dashboard`}
+        fallbackRedirectUrl={`${basePath}/`}
       />
     </div>
   );
 }
 
 function HomeRedirect() {
+  const { isSignedIn } = useAuth();
+  const [, setLocation] = useLocation();
+  const { isSuperAdmin, loading } = useSuperAdmin();
+
+  useEffect(() => {
+    if (isSignedIn === false) { setLocation("/sign-in"); return; }
+    if (isSignedIn === true && !loading) {
+      setLocation(isSuperAdmin ? "/control-center" : "/executive-dashboard");
+    }
+  }, [isSignedIn, loading, isSuperAdmin, setLocation]);
+
   return (
-    <>
-      <Show when="signed-in">
-        <Redirect to="/executive-dashboard" />
-      </Show>
-      <Show when="signed-out">
-        <Redirect to="/sign-in" />
-      </Show>
-    </>
+    <div className="flex items-center justify-center h-screen bg-[#0a0b14]">
+      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
   );
 }
 
@@ -534,8 +540,8 @@ function ClerkProviderWithRoutes() {
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
-      signInFallbackRedirectUrl={`${basePath}/executive-dashboard`}
-      signUpFallbackRedirectUrl={`${basePath}/executive-dashboard`}
+      signInFallbackRedirectUrl={`${basePath}/`}
+      signUpFallbackRedirectUrl={`${basePath}/`}
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
       localization={{
