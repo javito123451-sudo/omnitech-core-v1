@@ -18,6 +18,13 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
   const token = _getToken ? await _getToken() : null;
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  // SUPER_ADMIN workspace supervision override
+  const wsOverride = typeof localStorage !== "undefined"
+    ? localStorage.getItem("wsOverride")
+    : null;
+  if (wsOverride) headers.set("x-ws-override", wsOverride);
+
   return fetch(url, {
     credentials: "include",
     ...init,

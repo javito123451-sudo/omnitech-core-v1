@@ -236,17 +236,29 @@ export default function WorkspaceDetailPage() {
               <p className="text-slate-500 text-sm mt-1 font-mono">{ws.slug}</p>
             </div>
           </div>
-          <button
-            onClick={() => setConfirmSuspend(true)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              isActive
-                ? "bg-amber-600/10 border border-amber-500/20 text-amber-400 hover:bg-amber-600/20"
-                : "bg-emerald-600/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-600/20"
-            }`}
-          >
-            {isActive ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
-            {isActive ? "Suspender" : "Activar"}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => {
+                localStorage.setItem("wsOverride", String(ws.id));
+                localStorage.setItem("wsOverrideName", ws.name);
+                navigate(`${BASE}/dashboard`);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-violet-600/10 border border-violet-500/20 text-violet-400 hover:bg-violet-600/20 transition-all"
+            >
+              <Eye size={16} /> Supervisar CRM
+            </button>
+            <button
+              onClick={() => setConfirmSuspend(true)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                isActive
+                  ? "bg-amber-600/10 border border-amber-500/20 text-amber-400 hover:bg-amber-600/20"
+                  : "bg-emerald-600/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-600/20"
+              }`}
+            >
+              {isActive ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
+              {isActive ? "Suspender" : "Activar"}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -1,7 +1,8 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { getAuth } from "@clerk/express";
 import { db, usersTable, orgMembersTable, organizationsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { hasPlatformRole } from "./superAdmin";
 
 declare global {
   namespace Express {
@@ -54,13 +55,28 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // ── Check if user account is suspended ────────────────────────────────────
     if (user.status === "suspended") {
       res.status(403).json({
         error:   "account_suspended",
         message: user.suspendedReason ?? "Tu cuenta ha sido suspendida. Contacta con soporte.",
       });
       return;
+    }
+
+    // ── SUPER_ADMIN workspace supervision override ─────────────────────────────
+    const wsOverrideHeader = req.headers["x-ws-override"];
+    if (wsOverrideHeader && typeof wsOverrideHeader === "string") {
+      const overrideOrgId = parseInt(wsOverrideHeader, 10);
+      if (!isNaN(overrideOrgId) && overrideOrgId > 0) {
+        const platformRole = await hasPlatformRole(clerkUserId);
+        if (platformRole === "SUPER_ADMIN") {
+          req.userId  = user.id;
+          req.orgId   = overrideOrgId;
+          req.orgRole = "admin";
+          next();
+          return;
+        }
+      }
     }
 
     const [membership] = await db
@@ -73,7 +89,6 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // ── Check if workspace is suspended ───────────────────────────────────────
     const [org] = await db
       .select({ status: organizationsTable.status, name: organizationsTable.name })
       .from(organizationsTable)

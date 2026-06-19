@@ -1,9 +1,10 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot, BookOpen,
+  Eye, ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -174,12 +175,18 @@ function MobileMoreDrawer({
 // ── Main layout ──────────────────────────────────────────────────────────────
 
 export default function MainLayout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { signOut } = useClerk();
   const { user: clerkUser } = useUser();
   const { org } = useOrg();
   const [moreOpen, setMoreOpen] = useState(false);
   const { isSuperAdmin } = useSuperAdmin();
+  const [wsOverrideName, setWsOverrideName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const name = localStorage.getItem("wsOverrideName");
+    setWsOverrideName(name);
+  }, [location]);
 
   const handleSignOut = async () => {
     try {
@@ -327,6 +334,29 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
         {/* Ambient gradient */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-background to-background pointer-events-none" />
+
+        {/* SUPER_ADMIN supervision banner */}
+        {wsOverrideName && (
+          <div className="relative z-20 flex items-center justify-between gap-3 px-4 py-2 bg-violet-600/20 border-b border-violet-500/30 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <Eye size={14} className="text-violet-400 shrink-0" />
+              <span className="text-violet-300 text-xs font-medium truncate">
+                Modo supervisión: <strong className="text-white">{wsOverrideName}</strong>
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                localStorage.removeItem("wsOverride");
+                localStorage.removeItem("wsOverrideName");
+                setWsOverrideName(null);
+                navigate(`${basePath}/control-center/workspaces`);
+              }}
+              className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-white bg-violet-500/20 hover:bg-violet-500/40 border border-violet-500/30 px-3 py-1 rounded-lg transition-all shrink-0"
+            >
+              <ArrowLeft size={12} /> Salir
+            </button>
+          </div>
+        )}
 
         {/* Scrollable content */}
         <div className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-nav md:pb-6 scrollbar-thin">

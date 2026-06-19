@@ -60,3 +60,9 @@ id = "t_xcS02Tf08vCWT37RWCp"
 uri = "file://OmniTech_Security_Final_Report.md"
 type = "text"
 title = "Informe Final de Seguridad — a3servicio Cerrado"
+
+[[outputs]]
+id = "3-bUgEUihhwzDguk8otKO"
+uri = "file://manual_super_admin.md"
+type = "text"
+title = "Manual Super Admin — Control Center OmniTech"

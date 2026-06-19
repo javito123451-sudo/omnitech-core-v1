@@ -16,11 +16,31 @@ export function useSuperAdmin() {
 
   useEffect(() => {
     if (!isSignedIn) { setLoading(false); return; }
-    authFetch(`${BASE_URL}/api/control-center/check`)
-      .then(r => r.ok ? r.json() : { isSuperAdmin: false, role: null })
-      .then((data: SuperAdminStatus) => setStatus(data))
-      .catch(() => setStatus({ isSuperAdmin: false, role: null }))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    const doFetch = (delay: number) => {
+      setTimeout(async () => {
+        if (cancelled) return;
+        try {
+          const r    = await authFetch(`${BASE_URL}/api/control-center/check`);
+          const data = r.ok
+            ? (await r.json()) as SuperAdminStatus
+            : { isSuperAdmin: false, role: null };
+          if (!cancelled) {
+            setStatus(data);
+            setLoading(false);
+          }
+        } catch {
+          if (!cancelled) setLoading(false);
+        }
+      }, delay);
+    };
+
+    // Fire immediately then again after 1.5 s to survive Clerk token race-condition
+    doFetch(0);
+    doFetch(1500);
+
+    return () => { cancelled = true; };
   }, [isSignedIn]);
 
   return { ...status, loading };
