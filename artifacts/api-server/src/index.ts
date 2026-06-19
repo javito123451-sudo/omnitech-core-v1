@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { scheduleAutoBackups } from "./utils/backupEngine";
 import { autoSetupTelegramWebhooks } from "./routes/telegram";
+import { runStartupMigrations } from "./utils/startupMigrations";
 
 const rawPort = process.env["PORT"];
 
@@ -24,6 +25,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  runStartupMigrations().catch(() => {});
   scheduleAutoBackups();
 
   // Auto-register Telegram webhooks for all configured orgs.
