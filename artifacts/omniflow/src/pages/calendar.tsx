@@ -85,19 +85,63 @@ function getWeekDays(anchor: Date): Date[] {
   const mon = startOfWeek(anchor, { weekStartsOn: 1 });
   return Array.from({ length: 7 }, (_, i) => addDays(mon, i));
 }
+// ── Timezone helpers: all display in Europe/Madrid ───────────────────────────
+// Rule 1: API returns real UTC ISO strings (stored correctly in DB).
+// Rule 2: All display uses Europe/Madrid.
+// Rule 3: Form inputs ("15:00") are treated as Madrid local → converted to UTC on save.
+const MADRID_TZ = "Europe/Madrid";
+
+function getMadridHM(iso: string): { h: number; m: number } {
+  const d = new Date(iso);
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: MADRID_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const parts = fmt.formatToParts(d);
+  return {
+    h: parseInt(parts.find(p => p.type === "hour")!.value,   10),
+    m: parseInt(parts.find(p => p.type === "minute")!.value, 10),
+  };
+}
+
+// Convert form date+time (expressed in Madrid local) → real UTC ISO string.
+function madridLocalToUTCFE(date: string, time: string): string {
+  const [yr, mo, dy] = date.split("-").map(Number);
+  const [h,  m_]     = time.split(":").map(Number);
+  const probe = new Date(Date.UTC(yr!, mo! - 1, dy!, h!, m_!, 0));
+  const fmt   = new Intl.DateTimeFormat("en-GB", {
+    timeZone: MADRID_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const parts    = fmt.formatToParts(probe);
+  const mh       = parseInt(parts.find(p => p.type === "hour")!.value,   10);
+  const mmVal    = parseInt(parts.find(p => p.type === "minute")!.value, 10);
+  const shiftMin = (h! * 60 + m_!) - (mh * 60 + mmVal);
+  const utc = new Date(probe.getTime() + shiftMin * 60_000);
+  console.log(`[TZ calendar] form_input="${date}T${time}" tz=Europe/Madrid → utc="${utc.toISOString()}"`);
+  return utc.toISOString();
+}
+
 function apptTopPx(iso: string) {
-  const d = parseISO(iso);
-  return ((getHours(d) - DAY_START) * 60 + getMinutes(d)) * (CELL_H / 60);
+  const { h, m } = getMadridHM(iso);
+  console.log(`[TZ calendar] render | utc="${iso}" → Madrid="${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}"`);
+  return ((h - DAY_START) * 60 + m) * (CELL_H / 60);
 }
 function apptHeightPx(start: string, end: string) {
   return Math.max(differenceInMinutes(parseISO(end), parseISO(start)), 30) * (CELL_H / 60);
 }
-function toDateStr(iso: string)  { return format(parseISO(iso), "yyyy-MM-dd"); }
-function toTimeStr(iso: string)  { return format(parseISO(iso), "HH:mm"); }
-function toISO(date: string, time: string) { return new Date(`${date}T${time}`).toISOString(); }
+function toDateStr(iso: string): string {
+  // Return YYYY-MM-DD in Madrid timezone
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: MADRID_TZ });
+}
+function toTimeStr(iso: string): string {
+  const { h, m } = getMadridHM(iso);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+function toISO(date: string, time: string): string {
+  return madridLocalToUTCFE(date, time);
+}
 function nowMinuteOffset() {
-  const now = new Date();
-  return ((getHours(now) - DAY_START) * 60 + getMinutes(now)) * (CELL_H / 60);
+  const { h, m } = getMadridHM(new Date().toISOString());
+  return ((h - DAY_START) * 60 + m) * (CELL_H / 60);
 }
 function addMinutesToISO(iso: string, minutes: number): string {
   return new Date(new Date(iso).getTime() + minutes * 60000).toISOString();

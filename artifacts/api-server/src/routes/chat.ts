@@ -195,6 +195,24 @@ INSTRUCCIONES ESPECIALES PARA ESTE CLIENTE:
 
 // ── CRM Tools ─────────────────────────────────────────────────────────────────
 
+// ── Timezone helper: Europe/Madrid local → UTC (probe technique) ──────────────
+// Converts a date string (YYYY-MM-DD) + time string (HH:MM) expressed in
+// Europe/Madrid local time into the equivalent real UTC Date.
+// Handles DST automatically (CET = UTC+1 in winter, CEST = UTC+2 in summer).
+function madridLocalToUTC(dateStr: string, timeStr: string): Date {
+  const [yr, mo, dy] = dateStr.split("-").map(Number);
+  const [h,  m_]     = timeStr.split(":").map(Number);
+  const probe = new Date(Date.UTC(yr!, mo! - 1, dy!, h!, m_!, 0));
+  const fmt   = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const parts  = fmt.formatToParts(probe);
+  const mh     = parseInt(parts.find(p => p.type === "hour")!.value,   10);
+  const mmVal  = parseInt(parts.find(p => p.type === "minute")!.value, 10);
+  const shiftMin = (h! * 60 + m_!) - (mh * 60 + mmVal);
+  return new Date(probe.getTime() + shiftMin * 60_000);
+}
+
 // ── Date helpers (Spain / Madrid timezone) ───────────────────────────────────
 
 function getMadridDayBounds(offsetDays = 0): { start: Date; end: Date } {
@@ -917,17 +935,19 @@ async function executeCrmTool(
         return JSON.stringify({ error: "Se necesitan client_name, title y date" });
       }
 
-      // Parse date + time into UTC timestamp
-      const [h = "10", m = "00"] = startTimeStr.split(":");
+      // ── TZ: Parse date + time as Europe/Madrid local → real UTC ──────────────
       const [y, mo, d] = dateStr.split("-").map(Number);
       if (!y || !mo || !d) {
         return JSON.stringify({ error: `Formato de fecha inválido: "${dateStr}". Usa YYYY-MM-DD.` });
       }
-      // Treat user-supplied time as Europe/Madrid local → store as UTC
-      // Approximate: Madrid is UTC+2 in summer (CEST), UTC+1 in winter (CET)
-      // For simplicity we'll just store the given time as-is UTC (AI knows it's Madrid)
-      const startTime = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+      const normalizedTime = startTimeStr.slice(0, 5);
+      const startTime = madridLocalToUTC(dateStr, normalizedTime);
       const endTime   = new Date(startTime.getTime() + durationMinutes * 60_000);
+      console.log(
+        `[TZ chat/create_appointment] ` +
+        `hora_recibida="${normalizedTime}" | tz=Europe/Madrid | ` +
+        `utc_stored="${startTime.toISOString()}"`
+      );
 
       // Find client by name (fuzzy)
       const matchedClients = await db
@@ -1124,15 +1144,20 @@ async function executeCrmTool(
         return JSON.stringify({ error: "No encontré ninguna cita activa (pending/confirmed) para reprogramar. Verifica que el cliente tenga citas activas." });
       }
 
-      const [h = "10", m = "00"] = newStartTimeStr.split(":");
-      const [y, mo, d]           = newDateStr.split("-").map(Number);
+      const [y, mo, d] = newDateStr.split("-").map(Number);
       if (!y || !mo || !d) {
         return JSON.stringify({ error: `Fecha inválida: "${newDateStr}". Usa YYYY-MM-DD.` });
       }
-      const newStartTime  = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+      const normalizedNewTime = newStartTimeStr.slice(0, 5);
+      const newStartTime  = madridLocalToUTC(newDateStr, normalizedNewTime);
       const existingDur   = Math.round((existing.endTime.getTime() - existing.startTime.getTime()) / 60_000);
       const effectiveDur  = durationArg ?? existingDur;
       const newEndTime    = new Date(newStartTime.getTime() + effectiveDur * 60_000);
+      console.log(
+        `[TZ chat/reschedule_appointment] ` +
+        `hora_recibida="${normalizedNewTime}" | tz=Europe/Madrid | ` +
+        `utc_stored="${newStartTime.toISOString()}"`
+      );
 
       // ── STEP 1: Mark old appointment as "rescheduled" ────────────────────────
       if (existing.status === "rescheduled" || existing.status === "cancelled") {

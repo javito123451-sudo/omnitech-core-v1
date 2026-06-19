@@ -420,14 +420,20 @@ async function executeTelegramCreateAppointment(
       return JSON.stringify({ error: "Falta la fecha de la cita (format YYYY-MM-DD)." });
     }
 
-    // Parse date + time → UTC timestamp
-    const [h = "10", m = "00"] = startTimeStr.split(":");
-    const [y, mo, d]           = dateStr.split("-").map(Number);
+    // ── TZ: Parse date + time as Europe/Madrid local → convert to UTC ─────────
+    const [y, mo, d] = dateStr.split("-").map(Number);
     if (!y || !mo || !d) {
       return JSON.stringify({ error: `Formato de fecha inválido: "${dateStr}". Usa YYYY-MM-DD.` });
     }
-    const startTime = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+    const normalizedTime = startTimeStr.slice(0, 5); // "HH:MM"
+    const startTime = madridLocalToUTC(dateStr, normalizedTime);
     const endTime   = new Date(startTime.getTime() + durationMinutes * 60_000);
+    console.log(
+      `[TZ create_appointment] ` +
+      `hora_recibida="${normalizedTime}" | tz=Europe/Madrid | ` +
+      `utc_stored="${startTime.toISOString()}" | ` +
+      `madrid_display="${apptTimeDisplay(startTime)}"`
+    );
 
     // Resolve client: prefer the current Telegram client, fallback to org-wide search
     let resolvedClient = client
@@ -505,23 +511,49 @@ async function executeTelegramCreateAppointment(
   }
 }
 
+// ── Timezone helpers: Europe/Madrid ──────────────────────────────────────────
+//
+// STORAGE CONVENTION (Rule 1): All timestamps stored as real UTC.
+// DISPLAY CONVENTION  (Rule 2): All timestamps shown in Europe/Madrid.
+//
+// madridLocalToUTC: converts a date+time string expressed in Europe/Madrid local
+// time (as provided by the user / AI) into the equivalent UTC Date.
+// Correctly handles both CET (UTC+1, winter) and CEST (UTC+2, summer) via Intl.
+//
+// Algorithm (probe technique):
+//   1. Build a "naïve UTC" Date using the given HH:MM.
+//   2. Ask Intl what Europe/Madrid shows for that UTC instant.
+//   3. Shift by the difference to get the real UTC.
+//
+// Example: "2026-06-25 15:00 Madrid" (CEST = UTC+2)
+//   probe = 15:00 UTC → Madrid shows 17:00
+//   shift = 15:00 - 17:00 = −120 min
+//   result = 15:00 UTC − 2 h = 13:00 UTC  ← stored  ✅
+//   display: 13:00 UTC → Europe/Madrid → 15:00  ✅
+function madridLocalToUTC(dateStr: string, timeStr: string): Date {
+  const [yr, mo, dy] = dateStr.split("-").map(Number);
+  const [h,  m_]     = timeStr.split(":").map(Number);
+  const probe = new Date(Date.UTC(yr!, mo! - 1, dy!, h!, m_!, 0));
+  const fmt   = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const parts  = fmt.formatToParts(probe);
+  const mh     = parseInt(parts.find(p => p.type === "hour")!.value,   10);
+  const mmVal  = parseInt(parts.find(p => p.type === "minute")!.value, 10);
+  const shiftMin = (h! * 60 + m_!) - (mh * 60 + mmVal);
+  return new Date(probe.getTime() + shiftMin * 60_000);
+}
+
 // ── Appointment time/date display helpers ─────────────────────────────────────
-// The DB column is `timestamp without time zone`. Values are stored as the user
-// intended wall-clock time (e.g. "10:00" stored = "10:00" displayed).
-// We must NOT apply any timezone conversion when reading back — just extract the
-// raw HH:MM from the ISO string that pg returns.
 function apptTimeDisplay(d: Date): string {
-  // pg gives us the stored wall-clock value as a UTC Date on Replit (server=UTC).
-  // Slice the ISO string directly to get HH:MM without any offset conversion.
-  return d.toISOString().slice(11, 16); // "HH:MM"
+  // UTC stored value → Europe/Madrid display
+  return d.toLocaleTimeString("es-ES", {
+    timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
 }
 function apptDateDisplay(d: Date): string {
-  // Extract YYYY-MM-DD from ISO, then format with Spanish day name.
-  // Use local noon to avoid any DST-boundary issues.
-  const [yr, mo, dy] = d.toISOString().slice(0, 10).split("-").map(Number);
-  const local = new Date(yr!, mo! - 1, dy!, 12, 0, 0);
-  return local.toLocaleDateString("es-ES", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  return d.toLocaleDateString("es-ES", {
+    timeZone: "Europe/Madrid", weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 }
 
@@ -660,13 +692,19 @@ async function executeTelegramRescheduleAppointment(
       });
     }
 
-    // Parse new date + time
-    const [h = "10", m = "00"] = newStartTimeStr.split(":");
-    const [y, mo, d]           = newDateStr.split("-").map(Number);
+    // ── TZ: Parse new date + time as Europe/Madrid local → UTC ────────────────
+    const [y, mo, d] = newDateStr.split("-").map(Number);
     if (!y || !mo || !d) {
       return JSON.stringify({ error: `Fecha inválida: "${newDateStr}". Usa formato YYYY-MM-DD.` });
     }
-    const newStartTime = new Date(Date.UTC(y, mo - 1, d, parseInt(h), parseInt(m), 0));
+    const normalizedNewTime = newStartTimeStr.slice(0, 5);
+    const newStartTime = madridLocalToUTC(newDateStr, normalizedNewTime);
+    console.log(
+      `[TZ reschedule_appointment] ` +
+      `hora_recibida="${normalizedNewTime}" | tz=Europe/Madrid | ` +
+      `utc_stored="${newStartTime.toISOString()}" | ` +
+      `madrid_display="${apptTimeDisplay(newStartTime)}"`
+    );
 
     // Duration: preserve original unless overridden
     const existingDuration  = Math.round((existing.endTime.getTime() - existing.startTime.getTime()) / 60_000);
