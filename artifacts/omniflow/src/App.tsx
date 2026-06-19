@@ -47,6 +47,8 @@ import BackupsPage from "@/pages/control-center/backups";
 import ImportAiPage from "@/pages/import-ai";
 import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
+import ManualHome from "@/pages/manual/index";
+import ManualChapter from "@/pages/manual/chapter";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -447,6 +449,20 @@ function AppRoutes() {
             <BackupsPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
+      </Route>
+
+      {/* ── Manual / Wiki ─────────────────────────────────────────── */}
+      <Route path="/manual">
+        <ProtectedRoute>
+          <ManualHome />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/manual/:slug">
+        {(params) => (
+          <ProtectedRoute>
+            <ManualChapter />
+          </ProtectedRoute>
+        )}
       </Route>
 
       <Route component={NotFound} />

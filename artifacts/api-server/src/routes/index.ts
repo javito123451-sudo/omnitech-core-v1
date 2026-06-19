@@ -23,6 +23,7 @@ import { importAiRouter } from "./import-ai";
 import { requireModule } from "../middlewares/requireModule";
 import { backupRouter } from "./backup";
 import { knowledgeBaseRouter } from "./knowledge-base";
+import { docsRouter } from "./docs";
 
 const router: IRouter = Router();
 
@@ -76,5 +77,6 @@ router.use("/telegram", telegramRouter);
 router.use("/integrations", integrationsRouter);
 router.use("/import", importAiRouter);
 router.use("/knowledge-base", knowledgeBaseRouter);
+router.use("/docs", docsRouter);
 
 export default router;

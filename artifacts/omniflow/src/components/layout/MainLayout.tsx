@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot, BookOpen,
-  Eye, ArrowLeft,
+  Eye, ArrowLeft, Library,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -54,6 +54,7 @@ const sidebarGroups = [
       { icon: Sparkles, label: "Omni Import AI", href: "/import" },
       { icon: Brain,    label: "Memoria",         href: "/memory" },
       { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base" },
+      { icon: Library,  label: "Manual",          href: "/manual" },
       { icon: Puzzle,   label: "Integraciones",  href: "/integrations" },
     ],
   },
@@ -69,6 +70,7 @@ const moreItems = [
   { icon: BarChart3,       label: "Estadísticas",    href: "/statistics",           group: "Análisis" },
   { icon: Sparkles,        label: "Omni Import AI",  href: "/import",               group: "Sistema" },
   { icon: Brain,           label: "Memoria",         href: "/memory",               group: "Sistema" },
+  { icon: Library,         label: "Manual",          href: "/manual",               group: "Sistema" },
   { icon: Puzzle,          label: "Integraciones",   href: "/integrations",         group: "Sistema" },
   { icon: Settings,        label: "Configuración",   href: "/settings",             group: "Sistema" },
 ];
