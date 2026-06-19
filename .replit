@@ -42,3 +42,6 @@ channel = "stable-25_05"
 
 [userenv.shared]
 "OpenAI apikey" = "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"
+
+[userenv.production]
+PUBLIC_URL = "https://omnitech-core.com"

@@ -1212,12 +1212,15 @@ telegramRouter.post("/set-webhook", async (req, res) => {
       webhookSecret = randomBytes(16).toString("hex");
     }
 
-    // Determine the public base URL
-    const host    = process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : (req.headers["x-forwarded-host"]
-        ? `${req.headers["x-forwarded-proto"] ?? "https"}://${req.headers["x-forwarded-host"]}`
-        : `${req.protocol}://${req.get("host")}`);
+    // Determine the public base URL.
+    // Priority: PUBLIC_URL (production secret) > REPLIT_DEV_DOMAIN (dev IDE) > x-forwarded-host > fallback
+    const host    = process.env.PUBLIC_URL
+      ? process.env.PUBLIC_URL
+      : process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : (req.headers["x-forwarded-host"]
+          ? `${req.headers["x-forwarded-proto"] ?? "https"}://${req.headers["x-forwarded-host"]}`
+          : `${req.protocol}://${req.get("host")}`);
     const webhookUrl = `${host}/api/telegram/webhook/${webhookSecret}`;
 
     const tgRes  = await fetch(TG(token, "setWebhook"), {

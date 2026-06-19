@@ -26,11 +26,14 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   scheduleAutoBackups();
 
-  // Auto-register Telegram webhooks for all configured orgs
+  // Auto-register Telegram webhooks for all configured orgs.
+  // Priority: PUBLIC_URL (production) > REPLIT_DEV_DOMAIN (dev IDE open) > localhost (fallback, not reachable externally)
   const publicBase =
-    process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : process.env.PUBLIC_URL ?? `http://localhost:${port}`;
+    process.env.PUBLIC_URL
+      ? process.env.PUBLIC_URL
+      : process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : `http://localhost:${port}`;
   autoSetupTelegramWebhooks(publicBase).catch((e) =>
     logger.error({ err: e }, "Telegram auto-webhook setup failed"),
   );
