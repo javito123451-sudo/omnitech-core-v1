@@ -75,6 +75,17 @@ async function getTelegramToken(orgId: number): Promise<string | null> {
 const LEAD_HOT_RE  = /\b(presupuesto|precio|coste|costo|cuánto cuesta|cuanto vale|contratar|contrataré|contrataré|demo|quiero contratar|quiero empezar|cómo contrato|propuesta|oferta comercial|me interesa contratar)\b/i;
 const LEAD_WARM_RE = /\b(información|más info|más información|me interesa|interesado|interesada|saber más|cómo funciona|qué ofrecéis|qué servicios|qué hacéis|qué incluye|cuéntame más|qué es|podéis ayudarme)\b/i;
 
+// ── CRM-001: Greeting-only pattern — do NOT auto-create CRM contact from these ─
+// Matches bare greetings / single-word / short filler messages with no CRM value.
+const GREETING_ONLY_RE =
+  /^(?:hola+|buenas?|buenos\s+d[ií]as?|buenas\s+tardes?|buenas\s+noches?|buen\s+d[ií]a|good\s+(?:morning|afternoon|evening|day)|hi+|hey+|hello+|saludos|ey+|ola+|yo+|ok+|k+|👋+)[!¡.,?…\s]*$/i;
+// Helpers to detect qualifying contact data inside a message text
+function hasValidContactData(text: string): boolean {
+  const hasPhone = /\b\d[\d\s\-().]{5,}\d\b/.test(text);
+  const hasEmail = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/.test(text);
+  return hasPhone || hasEmail;
+}
+
 async function generateTelegramAIReply(params: {
   orgId:         number;
   orgName:       string;
@@ -201,9 +212,10 @@ INTENCIÓN REPROGRAMAR ("Cambia mi cita", "Reprograma mi cita", "Mueve mi cita",
 → Respuesta obligatoria tras éxito: "Tu cita ha sido reprogramada para [fecha y hora]."
 
 INTENCIÓN NUEVA CITA ("Quiero una cita", "Agenda una reunión", "Reserva una llamada", "Quiero hablar con un asesor", "Necesito una demo"):
-→ Llama create_appointment con la fecha/hora que indique el usuario.
+→ Si hay bloque "CLIENTE IDENTIFICADO:" en este prompt: llama create_appointment DIRECTAMENTE con la fecha/hora que indique el usuario. No pidas datos de contacto — el cliente ya existe en el CRM.
+→ CRM-002 (solo si NO hay bloque "CLIENTE IDENTIFICADO:"): No crees la cita. Primero pide nombre completo y teléfono o email. Una vez recogidos, el sistema registrará al contacto y podrás crear la cita.
 
-REGLA DE VALIDACIÓN: Después de create_appointment/reschedule_appointment/cancel_appointment, el tool ya verifica en la base de datos. SOLO confirma éxito si el tool devuelve success:true. NUNCA confirmes desde tu memoria.
+REGLA DE VALIDACIÓN (CRM-003): Después de create_appointment/reschedule_appointment/cancel_appointment, el tool verifica en la base de datos. SOLO confirma éxito si el tool devuelve success:true Y verified:true. NUNCA confirmes desde tu memoria ni si el tool devuelve error.
 REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres cancelled/rescheduled/completed.
 - IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
 
@@ -432,8 +444,18 @@ async function executeTelegramCreateAppointment(
       reminder:    false,
     }).returning();
 
-    // Display time: read back from DB to ensure consistency (stored value = displayed value)
-    const savedAppt = appointment!;
+    // ── CRM-003: DB READ-BACK VALIDATION ────────────────────────────────────────
+    if (!appointment) {
+      return JSON.stringify({ error: "Error al crear la cita: la inserción no devolvió registro. Intenta de nuevo." });
+    }
+    // Re-read from DB to guarantee the stored value is what we display
+    const [savedAppt] = await db.select().from(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, appointment.id), eq(appointmentsTable.orgId, orgId)));
+
+    if (!savedAppt || Math.abs(savedAppt.startTime.getTime() - startTime.getTime()) > 60_000) {
+      return JSON.stringify({ error: "Error de validación: la cita no se pudo verificar en la base de datos." });
+    }
+
     const localDate = apptDateDisplay(savedAppt.startTime);
     const localTime = apptTimeDisplay(savedAppt.startTime);
 
@@ -859,29 +881,38 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     });
   }
 
-  // Auto-create contact if not found (task 4)
+  // ── CRM-001: Only auto-create contact when the message has CRM value ─────────
+  // Pure greetings ("Hola", "Buenas", "Hi"…) without phone/email → skip creation.
+  // Any substantive message (>30 chars, contains phone/email, or is not a greeting)
+  // is enough to create the contact and begin tracking the conversation.
+  const isGreetingOnly = GREETING_ONLY_RE.test(trimmed) && !hasValidContactData(text);
+
   if (!client && (senderName || username)) {
-    try {
-      const newName = senderName || username || `Telegram ${chatIdStr}`;
-      const [created] = await db.insert(clientsTable).values({
-        orgId,
-        name:           newName,
-        phone:          null,
-        email:          null,
-        status:         "prospect",
-        telegramChatId: chatIdStr,
-        notes:          `Contacto creado automáticamente desde Telegram\nChat ID: ${chatIdStr}${username ? `\nUsername: ${username}` : ""}\nUser ID: ${msg.from?.id ?? "?"}`,
-      }).returning();
-      client = created;
-      console.log(`[Telegram] ✅ Auto-created contact: ${newName} (id=${created?.id})`);
-      logIntegrationEvent({
-        orgId, integrationSlug: "telegram", direction: "inbound",
-        eventType: "contact_created", status: "processed",
-        summary: `Contacto creado automáticamente: ${newName} (chat_id: ${chatIdStr})`,
-        payloadJson: JSON.stringify({ chatId, senderName, username, userId: msg.from?.id }),
-      });
-    } catch (err) {
-      console.error("[Telegram] Auto-create contact failed:", err);
+    if (isGreetingOnly) {
+      console.log(`[CRM-001] Greeting-only from unknown contact (chat_id=${chatIdStr}) — skipping auto-create`);
+    } else {
+      try {
+        const newName = senderName || username || `Telegram ${chatIdStr}`;
+        const [created] = await db.insert(clientsTable).values({
+          orgId,
+          name:           newName,
+          phone:          null,
+          email:          null,
+          status:         "prospect",
+          telegramChatId: chatIdStr,
+          notes:          `Contacto creado automáticamente desde Telegram\nChat ID: ${chatIdStr}${username ? `\nUsername: ${username}` : ""}\nUser ID: ${msg.from?.id ?? "?"}`,
+        }).returning();
+        client = created;
+        console.log(`[Telegram] ✅ Auto-created contact: ${newName} (id=${created?.id})`);
+        logIntegrationEvent({
+          orgId, integrationSlug: "telegram", direction: "inbound",
+          eventType: "contact_created", status: "processed",
+          summary: `Contacto creado automáticamente: ${newName} (chat_id: ${chatIdStr})`,
+          payloadJson: { chatId, senderName, username, userId: msg.from?.id },
+        });
+      } catch (err) {
+        console.error("[Telegram] Auto-create contact failed:", err);
+      }
     }
   }
 
@@ -963,6 +994,19 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
   if (!isAccepted && !isRejected) {
     if (!token) {
       console.warn(`[Telegram AI] No token for orgId=${orgId} — cannot reply`);
+      return;
+    }
+
+    // ── CRM-001: Greeting from unknown contact → static welcome, no AI call ────
+    if (!client && isGreetingOnly) {
+      const [orgRow] = await db.select({ name: organizationsTable.name })
+        .from(organizationsTable).where(eq(organizationsTable.id, orgId));
+      const orgLabel = orgRow?.name ?? "nuestro equipo";
+      const welcomeReply =
+        `¡Hola! 👋 Soy Ava, el asistente de *${orgLabel}*. ` +
+        `Para poder ayudarte, ¿me dices tu nombre completo y cómo puedo contactarte (teléfono o email)?`;
+      await tgSend(token, chatId, welcomeReply);
+      console.log(`[CRM-001] Static welcome sent to unknown contact chat_id=${chatIdStr}`);
       return;
     }
 
