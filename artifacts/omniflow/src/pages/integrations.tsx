@@ -173,8 +173,8 @@ export default function IntegrationsPage() {
     setLoading(true);
     try {
       const res  = await authFetch(`${BASE_URL}/api/integrations`);
-      const data = await res.json() as IntegrationItem[];
-      setItems(data);
+      const data = await res.json();
+      setItems(Array.isArray(data) ? (data as IntegrationItem[]) : []);
     } catch {
       toast({ title: "Error cargando integraciones", variant: "destructive" });
     } finally {
