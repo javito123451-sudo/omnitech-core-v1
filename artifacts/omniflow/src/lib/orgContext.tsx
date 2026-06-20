@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useState,
+  useCallback,
   type ReactNode,
 } from "react";
 import { useUser, useAuth } from "@clerk/react";
@@ -31,6 +32,8 @@ interface OrgContextValue {
   user: UserInfo | null;
   loading: boolean;
   needsSetup: boolean;
+  modules: Record<string, boolean>;
+  canAccessModule: (key: string) => boolean;
   refetch: () => void;
 }
 
@@ -39,6 +42,8 @@ const OrgContext = createContext<OrgContextValue>({
   user: null,
   loading: true,
   needsSetup: false,
+  modules: {},
+  canAccessModule: () => true,
   refetch: () => {},
 });
 
@@ -53,9 +58,21 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [modules, setModules] = useState<Record<string, boolean>>({});
   const [tick, setTick] = useState(0);
 
   const refetch = () => setTick((t) => t + 1);
+
+  const canAccessModule = useCallback(
+    (key: string): boolean => {
+      // crm is always on — never gated
+      if (key === "crm") return true;
+      // If the key has an explicit entry, use it; otherwise fail-open (true)
+      // so newly-added modules don't break before being configured
+      return modules[key] !== false;
+    },
+    [modules],
+  );
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -64,6 +81,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       setOrg(null);
       setUser(null);
       setNeedsSetup(false);
+      setModules({});
       setLoading(false);
       return;
     }
@@ -80,12 +98,17 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       })
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
-        return res.json() as Promise<{ user: UserInfo; organization: OrgInfo | null }>;
+        return res.json() as Promise<{
+          user: UserInfo;
+          organization: OrgInfo | null;
+          modules: Record<string, boolean>;
+        }>;
       })
-      .then(({ user: u, organization }) => {
+      .then(({ user: u, organization, modules: mods }) => {
         setUser(u);
         setOrg(organization);
         setNeedsSetup(!organization);
+        setModules({ ...mods, crm: true });
       })
       .catch((err) => {
         console.error("OrgProvider: failed to load user", err);
@@ -96,7 +119,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   }, [isSignedIn, isLoaded, tick]);
 
   return (
-    <OrgContext.Provider value={{ org, user, loading, needsSetup, refetch }}>
+    <OrgContext.Provider value={{ org, user, loading, needsSetup, modules, canAccessModule, refetch }}>
       {children}
     </OrgContext.Provider>
   );

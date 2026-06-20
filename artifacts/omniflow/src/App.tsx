@@ -49,6 +49,7 @@ import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import ManualHome from "@/pages/manual/index";
 import ManualChapter from "@/pages/manual/chapter";
+import { ModuleGuard } from "@/components/ModuleGuard";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -261,7 +262,9 @@ function AppRoutes() {
       <Route path="/assistant">
         <ProtectedRoute>
           <MainLayout>
-            <Assistant />
+            <ModuleGuard moduleKey="ai_agents">
+              <Assistant />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
@@ -275,7 +278,9 @@ function AppRoutes() {
       <Route path="/statistics">
         <ProtectedRoute>
           <MainLayout>
-            <Statistics />
+            <ModuleGuard moduleKey="analytics">
+              <Statistics />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
@@ -290,7 +295,9 @@ function AppRoutes() {
       <Route path="/memory">
         <ProtectedRoute>
           <MainLayout>
-            <MemoryPage />
+            <ModuleGuard moduleKey="ai_agents">
+              <MemoryPage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
@@ -304,7 +311,9 @@ function AppRoutes() {
       <Route path="/executive">
         <ProtectedRoute>
           <MainLayout>
-            <ExecutivePage />
+            <ModuleGuard moduleKey="analytics">
+              <ExecutivePage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
@@ -318,49 +327,63 @@ function AppRoutes() {
       <Route path="/integrations">
         <ProtectedRoute>
           <MainLayout>
-            <IntegrationsPage />
+            <ModuleGuard moduleKey="integrations">
+              <IntegrationsPage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/integrations/whatsapp/logs">
         <ProtectedRoute>
           <MainLayout>
-            <WhatsAppLogsPage />
+            <ModuleGuard moduleKey="whatsapp">
+              <WhatsAppLogsPage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/integrations/telegram">
         <ProtectedRoute>
           <MainLayout>
-            <TelegramSettingsPage />
+            <ModuleGuard moduleKey="integrations">
+              <TelegramSettingsPage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/integrations/telegram/diagnostico">
         <ProtectedRoute>
           <MainLayout>
-            <TelegramDiagnosticoPage />
+            <ModuleGuard moduleKey="integrations">
+              <TelegramDiagnosticoPage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/telegram-inbox">
         <ProtectedRoute>
           <MainLayout>
-            <TelegramInboxPage />
+            <ModuleGuard moduleKey="ai_agents">
+              <TelegramInboxPage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/knowledge-base">
         <ProtectedRoute>
           <MainLayout>
-            <KnowledgeBasePage />
+            <ModuleGuard moduleKey="ai_agents">
+              <KnowledgeBasePage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/import">
         <ProtectedRoute>
           <MainLayout>
-            <ImportAiPage />
+            <ModuleGuard moduleKey="omni_import_ai">
+              <ImportAiPage />
+            </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
       </Route>

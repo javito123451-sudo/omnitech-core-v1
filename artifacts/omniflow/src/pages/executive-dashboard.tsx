@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { authFetch } from "@/lib/authFetch";
+import { useOrg } from "@/lib/orgContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -1157,6 +1158,8 @@ function InlineChat({ onClose }: { onClose: () => void }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ExecutiveDashboardPage() {
   const [, navigate] = useLocation();
+  const { canAccessModule } = useOrg();
+  const hasAnalytics = canAccessModule("analytics");
   const [showChat, setShowChat] = useState(false);
   const [showReport, setShowReport]     = useState(false);
   const [reportData, setReportData]     = useState<ExecReport | null>(null);
@@ -1209,6 +1212,7 @@ export default function ExecutiveDashboardPage() {
     queryFn: fetchIntelligence,
     refetchInterval: 90_000,
     staleTime: 45_000,
+    enabled: hasAnalytics,
   });
 
   const { data: allClients } = useQuery<{ id: number; name: string; email: string; phone?: string | null; company?: string | null; value?: string | null }[]>({
@@ -1348,6 +1352,21 @@ export default function ExecutiveDashboardPage() {
 
           {/* ── LEFT COLUMN ─────────────────────────────────────────────── */}
           <div className="space-y-6 min-w-0">
+
+            {/* Analytics disabled banner */}
+            {!hasAnalytics && (
+              <div className="rounded-2xl border border-slate-700/50 bg-slate-900/60 p-8 flex flex-col items-center justify-center text-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-slate-800/80 border border-white/10 flex items-center justify-center">
+                  <Lock className="w-5 h-5 text-slate-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-1">Analytics no activado</h3>
+                  <p className="text-xs text-slate-400 max-w-xs">
+                    El módulo Analytics está desactivado en este workspace. Contacta con tu administrador para habilitarlo.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* KPI Strip */}
             {isLoading ? (

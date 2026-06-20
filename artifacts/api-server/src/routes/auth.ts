@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { clerkClient } from "@clerk/express";
-import { db, usersTable, orgMembersTable, organizationsTable } from "@workspace/db";
+import { db, usersTable, orgMembersTable, organizationsTable, moduleConfigsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { hasPlatformRole } from "../middlewares/superAdmin";
@@ -110,6 +110,20 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       .innerJoin(organizationsTable, eq(orgMembersTable.orgId, organizationsTable.id))
       .where(eq(orgMembersTable.userId, user.id));
 
+    // ── Module config for this org ─────────────────────────────────────────
+    let modules: Record<string, boolean> = {};
+    if (membership) {
+      const configs = await db
+        .select({ moduleSlug: moduleConfigsTable.moduleSlug, isEnabled: moduleConfigsTable.isEnabled })
+        .from(moduleConfigsTable)
+        .where(eq(moduleConfigsTable.orgId, membership.orgId));
+      for (const cfg of configs) {
+        modules[cfg.moduleSlug] = cfg.isEnabled ?? true;
+      }
+    }
+    // crm is the core module — always enabled, cannot be disabled
+    modules.crm = true;
+
     const responsePayload = {
       user: {
         id:        user.id,
@@ -128,6 +142,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
             role:    membership.role,
           }
         : null,
+      modules,
     };
 
     shouldLogLogin(clerkUserId).then((should) => {

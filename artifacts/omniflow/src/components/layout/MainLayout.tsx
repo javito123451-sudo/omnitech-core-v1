@@ -15,85 +15,104 @@ import { authFetch } from "@/lib/authFetch";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// ── Nav structure ────────────────────────────────────────────────────────────
+// ── Nav structure ─────────────────────────────────────────────────────────────
+// moduleKey: if set, item is hidden when that module is disabled.
+// No moduleKey (or undefined) = always visible.
 
-const primaryNav = [
+interface NavItem {
+  icon: React.ElementType;
+  label: string;
+  href: string;
+  moduleKey?: string;
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const primaryNav: NavItem[] = [
   { icon: Cpu,      label: "Dashboard",    href: "/executive-dashboard" },
-  { icon: Users,    label: "Clientes",     href: "/clients" },
-  { icon: FileText, label: "Presupuestos", href: "/quotes" },
+  { icon: Users,    label: "Clientes",     href: "/clients",  moduleKey: "crm" },
+  { icon: FileText, label: "Presupuestos", href: "/quotes",   moduleKey: "crm" },
 ];
 
-const sidebarGroups = [
+const sidebarGroups: NavGroup[] = [
   {
     label: "Principal",
     items: [
-      { icon: Cpu,             label: "Dashboard",      href: "/executive-dashboard" },
-      { icon: LayoutDashboard, label: "Panel",          href: "/dashboard" },
-      { icon: Users,           label: "Clientes",       href: "/clients" },
-      { icon: FileText,        label: "Presupuestos",   href: "/quotes" },
+      { icon: Cpu,             label: "Dashboard",    href: "/executive-dashboard" },
+      { icon: LayoutDashboard, label: "Panel",        href: "/dashboard",          moduleKey: "crm" },
+      { icon: Users,           label: "Clientes",     href: "/clients",            moduleKey: "crm" },
+      { icon: FileText,        label: "Presupuestos", href: "/quotes",             moduleKey: "crm" },
     ],
   },
   {
     label: "Trabajo",
     items: [
-      { icon: MessageSquare, label: "Asistente",       href: "/assistant" },
-      { icon: CalendarDays,  label: "Calendario",      href: "/calendar" },
-      { icon: Bot,           label: "Conversaciones",   href: "/telegram-inbox" },
+      { icon: MessageSquare, label: "Asistente",     href: "/assistant",      moduleKey: "ai_agents" },
+      { icon: CalendarDays,  label: "Calendario",    href: "/calendar",       moduleKey: "crm" },
+      { icon: Bot,           label: "Conversaciones", href: "/telegram-inbox", moduleKey: "ai_agents" },
     ],
   },
   {
     label: "Análisis",
     items: [
-      { icon: Zap,       label: "Intelligence",  href: "/executive" },
-      { icon: BarChart3, label: "Estadísticas",  href: "/statistics" },
+      { icon: Zap,       label: "Intelligence", href: "/executive",  moduleKey: "analytics" },
+      { icon: BarChart3, label: "Estadísticas", href: "/statistics", moduleKey: "analytics" },
     ],
   },
   {
     label: "Sistema",
     items: [
-      { icon: Sparkles, label: "Omni Import AI", href: "/import" },
-      { icon: Brain,    label: "Memoria",         href: "/memory" },
-      { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base" },
-      { icon: Library,  label: "Manual",          href: "/manual" },
-      { icon: Puzzle,   label: "Integraciones",  href: "/integrations" },
+      { icon: Sparkles, label: "Omni Import AI", href: "/import",        moduleKey: "omni_import_ai" },
+      { icon: Brain,    label: "Memoria",        href: "/memory",        moduleKey: "ai_agents" },
+      { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base", moduleKey: "ai_agents" },
+      { icon: Library,  label: "Manual",         href: "/manual" },
+      { icon: Puzzle,   label: "Integraciones",  href: "/integrations",  moduleKey: "integrations" },
     ],
   },
 ];
 
-const moreItems = [
-  { icon: LayoutDashboard, label: "Panel",           href: "/dashboard",            group: "Principal" },
-  { icon: MessageSquare,   label: "Asistente",       href: "/assistant",            group: "Trabajo" },
-  { icon: CalendarDays,    label: "Calendario",      href: "/calendar",             group: "Trabajo" },
-  { icon: Bot,             label: "Conversaciones",   href: "/telegram-inbox",       group: "Trabajo" },
-  { icon: BookOpen,        label: "Base de Conoc.",   href: "/knowledge-base",        group: "Sistema" },
-  { icon: Zap,             label: "Intelligence",    href: "/executive",            group: "Análisis" },
-  { icon: BarChart3,       label: "Estadísticas",    href: "/statistics",           group: "Análisis" },
-  { icon: Sparkles,        label: "Omni Import AI",  href: "/import",               group: "Sistema" },
-  { icon: Brain,           label: "Memoria",         href: "/memory",               group: "Sistema" },
-  { icon: Library,         label: "Manual",          href: "/manual",               group: "Sistema" },
-  { icon: Puzzle,          label: "Integraciones",   href: "/integrations",         group: "Sistema" },
-  { icon: Settings,        label: "Configuración",   href: "/settings",             group: "Sistema" },
-];
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function isInMore(location: string) {
-  return moreItems.some((item) => location.startsWith(item.href));
+interface MoreItem extends NavItem {
+  group: string;
 }
 
-// ── More Drawer (mobile) ─────────────────────────────────────────────────────
+const moreItems: MoreItem[] = [
+  { icon: LayoutDashboard, label: "Panel",           href: "/dashboard",      group: "Principal",  moduleKey: "crm" },
+  { icon: MessageSquare,   label: "Asistente",       href: "/assistant",      group: "Trabajo",    moduleKey: "ai_agents" },
+  { icon: CalendarDays,    label: "Calendario",      href: "/calendar",       group: "Trabajo",    moduleKey: "crm" },
+  { icon: Bot,             label: "Conversaciones",  href: "/telegram-inbox", group: "Trabajo",    moduleKey: "ai_agents" },
+  { icon: BookOpen,        label: "Base de Conoc.",  href: "/knowledge-base", group: "Sistema",    moduleKey: "ai_agents" },
+  { icon: Zap,             label: "Intelligence",    href: "/executive",      group: "Análisis",   moduleKey: "analytics" },
+  { icon: BarChart3,       label: "Estadísticas",    href: "/statistics",     group: "Análisis",   moduleKey: "analytics" },
+  { icon: Sparkles,        label: "Omni Import AI",  href: "/import",         group: "Sistema",    moduleKey: "omni_import_ai" },
+  { icon: Brain,           label: "Memoria",         href: "/memory",         group: "Sistema",    moduleKey: "ai_agents" },
+  { icon: Library,         label: "Manual",          href: "/manual",         group: "Sistema" },
+  { icon: Puzzle,          label: "Integraciones",   href: "/integrations",   group: "Sistema",    moduleKey: "integrations" },
+  { icon: Settings,        label: "Configuración",   href: "/settings",       group: "Sistema" },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function isInMore(location: string, items: MoreItem[]) {
+  return items.some((item) => location.startsWith(item.href));
+}
+
+// ── More Drawer (mobile) ──────────────────────────────────────────────────────
 
 function MobileMoreDrawer({
   open,
   onClose,
   location,
+  visibleMoreItems,
 }: {
   open: boolean;
   onClose: () => void;
   location: string;
+  visibleMoreItems: MoreItem[];
 }) {
-  // group moreItems by group label
-  const groups = moreItems.reduce<Record<string, typeof moreItems>>((acc, item) => {
+  const groups = visibleMoreItems.reduce<Record<string, MoreItem[]>>((acc, item) => {
     acc[item.group] ??= [];
     acc[item.group].push(item);
     return acc;
@@ -103,7 +122,6 @@ function MobileMoreDrawer({
     <AnimatePresence>
       {open && (
         <>
-          {/* Backdrop */}
           <motion.div
             className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
             initial={{ opacity: 0 }}
@@ -112,7 +130,6 @@ function MobileMoreDrawer({
             onClick={onClose}
           />
 
-          {/* Sheet from bottom */}
           <motion.div
             className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-2xl max-h-[75dvh] flex flex-col"
             style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
@@ -121,7 +138,6 @@ function MobileMoreDrawer({
             exit={{ y: "100%" }}
             transition={{ type: "spring", stiffness: 320, damping: 32 }}
           >
-            {/* Handle + header */}
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border shrink-0">
               <div className="flex items-center gap-2">
                 <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
@@ -135,7 +151,6 @@ function MobileMoreDrawer({
               </button>
             </div>
 
-            {/* Scrollable list */}
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5 scrollbar-thin">
               {Object.entries(groups).map(([groupLabel, items]) => (
                 <div key={groupLabel}>
@@ -174,13 +189,13 @@ function MobileMoreDrawer({
   );
 }
 
-// ── Main layout ──────────────────────────────────────────────────────────────
+// ── Main layout ───────────────────────────────────────────────────────────────
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { signOut } = useClerk();
   const { user: clerkUser } = useUser();
-  const { org } = useOrg();
+  const { org, canAccessModule } = useOrg();
   const [moreOpen, setMoreOpen] = useState(false);
   const { isSuperAdmin } = useSuperAdmin();
   const [wsOverrideName, setWsOverrideName] = useState<string | null>(null);
@@ -196,6 +211,24 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     } catch { /* non-critical */ }
     signOut({ redirectUrl: `${basePath}/` });
   };
+
+  // ── Filter nav items by module access ────────────────────────────────────
+  const visiblePrimaryNav = primaryNav.filter(
+    (item) => !item.moduleKey || canAccessModule(item.moduleKey),
+  );
+
+  const visibleSidebarGroups = sidebarGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) => !item.moduleKey || canAccessModule(item.moduleKey),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const visibleMoreItems = moreItems.filter(
+    (item) => !item.moduleKey || canAccessModule(item.moduleKey),
+  );
 
   return (
     <div className="flex h-dvh w-full max-w-full bg-background overflow-hidden text-foreground">
@@ -220,9 +253,9 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        {/* Grouped sidebar nav */}
+        {/* Grouped sidebar nav — filtered by module access */}
         <nav className="flex-1 px-3 py-4 overflow-y-auto scrollbar-thin space-y-5">
-          {sidebarGroups.map((group) => (
+          {visibleSidebarGroups.map((group) => (
             <div key={group.label}>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 px-3 mb-1.5">
                 {group.label}
@@ -365,13 +398,12 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           {children}
         </div>
 
-        {/* ── Mobile Bottom Navigation — 4 items only ─────────────── */}
+        {/* ── Mobile Bottom Navigation — filtered by module access ─── */}
         <nav
           className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch bg-card/95 backdrop-blur-md border-t border-border"
           style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
         >
-          {/* Primary 3 items */}
-          {primaryNav.map((item) => {
+          {visiblePrimaryNav.map((item) => {
             const isActive = location.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href} className="flex-1">
@@ -410,7 +442,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           >
             <div className="relative flex flex-col items-center justify-center gap-0.5 py-2 h-14">
               <AnimatePresence>
-                {(moreOpen || isInMore(location)) && (
+                {(moreOpen || isInMore(location, visibleMoreItems)) && (
                   <motion.div
                     layoutId="active-nav-pill"
                     className="absolute top-1.5 left-1 right-1 h-8 rounded-xl bg-primary/12 border border-primary/20"
@@ -423,11 +455,11 @@ export default function MainLayout({ children }: { children: ReactNode }) {
               </AnimatePresence>
               <MoreHorizontal className={cn(
                 "w-5 h-5 relative z-10 transition-all duration-200",
-                (moreOpen || isInMore(location)) ? "text-primary scale-110" : "text-muted-foreground",
+                (moreOpen || isInMore(location, visibleMoreItems)) ? "text-primary scale-110" : "text-muted-foreground",
               )} />
               <span className={cn(
                 "text-[9px] font-semibold leading-none relative z-10 transition-colors duration-200",
-                (moreOpen || isInMore(location)) ? "text-primary" : "text-muted-foreground",
+                (moreOpen || isInMore(location, visibleMoreItems)) ? "text-primary" : "text-muted-foreground",
               )}>
                 Más
               </span>
@@ -440,6 +472,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           open={moreOpen}
           onClose={() => setMoreOpen(false)}
           location={location}
+          visibleMoreItems={visibleMoreItems}
         />
       </main>
     </div>
