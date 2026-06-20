@@ -33,6 +33,8 @@ export function clearModuleCache(orgId: number, slug?: string) {
   }
 }
 
+export { isModuleEnabled };
+
 export function requireModule(slug: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const orgId = (req as Request & { orgId?: number }).orgId;

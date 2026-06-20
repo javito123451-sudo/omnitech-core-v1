@@ -44,11 +44,11 @@ router.use("/telegram", telegramWebhookRouter);
 router.use(requireAuth, resolveOrg);
 
 router.use("/organizations", organizationsRouter);
-router.use("/clients", clientsRouter);
-router.use("/appointments", appointmentsRouter);
-router.use("/messages", messagesRouter);
+router.use("/clients",       clientsRouter);
+router.use("/appointments",  appointmentsRouter);
+router.use("/messages",      messagesRouter);
 router.get("/conversations", conversationsHandler);
-router.use("/stats", statsRouter);
+router.use("/stats",         requireModule("analytics"), statsRouter);
 
 // ── Stricter rate limit for AI chat: 20 req/min keyed by org+user ────────────
 const chatLimiter = rateLimit({
@@ -68,15 +68,16 @@ const chatLimiter = rateLimit({
 router.use("/chat", chatLimiter);
 router.use("/chat", chatRouter);
 
-router.use("/calendar-ai", calendarAiRouter);
-router.use("/memory", memoryRouter);
-router.use("/quotes", quotesRouter);
-router.use("/executive", executiveRouter);
-router.use("/whatsapp", whatsappRouter);
-router.use("/telegram", telegramRouter);
-router.use("/integrations", integrationsRouter);
-router.use("/import", importAiRouter);
-router.use("/knowledge-base", knowledgeBaseRouter);
-router.use("/docs", docsRouter);
+// ── Module-gated routes — requireModule enforces DB module_configs per org ────
+router.use("/calendar-ai",   requireModule("crm"),            calendarAiRouter);
+router.use("/memory",        requireModule("ai_agents"),       memoryRouter);
+router.use("/quotes",        requireModule("crm"),             quotesRouter);
+router.use("/executive",     requireModule("analytics"),       executiveRouter);
+router.use("/whatsapp",      requireModule("whatsapp"),        whatsappRouter);
+router.use("/telegram",      requireModule("ai_agents"),       telegramRouter);
+router.use("/integrations",  requireModule("integrations"),    integrationsRouter);
+router.use("/import",        requireModule("omni_import_ai"),  importAiRouter);
+router.use("/knowledge-base",requireModule("ai_agents"),       knowledgeBaseRouter);
+router.use("/docs",          requireModule("omni_docs"),       docsRouter);
 
 export default router;

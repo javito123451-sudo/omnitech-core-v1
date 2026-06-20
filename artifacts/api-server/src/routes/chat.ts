@@ -1,6 +1,7 @@
 import { Router } from "express";
 import OpenAI from "openai";
 import { logAiCall, checkBudgetBlocked } from "../utils/aiUsageLogger";
+import { isModuleEnabled } from "../middlewares/requireModule";
 import {
   db,
   agentMemoryTable,
@@ -722,6 +723,10 @@ async function executeCrmTool(
 
     // ── get_strategic_brief ──────────────────────────────────────────────────
     if (toolName === "get_strategic_brief") {
+      const analyticsOn = await isModuleEnabled(orgId, "analytics");
+      if (!analyticsOn) {
+        return JSON.stringify({ error: "El módulo Analytics no está habilitado para este workspace. No puedo generar análisis estratégico." });
+      }
       const now = new Date();
       const thirtyAgo      = new Date(now.getTime() - 30  * 86_400_000);
       const sevenFromNow   = new Date(now.getTime() + 7   * 86_400_000);

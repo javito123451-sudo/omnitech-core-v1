@@ -1273,60 +1273,67 @@ export default function ExecutiveDashboardPage() {
               Actualizar
             </button>
 
-            {/* ── ¿Qué haría un CEO? ── */}
-            <button
-              onClick={() => { if (ceoData) { setShowCeo(true); } else { void generateCeo(); } }}
-              disabled={ceoLoading}
-              className={cn(
-                "relative flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl border font-semibold transition-all overflow-hidden",
-                ceoLoading
-                  ? "border-amber-500/30 bg-amber-500/10 text-amber-400/60 cursor-wait"
-                  : "border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-orange-500/10 text-amber-400 hover:from-amber-500/25 hover:to-orange-500/20 hover:border-amber-500/50 shadow-sm shadow-amber-500/5",
-              )}
-            >
-              {ceoLoading ? (
-                <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Analizando…</>
-              ) : (
-                <>
-                  <span className="text-sm leading-none">👔</span>
-                  ¿Qué haría un CEO?
-                  {ceoData && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
-                </>
-              )}
-            </button>
-            {ceoError && (
-              <span className="text-[11px] text-red-400 border border-red-500/20 bg-red-500/10 px-2 py-1 rounded-lg">{ceoError}</span>
+            {/* ── ¿Qué haría un CEO? — only when analytics module is on ── */}
+            {hasAnalytics && (
+              <>
+                <button
+                  onClick={() => { if (ceoData) { setShowCeo(true); } else { void generateCeo(); } }}
+                  disabled={ceoLoading}
+                  className={cn(
+                    "relative flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl border font-semibold transition-all overflow-hidden",
+                    ceoLoading
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400/60 cursor-wait"
+                      : "border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-orange-500/10 text-amber-400 hover:from-amber-500/25 hover:to-orange-500/20 hover:border-amber-500/50 shadow-sm shadow-amber-500/5",
+                  )}
+                >
+                  {ceoLoading ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Analizando…</>
+                  ) : (
+                    <>
+                      <span className="text-sm leading-none">👔</span>
+                      ¿Qué haría un CEO?
+                      {ceoData && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
+                    </>
+                  )}
+                </button>
+                {ceoError && (
+                  <span className="text-[11px] text-red-400 border border-red-500/20 bg-red-500/10 px-2 py-1 rounded-lg">{ceoError}</span>
+                )}
+              </>
             )}
 
-            {/* ── Generar Informe Ejecutivo ── */}
-            <button
-              onClick={() => { if (reportData) { setShowReport(true); } else { void generateReport(); } }}
-              disabled={reportLoading}
-              className={cn(
-                "relative flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl border font-semibold transition-all overflow-hidden",
-                reportLoading
-                  ? "border-primary/30 bg-primary/10 text-primary/60 cursor-wait"
-                  : "border-primary/40 bg-gradient-to-r from-primary/20 to-violet-500/15 text-primary hover:from-primary/30 hover:to-violet-500/25 hover:border-primary/60 shadow-sm shadow-primary/10",
-              )}
-            >
-              {reportLoading ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  Analizando…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Generar Informe Ejecutivo
-                  {reportData && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />}
-                </>
-              )}
-            </button>
-
-            {reportError && (
-              <span className="text-[11px] text-red-400 border border-red-500/20 bg-red-500/10 px-2 py-1 rounded-lg">
-                {reportError}
-              </span>
+            {/* ── Generar Informe Ejecutivo — only when analytics module is on ── */}
+            {hasAnalytics && (
+              <>
+                <button
+                  onClick={() => { if (reportData) { setShowReport(true); } else { void generateReport(); } }}
+                  disabled={reportLoading}
+                  className={cn(
+                    "relative flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl border font-semibold transition-all overflow-hidden",
+                    reportLoading
+                      ? "border-primary/30 bg-primary/10 text-primary/60 cursor-wait"
+                      : "border-primary/40 bg-gradient-to-r from-primary/20 to-violet-500/15 text-primary hover:from-primary/30 hover:to-violet-500/25 hover:border-primary/60 shadow-sm shadow-primary/10",
+                  )}
+                >
+                  {reportLoading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Analizando…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Generar Informe Ejecutivo
+                      {reportData && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />}
+                    </>
+                  )}
+                </button>
+                {reportError && (
+                  <span className="text-[11px] text-red-400 border border-red-500/20 bg-red-500/10 px-2 py-1 rounded-lg">
+                    {reportError}
+                  </span>
+                )}
+              </>
             )}
 
             <button

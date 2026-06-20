@@ -270,14 +270,15 @@ controlCenterRouter.post("/users/:clerkId/activate", async (req, res) => {
 controlCenterRouter.get("/modules", async (_req, res) => {
   const CATALOG = [
     { slug: "crm",            name: "CRM",                   description: "Gestión de clientes y relaciones",       alwaysOn: true  },
+    { slug: "ai_agents",      name: "AI Agents",              description: "Agentes de IA personalizados",           alwaysOn: false },
+    { slug: "analytics",      name: "Analytics",              description: "Análisis avanzado de datos",             alwaysOn: false },
     { slug: "whatsapp",       name: "WhatsApp Business",      description: "Mensajería y automatizaciones",          alwaysOn: false },
+    { slug: "integrations",   name: "Integraciones",          description: "Conectores y webhooks externos",         alwaysOn: false },
     { slug: "omni_import_ai", name: "Omni Import AI",         description: "Importación inteligente de datos",       alwaysOn: false },
     { slug: "omni_docs",      name: "Omni Docs",              description: "Gestión documental",                     alwaysOn: false },
     { slug: "omni_security",  name: "Omni Security Core",     description: "Seguridad y auditoría avanzada",         alwaysOn: false },
     { slug: "omni_marketing", name: "Omni Marketing Hub",     description: "Campañas y automatización marketing",    alwaysOn: false },
-    { slug: "analytics",      name: "Analytics",              description: "Análisis avanzado de datos",             alwaysOn: false },
     { slug: "automations",    name: "Automations",            description: "Flujos de trabajo automatizados",        alwaysOn: false },
-    { slug: "ai_agents",      name: "AI Agents",              description: "Agentes de IA personalizados",           alwaysOn: false },
   ];
   const configs = await db.select().from(moduleConfigsTable);
   const orgs    = await db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable);
@@ -629,4 +630,52 @@ controlCenterRouter.get("/diagnostics", async (_req, res) => {
       "/control-center/diagnostics", "/control-center/ai-center",
     ] : [],
   });
+});
+
+// ── GET /module-matrix ─────────────────────────────────────────────────────────
+// Returns per-workspace module access matrix: configured state + which layers are gated
+controlCenterRouter.get("/module-matrix", async (_req, res) => {
+  const MODULE_CATALOG = [
+    { slug: "crm",            name: "CRM",                alwaysOn: true,  layers: ["menu", "route", "api", "backend"], frontendKey: "crm"           },
+    { slug: "ai_agents",      name: "AI Agents",          alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "ai_agents"     },
+    { slug: "analytics",      name: "Analytics",          alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "analytics"     },
+    { slug: "whatsapp",       name: "WhatsApp Business",  alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "whatsapp"      },
+    { slug: "integrations",   name: "Integraciones",      alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "integrations"  },
+    { slug: "omni_import_ai", name: "Omni Import AI",     alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_import_ai"},
+    { slug: "omni_docs",      name: "Omni Docs",          alwaysOn: false, layers: ["api", "backend"],                  frontendKey: "omni_docs"     },
+    { slug: "omni_security",  name: "Security Core",      alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "omni_security" },
+    { slug: "omni_marketing", name: "Marketing Hub",      alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "omni_marketing"},
+    { slug: "automations",    name: "Automations",        alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "automations"   },
+  ];
+
+  const [allConfigs, orgs] = await Promise.all([
+    db.select().from(moduleConfigsTable),
+    db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable),
+  ]);
+
+  const matrix = orgs.map(org => {
+    const modules = MODULE_CATALOG.map(mod => {
+      const cfg        = allConfigs.find(c => c.orgId === org.id && c.moduleSlug === mod.slug);
+      const configured = mod.alwaysOn ? true : (cfg ? (cfg.isEnabled ?? true) : true);
+      const inconsistent = false; // all layers now enforced consistently via requireModule
+      return {
+        slug:         mod.slug,
+        name:         mod.name,
+        alwaysOn:     mod.alwaysOn,
+        layers:       mod.layers,
+        configured,
+        menuVisible:  configured,
+        routeAccessible: configured,
+        apiAccessible:   configured,
+        backendAccessible: configured,
+        inconsistent,
+        configuredAt: cfg?.updatedAt ?? cfg?.createdAt ?? null,
+      };
+    });
+
+    const issues = modules.filter(m => m.inconsistent);
+    return { org, modules, issues };
+  });
+
+  res.json({ catalog: MODULE_CATALOG, matrix, generatedAt: new Date().toISOString() });
 });

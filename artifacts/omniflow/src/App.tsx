@@ -44,6 +44,7 @@ import LicensesPage from "@/pages/control-center/licenses";
 import DiagnosticsPage from "@/pages/control-center/diagnostics";
 import AiCenterPage from "@/pages/control-center/ai-center";
 import BackupsPage from "@/pages/control-center/backups";
+import ModuleMatrixPage from "@/pages/control-center/module-matrix";
 import ImportAiPage from "@/pages/import-ai";
 import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
@@ -476,6 +477,13 @@ function AppRoutes() {
         <SuperAdminRoute>
           <ControlCenterLayout>
             <BackupsPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/module-matrix">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <ModuleMatrixPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>
