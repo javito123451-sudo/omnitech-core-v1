@@ -146,6 +146,7 @@ export default function WorkspacesPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate]   = useState(false);
   const [newName, setNewName]         = useState("");
+  const [newOwnerEmail, setNewOwnerEmail] = useState("");
   const [deleteId, setDeleteId]       = useState<number | null>(null);
   const [editWs, setEditWs]           = useState<Workspace | null>(null);
   const [suspendWs, setSuspendWs]     = useState<Workspace | null>(null);
@@ -156,10 +157,15 @@ export default function WorkspacesPage() {
   });
 
   const createMut = useMutation({
-    mutationFn: (name: string) => authFetch(`${BASE}/api/control-center/workspaces`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
-    }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-workspaces"] }); setShowCreate(false); setNewName(""); },
+    mutationFn: ({ name, ownerEmail }: { name: string; ownerEmail?: string }) =>
+      authFetch(`${BASE}/api/control-center/workspaces`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, ownerEmail: ownerEmail || undefined }),
+      }).then(r => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cc-workspaces"] });
+      setShowCreate(false); setNewName(""); setNewOwnerEmail("");
+    },
   });
 
   const deleteMut = useMutation({
@@ -195,17 +201,32 @@ export default function WorkspacesPage() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0d0e1e] border border-white/10 rounded-2xl p-6 w-full max-w-md">
             <h2 className="text-white font-semibold text-lg mb-4">Crear Workspace</h2>
-            <input
-              type="text" value={newName} onChange={e => setNewName(e.target.value)}
-              placeholder="Nombre del workspace..."
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm"
-              onKeyDown={e => e.key === "Enter" && newName.trim() && createMut.mutate(newName)}
-            />
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">Nombre del workspace *</label>
+                <input
+                  type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                  placeholder="Ej: A3Servicios, Mi Empresa..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">Email del owner <span className="text-slate-600">(opcional — debe haberse registrado)</span></label>
+                <input
+                  type="email" value={newOwnerEmail} onChange={e => setNewOwnerEmail(e.target.value)}
+                  placeholder="usuario@empresa.com"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm"
+                />
+              </div>
+            </div>
+            {createMut.data && !createMut.data.ownerAssigned && newOwnerEmail && (
+              <p className="text-xs text-amber-400 mt-2">⚠️ Owner no encontrado — el workspace fue creado sin owner. El usuario debe registrarse primero.</p>
+            )}
             <div className="flex gap-3 mt-4">
-              <button onClick={() => { setShowCreate(false); setNewName(""); }} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 hover:text-white text-sm transition-all">Cancelar</button>
+              <button onClick={() => { setShowCreate(false); setNewName(""); setNewOwnerEmail(""); }} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 hover:text-white text-sm transition-all">Cancelar</button>
               <button
                 disabled={!newName.trim() || createMut.isPending}
-                onClick={() => newName.trim() && createMut.mutate(newName)}
+                onClick={() => newName.trim() && createMut.mutate({ name: newName, ownerEmail: newOwnerEmail })}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium transition-all flex items-center justify-center gap-2"
               >
                 {createMut.isPending ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Crear

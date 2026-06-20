@@ -136,12 +136,23 @@ controlCenterRouter.get("/workspaces", async (_req, res) => {
 
 // ── POST /workspaces ──────────────────────────────────────────────────────────
 controlCenterRouter.post("/workspaces", async (req, res) => {
-  const { name } = req.body as { name: string };
+  const { name, ownerEmail } = req.body as { name: string; ownerEmail?: string };
   if (!name?.trim()) { res.status(400).json({ error: "name required" }); return; }
   const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") + "-" + Math.random().toString(36).slice(2, 6);
   const [org] = await db.insert(organizationsTable).values({ name: name.trim(), slug }).returning();
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_created", resource: "workspace", resourceId: String(org!.id), details: { name }, req });
-  res.json(org);
+
+  // ── Assign owner membership if ownerEmail is provided ────────────────────
+  let ownerAssigned = false;
+  if (ownerEmail?.trim()) {
+    const [owner] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, ownerEmail.trim().toLowerCase()));
+    if (owner) {
+      await db.insert(orgMembersTable).values({ orgId: org!.id, userId: owner.id, role: "owner" });
+      ownerAssigned = true;
+    }
+  }
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_created", resource: "workspace", resourceId: String(org!.id), details: { name, ownerEmail: ownerEmail ?? null, ownerAssigned }, req });
+  res.json({ ...org, ownerAssigned });
 });
 
 // ── PATCH /workspaces/:id ─────────────────────────────────────────────────────
