@@ -10,6 +10,52 @@ import { useUser, useAuth } from "@clerk/react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+const MODULES_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface ModulesCache {
+  modules: Record<string, boolean>;
+  expiresAt: number;
+}
+
+function getCacheKey(clerkId: string) {
+  return `omni_modules_${clerkId}`;
+}
+
+function readModulesCache(clerkId: string): Record<string, boolean> | null {
+  try {
+    const raw = localStorage.getItem(getCacheKey(clerkId));
+    if (!raw) return null;
+    const parsed: ModulesCache = JSON.parse(raw);
+    if (Date.now() > parsed.expiresAt) {
+      localStorage.removeItem(getCacheKey(clerkId));
+      return null;
+    }
+    return parsed.modules;
+  } catch {
+    return null;
+  }
+}
+
+function writeModulesCache(clerkId: string, modules: Record<string, boolean>) {
+  try {
+    const entry: ModulesCache = {
+      modules,
+      expiresAt: Date.now() + MODULES_CACHE_TTL_MS,
+    };
+    localStorage.setItem(getCacheKey(clerkId), JSON.stringify(entry));
+  } catch {
+    // localStorage may be unavailable (private browsing, quota exceeded) — ignore
+  }
+}
+
+function clearModulesCache(clerkId: string) {
+  try {
+    localStorage.removeItem(getCacheKey(clerkId));
+  } catch {
+    // ignore
+  }
+}
+
 export interface OrgInfo {
   id: number;
   name: string;
@@ -52,13 +98,22 @@ export function useOrg() {
 }
 
 export function OrgProvider({ children }: { children: ReactNode }) {
-  const { isSignedIn, isLoaded } = useUser();
+  const { isSignedIn, isLoaded, user: clerkUser } = useUser();
   const { getToken } = useAuth();
   const [org, setOrg] = useState<OrgInfo | null>(null);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
-  const [modules, setModules] = useState<Record<string, boolean>>({});
+  const [modules, setModules] = useState<Record<string, boolean>>(() => {
+    // Eagerly seed from cache if the Clerk user ID is already known at init time.
+    // This covers the common case where the page is refreshed while still logged in.
+    // The ID may not yet be available on the very first render after a cold login —
+    // in that case we fall back to {} and re-seed once the effect runs.
+    if (typeof window !== "undefined" && clerkUser?.id) {
+      return readModulesCache(clerkUser.id) ?? {};
+    }
+    return {};
+  });
   const [tick, setTick] = useState(0);
 
   const refetch = () => setTick((t) => t + 1);
@@ -74,10 +129,24 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     [modules],
   );
 
+  // Seed modules from cache as soon as we know the Clerk user ID (handles
+  // the cold-login case where clerkUser.id wasn't available during useState init).
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !clerkUser?.id) return;
+    const cached = readModulesCache(clerkUser.id);
+    if (cached) {
+      setModules((prev) =>
+        // Only apply if modules is still empty (server fetch hasn't completed yet)
+        Object.keys(prev).length === 0 ? { ...cached, crm: true } : prev,
+      );
+    }
+  }, [isLoaded, isSignedIn, clerkUser?.id]);
+
   useEffect(() => {
     if (!isLoaded) return;
 
     if (!isSignedIn) {
+      if (clerkUser?.id) clearModulesCache(clerkUser.id);
       setOrg(null);
       setUser(null);
       setNeedsSetup(false);
@@ -105,10 +174,15 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         }>;
       })
       .then(({ user: u, organization, modules: mods }) => {
+        const freshModules = { ...mods, crm: true };
         setUser(u);
         setOrg(organization);
         setNeedsSetup(!organization);
-        setModules({ ...mods, crm: true });
+        setModules(freshModules);
+        // Persist to cache so the next render (e.g. page refresh) has data immediately
+        if (u?.clerkId) {
+          writeModulesCache(u.clerkId, freshModules);
+        }
       })
       .catch((err) => {
         console.error("OrgProvider: failed to load user", err);
