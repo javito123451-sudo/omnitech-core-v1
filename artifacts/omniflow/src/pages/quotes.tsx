@@ -16,7 +16,7 @@ import {
   Plus, FileText, Download, Trash2, Pencil, Search, X,
   ChevronRight, Euro, Calendar, User, Package,
   Brain, Sparkles, TrendingUp, CheckCircle2, Clock,
-  Target, Send, AlertCircle, Loader2,
+  Target, Send, AlertCircle, Loader2, Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -578,6 +578,22 @@ function QuoteDetailModal({
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const convertToInvoice = useMutation({
+    mutationFn: async () => {
+      const r = await authFetch(api(`/api/accounting/invoices/from-quote/${quoteId}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Factura creada", description: "El presupuesto se ha convertido en factura correctamente." });
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+    },
+    onError: (e: Error) => toast({ title: "Error al crear factura", description: e.message, variant: "destructive" }),
+  });
+
   const downloadPdf = () => {
     const a = document.createElement("a");
     a.href     = api(`/api/quotes/${quoteId}/pdf`);
@@ -725,6 +741,20 @@ function QuoteDetailModal({
             Eliminar
           </Button>
           <div className="flex-1" />
+          {(quote.status === "accepted") && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+              onClick={() => convertToInvoice.mutate()}
+              disabled={convertToInvoice.isPending}
+            >
+              {convertToInvoice.isPending
+                ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                : <Receipt className="w-3.5 h-3.5 mr-1.5" />}
+              Convertir a Factura
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={onEdit}>
             <Pencil className="w-3.5 h-3.5 mr-1.5" />
             Editar

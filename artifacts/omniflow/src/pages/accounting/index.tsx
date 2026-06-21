@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Receipt, CreditCard, TrendingDown, FileX, BarChart3, Plus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Receipt, CreditCard, TrendingDown, FileX, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { authFetch } from "@/lib/authFetch";
 import AccountingDashboard from "./Dashboard";
 import InvoicesList from "./InvoicesList";
 import PaymentsList from "./PaymentsList";
@@ -9,16 +11,43 @@ import CreditNotesList from "./CreditNotesList";
 
 type Tab = "dashboard" | "invoices" | "payments" | "expenses" | "credit-notes";
 
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "dashboard",    label: "Resumen",        icon: BarChart3   },
-  { id: "invoices",     label: "Facturas",        icon: Receipt     },
-  { id: "payments",     label: "Cobros",          icon: CreditCard  },
-  { id: "expenses",     label: "Gastos",          icon: TrendingDown},
-  { id: "credit-notes", label: "Notas Crédito",   icon: FileX       },
+const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; minRole: "member" | "manager" | "admin" }[] = [
+  { id: "dashboard",    label: "Resumen",        icon: BarChart3,    minRole: "member"  },
+  { id: "invoices",     label: "Facturas",        icon: Receipt,      minRole: "member"  },
+  { id: "payments",     label: "Cobros",          icon: CreditCard,   minRole: "manager" },
+  { id: "expenses",     label: "Gastos",          icon: TrendingDown, minRole: "admin"   },
+  { id: "credit-notes", label: "Notas Crédito",   icon: FileX,        minRole: "admin"   },
 ];
+
+const ROLE_LEVEL: Record<string, number> = {
+  member: 0,
+  manager: 1,
+  admin: 2,
+  owner: 2,
+};
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function AccountingPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
+
+  const { data: me } = useQuery<{ organization: { role: string } | null }>({
+    queryKey: ["auth-me"],
+    queryFn: async () => {
+      const r = await authFetch(`${BASE}/api/auth/me`);
+      if (!r.ok) return { organization: null };
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const orgRole = me?.organization?.role ?? "member";
+  const roleLevel = ROLE_LEVEL[orgRole] ?? 0;
+
+  const visibleTabs = ALL_TABS.filter(t => roleLevel >= (ROLE_LEVEL[t.minRole] ?? 0));
+
+  // If current tab is no longer visible (role changed), fall back to first visible
+  const activeTab = visibleTabs.find(t => t.id === tab) ? tab : (visibleTabs[0]?.id ?? "dashboard");
 
   return (
     <div className="space-y-5">
@@ -37,9 +66,9 @@ export default function AccountingPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-slate-800/60 rounded-xl border border-white/5 w-fit overflow-x-auto">
-        {TABS.map((t) => {
+        {visibleTabs.map((t) => {
           const Icon = t.icon;
-          const active = tab === t.id;
+          const active = activeTab === t.id;
           return (
             <button
               key={t.id}
@@ -59,11 +88,11 @@ export default function AccountingPage() {
       </div>
 
       {/* Tab content */}
-      {tab === "dashboard"    && <AccountingDashboard onNavigate={setTab} />}
-      {tab === "invoices"     && <InvoicesList />}
-      {tab === "payments"     && <PaymentsList />}
-      {tab === "expenses"     && <ExpensesList />}
-      {tab === "credit-notes" && <CreditNotesList />}
+      {activeTab === "dashboard"    && <AccountingDashboard onNavigate={setTab} />}
+      {activeTab === "invoices"     && <InvoicesList />}
+      {activeTab === "payments"     && <PaymentsList />}
+      {activeTab === "expenses"     && <ExpensesList />}
+      {activeTab === "credit-notes" && <CreditNotesList />}
     </div>
   );
 }

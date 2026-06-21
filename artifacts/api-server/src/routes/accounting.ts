@@ -45,6 +45,19 @@ async function nextCreditNoteNumber(orgId: number): Promise<string> {
   return `NC${year}-${seq}`;
 }
 
+function checkRole(
+  req: import("express").Request,
+  res: import("express").Response,
+  allowed: string[],
+): boolean {
+  const role = req.orgRole ?? "member";
+  if (!allowed.includes(role)) {
+    res.status(403).json({ error: "Sin permisos para esta acción" });
+    return false;
+  }
+  return true;
+}
+
 async function enrichInvoice(inv: typeof invoicesTable.$inferSelect) {
   const items = await db
     .select()
@@ -173,6 +186,19 @@ accountingRouter.post("/invoices", async (req, res) => {
   };
 
   if (!items.length) { res.status(400).json({ error: "Se requiere al menos un ítem" }); return; }
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
+
+  // Validate referenced IDs belong to this org before any insert
+  if (clientId) {
+    const [cl] = await db.select({ id: clientsTable.id }).from(clientsTable)
+      .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
+    if (!cl) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
+  }
+  if (quoteId) {
+    const [qt] = await db.select({ id: quotesTable.id }).from(quotesTable)
+      .where(and(eq(quotesTable.id, quoteId), eq(quotesTable.orgId, orgId)));
+    if (!qt) { res.status(403).json({ error: "Presupuesto no pertenece a esta organización" }); return; }
+  }
 
   const { subtotal, taxAmount, total } = calcTotals(items, taxRate);
   const invoiceNumber = await nextInvoiceNumber(orgId);
@@ -255,6 +281,7 @@ accountingRouter.patch("/invoices/:id", async (req, res) => {
 
 // DELETE /api/accounting/invoices/:id
 accountingRouter.delete("/invoices/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   const [inv] = await db.select().from(invoicesTable)
@@ -434,8 +461,8 @@ accountingRouter.get("/payments", async (req, res) => {
     createdAt: paymentsTable.createdAt,
   })
   .from(paymentsTable)
-  .leftJoin(invoicesTable, eq(paymentsTable.invoiceId, invoicesTable.id))
-  .leftJoin(clientsTable, eq(paymentsTable.clientId, clientsTable.id))
+  .leftJoin(invoicesTable, and(eq(paymentsTable.invoiceId, invoicesTable.id), eq(invoicesTable.orgId, orgId)))
+  .leftJoin(clientsTable, and(eq(paymentsTable.clientId, clientsTable.id), eq(clientsTable.orgId, orgId)))
   .where(whereClause)
   .orderBy(desc(paymentsTable.paidAt))
   .limit(limit)
@@ -454,6 +481,7 @@ accountingRouter.get("/payments", async (req, res) => {
 
 // POST /api/accounting/payments
 accountingRouter.post("/payments", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const { invoiceId, clientId, amount, currency = "EUR", method = "transfer", reference, notes, paidAt } = req.body as {
     invoiceId?: number; clientId?: number; amount: number; currency?: string;
@@ -462,6 +490,18 @@ accountingRouter.post("/payments", async (req, res) => {
 
   if (!amount || amount <= 0) { res.status(400).json({ error: "Importe inválido" }); return; }
 
+  // Validate ownership BEFORE any insert
+  if (invoiceId) {
+    const [inv] = await db.select({ id: invoicesTable.id }).from(invoicesTable)
+      .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
+    if (!inv) { res.status(403).json({ error: "Factura no pertenece a esta organización" }); return; }
+  }
+  if (clientId) {
+    const [cl] = await db.select({ id: clientsTable.id }).from(clientsTable)
+      .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
+    if (!cl) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
+  }
+
   const [payment] = await db.insert(paymentsTable).values({
     orgId, invoiceId: invoiceId ?? null, clientId: clientId ?? null,
     amount: String(amount), currency, method,
@@ -469,8 +509,8 @@ accountingRouter.post("/payments", async (req, res) => {
     paidAt: paidAt ? new Date(paidAt) : new Date(),
   }).returning();
 
+  // Auto-advance invoice status after confirmed ownership
   if (invoiceId) {
-    // Security: always scope invoice lookup to the caller's org
     const [inv] = await db.select().from(invoicesTable)
       .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
     if (inv) {
@@ -498,6 +538,7 @@ accountingRouter.post("/payments", async (req, res) => {
 
 // DELETE /api/accounting/payments/:id
 accountingRouter.delete("/payments/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   await db.delete(paymentsTable).where(and(eq(paymentsTable.id, id), eq(paymentsTable.orgId, orgId)));
@@ -529,8 +570,8 @@ accountingRouter.get("/credit-notes", async (req, res) => {
     createdAt: creditNotesTable.createdAt,
   })
   .from(creditNotesTable)
-  .leftJoin(invoicesTable, eq(creditNotesTable.invoiceId, invoicesTable.id))
-  .leftJoin(clientsTable, eq(creditNotesTable.clientId, clientsTable.id))
+  .leftJoin(invoicesTable, and(eq(creditNotesTable.invoiceId, invoicesTable.id), eq(invoicesTable.orgId, orgId)))
+  .leftJoin(clientsTable, and(eq(creditNotesTable.clientId, clientsTable.id), eq(clientsTable.orgId, orgId)))
   .where(eq(creditNotesTable.orgId, orgId))
   .orderBy(desc(creditNotesTable.createdAt))
   .limit(limit)
@@ -545,6 +586,7 @@ accountingRouter.get("/credit-notes", async (req, res) => {
 
 // POST /api/accounting/credit-notes
 accountingRouter.post("/credit-notes", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const { invoiceId, clientId, amount, currency = "EUR", reason } = req.body as {
     invoiceId?: number; clientId?: number; amount: number; currency?: string; reason?: string;
@@ -563,6 +605,13 @@ accountingRouter.post("/credit-notes", async (req, res) => {
     }
   }
 
+  // Validate clientId belongs to this org
+  if (clientId) {
+    const [cl] = await db.select({ id: clientsTable.id }).from(clientsTable)
+      .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
+    if (!cl) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
+  }
+
   const noteNumber = await nextCreditNoteNumber(orgId);
 
   const [note] = await db.insert(creditNotesTable).values({
@@ -577,6 +626,7 @@ accountingRouter.post("/credit-notes", async (req, res) => {
 
 // PATCH /api/accounting/credit-notes/:id
 accountingRouter.patch("/credit-notes/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   const { status } = req.body as { status?: string };
@@ -614,6 +664,7 @@ accountingRouter.get("/expenses", async (req, res) => {
 
 // POST /api/accounting/expenses
 accountingRouter.post("/expenses", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const { category = "general", description, amount, currency = "EUR", vendor, expenseDate, receiptUrl, taxDeductible = false } = req.body as {
     category?: string; description: string; amount: number; currency?: string;
@@ -635,6 +686,7 @@ accountingRouter.post("/expenses", async (req, res) => {
 
 // PATCH /api/accounting/expenses/:id
 accountingRouter.patch("/expenses/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   const { category, description, amount, vendor, expenseDate, taxDeductible } = req.body as {
@@ -655,6 +707,7 @@ accountingRouter.patch("/expenses/:id", async (req, res) => {
 
 // DELETE /api/accounting/expenses/:id
 accountingRouter.delete("/expenses/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   await db.delete(expensesTable).where(and(eq(expensesTable.id, id), eq(expensesTable.orgId, orgId)));

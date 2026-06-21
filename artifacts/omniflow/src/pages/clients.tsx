@@ -240,6 +240,21 @@ function FinanzasTab({ clientId }: { clientId: number }) {
     retry: false,
   });
 
+  const { data: paymentsData } = useQuery<{
+    payments: {
+      id: number; invoiceNumber: string | null; amount: number;
+      method: string; paidAt: string; reference: string | null;
+    }[];
+  }>({
+    queryKey: ["client-payments", clientId],
+    queryFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/payments?clientId=${clientId}&limit=50`);
+      if (!r.ok) return { payments: [] };
+      return r.json();
+    },
+    retry: false,
+  });
+
   const STATUS_COLOR: Record<string, string> = {
     draft:    "bg-slate-500/10 text-slate-400 border-slate-500/20",
     sent:     "bg-amber-500/10 text-amber-400 border-amber-500/20",
@@ -306,7 +321,7 @@ function FinanzasTab({ clientId }: { clientId: number }) {
       </div>
 
       {/* Invoice list */}
-      <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+      <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
         {invoices.map(inv => (
           <div key={inv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-background/40 border border-border/50">
             <div className="min-w-0">
@@ -324,6 +339,28 @@ function FinanzasTab({ clientId }: { clientId: number }) {
           </div>
         ))}
       </div>
+
+      {/* Payments list */}
+      {paymentsData && paymentsData.payments.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Cobros registrados</p>
+          <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
+            {paymentsData.payments.map(p => (
+              <div key={p.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/15">
+                <div className="min-w-0">
+                  {p.invoiceNumber && (
+                    <p className="text-[10px] font-mono text-emerald-400/70 truncate">{p.invoiceNumber}</p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground capitalize">
+                    {p.method} · {new Date(p.paidAt).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-emerald-400 shrink-0">{fmtEur(p.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
