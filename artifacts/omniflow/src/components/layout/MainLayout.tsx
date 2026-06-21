@@ -65,6 +65,7 @@ const sidebarGroups: NavGroup[] = [
   {
     label: "Sistema",
     items: [
+      { icon: Zap,      label: "Ava Autopilot",  href: "/automations",   moduleKey: "automations" },
       { icon: Sparkles, label: "Omni Import AI", href: "/import",        moduleKey: "omni_import_ai" },
       { icon: Brain,    label: "Memoria",        href: "/memory",        moduleKey: "ai_agents" },
       { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base", moduleKey: "ai_agents" },
@@ -91,6 +92,7 @@ const moreItems: MoreItem[] = [
   { icon: Library,         label: "Manual",          href: "/manual",         group: "Sistema" },
   { icon: Puzzle,          label: "Integraciones",   href: "/integrations",   group: "Sistema",    moduleKey: "integrations" },
   { icon: Settings,        label: "Configuración",   href: "/settings",       group: "Sistema" },
+  { icon: Zap,             label: "Ava Autopilot",   href: "/automations",    group: "Sistema",    moduleKey: "automations" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

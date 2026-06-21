@@ -10,3 +10,4 @@ export * from "./platform-admin";
 export * from "./ai-center";
 export * from "./knowledge-base";
 export * from "./docs";
+export * from "./autopilot";

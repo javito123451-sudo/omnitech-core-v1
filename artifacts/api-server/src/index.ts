@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { scheduleAutoBackups } from "./utils/backupEngine";
 import { autoSetupTelegramWebhooks } from "./routes/telegram";
 import { runStartupMigrations } from "./utils/startupMigrations";
+import { startAutopilotScheduler } from "./utils/autopilotScheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -27,6 +28,7 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   runStartupMigrations().catch(() => {});
   scheduleAutoBackups();
+  if (process.env["NODE_ENV"] !== "test") startAutopilotScheduler();
 
   // Auto-register Telegram webhooks for all configured orgs.
   // Priority: PUBLIC_URL (production) > REPLIT_DEV_DOMAIN (dev IDE open) > localhost (fallback, not reachable externally)

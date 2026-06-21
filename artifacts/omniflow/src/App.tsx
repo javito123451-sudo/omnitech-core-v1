@@ -46,6 +46,7 @@ import AiCenterPage from "@/pages/control-center/ai-center";
 import BackupsPage from "@/pages/control-center/backups";
 import ModuleMatrixPage from "@/pages/control-center/module-matrix";
 import ImportAiPage from "@/pages/import-ai";
+import AutomationsPage from "@/pages/automations";
 import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import ManualHome from "@/pages/manual/index";
@@ -384,6 +385,15 @@ function AppRoutes() {
           <MainLayout>
             <ModuleGuard moduleKey="omni_import_ai">
               <ImportAiPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/automations">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="automations">
+              <AutomationsPage />
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
