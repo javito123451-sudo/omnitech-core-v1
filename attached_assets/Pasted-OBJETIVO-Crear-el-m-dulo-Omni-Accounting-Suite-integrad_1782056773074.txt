@@ -1,0 +1,124 @@
+OBJETIVO
+
+Crear el módulo Omni Accounting Suite integrado dentro de OmniTech.
+
+REQUISITOS FUNCIONALES
+
+1. PRESUPUESTOS
+
+* Crear, editar y eliminar presupuestos.
+* Numeración automática configurable.
+* Estados:
+    * Draft
+    * Sent
+    * Approved
+    * Rejected
+    * Expired
+* PDF automático.
+* Envío por email.
+* Conversión de presupuesto a factura con un clic.
+* Historial de cambios y auditoría.
+
+2. FACTURACIÓN
+
+* Crear facturas manualmente.
+* Crear facturas desde presupuestos aprobados.
+* Facturas recurrentes.
+* Estados:
+    * Draft
+    * Pending
+    * Paid
+    * Overdue
+    * Cancelled
+* PDF automático.
+* Registro de pagos.
+* Notas de crédito / abonos.
+
+3. CONTABILIDAD
+
+* Registro de ingresos.
+* Registro de gastos.
+* Dashboard financiero.
+* Facturación mensual.
+* Facturación anual.
+* Beneficio estimado.
+* IVA repercutido.
+* IVA soportado.
+
+4. INTEGRACIÓN CRM
+
+Cada cliente debe mostrar:
+
+* Presupuestos asociados.
+* Facturas asociadas.
+* Pagos asociados.
+* Total facturado.
+* Total pendiente.
+
+5. INTEGRACIÓN OMNI SIGN
+
+* Firma electrónica de presupuestos.
+* Cambio automático a Approved tras firma.
+
+6. INTEGRACIÓN AVA AI
+
+Intenciones mínimas:
+
+* Crear presupuesto.
+* Consultar presupuesto.
+* Aprobar presupuesto.
+* Crear factura.
+* Consultar facturas pendientes.
+* Consultar deuda de clientes.
+* Consultar ingresos del mes.
+
+7. PERMISOS
+
+Roles:
+
+* SUPER_ADMIN
+* ADMIN
+* MANAGER
+* STAFF
+
+Permisos independientes para:
+
+* Ver presupuestos.
+* Crear presupuestos.
+* Ver facturas.
+* Crear facturas.
+* Ver contabilidad.
+
+8. WORKSPACES
+
+Toda la información debe estar aislada por workspace.
+
+Ningún usuario puede acceder a datos financieros de otro workspace.
+
+9. AUDITORÍA
+
+Registrar:
+
+* Creación.
+* Modificación.
+* Eliminación.
+* Conversión presupuesto → factura.
+* Registro de pago.
+
+10. DASHBOARD
+
+Widgets:
+
+* Ventas del mes.
+* Facturas pendientes.
+* Facturas vencidas.
+* Presupuestos pendientes.
+* Ingresos.
+* Gastos.
+* Beneficio.
+
+IMPORTANTE
+
+Seguir arquitectura existente de OmniTech.
+No crear un sistema independiente.
+Integrar con CRM, Roles, Auditoría, Workspaces y Ava AI existentes.
