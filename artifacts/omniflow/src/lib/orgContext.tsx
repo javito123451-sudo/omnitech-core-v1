@@ -145,8 +145,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isLoaded) return;
 
+    const currentClerkId = clerkUser?.id ?? null;
     if (!isSignedIn) {
-      if (clerkUser?.id) clearModulesCache(clerkUser.id);
+      if (currentClerkId) clearModulesCache(currentClerkId);
       setOrg(null);
       setUser(null);
       setNeedsSetup(false);

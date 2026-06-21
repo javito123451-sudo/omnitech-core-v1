@@ -437,7 +437,7 @@ export default function MemoryPage() {
   const [modalMem,      setModalMem]      = useState<MemoryEntry | null | "new">(null);
   const [historyMem,    setHistoryMem]    = useState<MemoryEntry | null>(null);
 
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchMemories = useCallback(async (category?: string) => {
     setLoading(true);

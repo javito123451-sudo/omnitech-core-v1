@@ -569,11 +569,11 @@ function AiPanel({ onClose, onFillForm, selectedAppt }: {
                   <div className="space-y-1.5">
                     <p className="text-sm font-semibold text-white">{String(resultJson.title ?? "")}</p>
                     <p className="text-xs text-slate-400 capitalize">{String(resultJson.type ?? "")}</p>
-                    {resultJson.description && <p className="text-xs text-slate-300 leading-relaxed">{String(resultJson.description)}</p>}
-                    {(resultJson.suggestedStartTime || resultJson.suggestedDuration) && (
+                    {!!resultJson.description && <p className="text-xs text-slate-300 leading-relaxed">{String(resultJson.description)}</p>}
+                    {!!(resultJson.suggestedStartTime || resultJson.suggestedDuration) && (
                       <p className="text-[11px] text-slate-500">
-                        {resultJson.suggestedStartTime && `Hora sugerida: ${resultJson.suggestedStartTime}`}
-                        {resultJson.suggestedDuration && ` · ${resultJson.suggestedDuration} min`}
+                        {!!resultJson.suggestedStartTime && `Hora sugerida: ${resultJson.suggestedStartTime}`}
+                        {!!resultJson.suggestedDuration && ` · ${resultJson.suggestedDuration} min`}
                       </p>
                     )}
                   </div>
@@ -701,7 +701,7 @@ function AiPanel({ onClose, onFillForm, selectedAppt }: {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Clock className="w-4 h-4 mr-2"/>}
                 Sugerir horarios
               </Button>
-              {resultJson?.suggestions && Array.isArray(resultJson.suggestions) && (
+              {Array.isArray(resultJson?.suggestions) && (
                 <div className="space-y-2">
                   {(resultJson.suggestions as Array<{ label: string; reason: string }>).map((s, i) => (
                     <div key={i} className="p-2.5 rounded-xl bg-white/[0.04] border border-amber-500/15">
@@ -709,7 +709,7 @@ function AiPanel({ onClose, onFillForm, selectedAppt }: {
                       <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{s.reason}</p>
                     </div>
                   ))}
-                  {resultJson.tip && (
+                  {!!resultJson.tip && (
                     <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
                       <p className="text-[11px] text-amber-300 leading-relaxed">{String(resultJson.tip)}</p>
                     </div>

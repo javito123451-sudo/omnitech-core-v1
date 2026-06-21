@@ -745,16 +745,21 @@ export default function Assistant() {
   useEffect(() => { syncSessionsFromDB(); }, [syncSessionsFromDB]);
 
   // ── Live client data from API ──────────────────────────────────────────────
+  // Orval injects queryKey internally via getGet*QueryOptions at runtime;
+  // the generated type incorrectly requires queryKey in the user-provided options.
   const { data: clientFull } = useGetClient(contextId ?? 0, {
-    query: { enabled: !!contextId },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query: { enabled: !!contextId } as any,
   });
   const { data: clientAppointments = [] } = useListAppointments(
     { clientId: contextId ?? 0 },
-    { query: { enabled: !!contextId } }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { query: { enabled: !!contextId } as any }
   );
   const { data: clientMessages = [] } = useListMessages(
     { clientId: contextId ?? 0 },
-    { query: { enabled: !!contextId } }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { query: { enabled: !!contextId } as any }
   );
 
   // Last message content for context panel
@@ -920,7 +925,7 @@ export default function Assistant() {
           const payload = line.slice(6).trim();
           if (payload === "[DONE]") { done = true; break; }
 
-          let parsed: { token?: string; error?: string; event?: string; memory?: AgentMemory };
+          let parsed: { token?: string; error?: string; event?: string; memory?: AgentMemory; sessionId?: string };
           try { parsed = JSON.parse(payload); }
           catch { continue; }
 

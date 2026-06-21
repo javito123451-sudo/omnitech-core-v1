@@ -310,8 +310,8 @@ export default function ImportAiPage() {
                   <div key={s} className="flex items-center gap-2">
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                       step === s ? "bg-violet-600 text-white" :
-                      arr.indexOf(step) > i ? "bg-emerald-600 text-white" : "bg-white/[0.05] text-slate-600"
-                    }`}>{arr.indexOf(step) > i ? <Check size={12} /> : i + 1}</div>
+                      arr.indexOf(step as Exclude<Step, "duplicates">) > i ? "bg-emerald-600 text-white" : "bg-white/[0.05] text-slate-600"
+                    }`}>{arr.indexOf(step as Exclude<Step, "duplicates">) > i ? <Check size={12} /> : i + 1}</div>
                     <span className={step === s ? "text-white" : "text-slate-600"}>
                       {s === "upload" ? "Subir" : s === "analyzing" ? "Analizar" : s === "review" ? "Revisar" : "Guardar"}
                     </span>
