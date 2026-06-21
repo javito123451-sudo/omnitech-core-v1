@@ -156,6 +156,23 @@ export async function runStartupMigrations(): Promise<void> {
 
     logger.info("[Migration] ✅ FIX-D: Accounting tables ensured");
 
+    // ── FIX E: Add tax_rate column to expenses if not present ───────────────
+    await db.execute(sql`
+      ALTER TABLE expenses ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0
+    `);
+    logger.info("[Migration] ✅ FIX-E: expenses.tax_rate column ensured");
+
+    // ── FIX F: Auto-advance overdue invoices ────────────────────────────────
+    // Invoices with due_date < NOW() and status sent/partial become overdue
+    await db.execute(sql`
+      UPDATE invoices
+      SET status = 'overdue', updated_at = NOW()
+      WHERE status IN ('sent', 'partial')
+        AND due_date IS NOT NULL
+        AND due_date < NOW()
+    `);
+    logger.info("[Migration] ✅ FIX-F: Overdue invoices auto-advanced");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

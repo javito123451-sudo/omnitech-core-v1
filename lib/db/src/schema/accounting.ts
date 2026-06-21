@@ -90,6 +90,7 @@ export const expensesTable = pgTable("expenses", {
   expenseDate: timestamp("expense_date").notNull().defaultNow(),
   receiptUrl:  text("receipt_url"),
   taxDeductible: boolean("tax_deductible").notNull().default(false),
+  taxRate:     numeric("tax_rate",   { precision: 5,  scale: 2 }).notNull().default("0"),
   createdAt:   timestamp("created_at").notNull().defaultNow(),
   updatedAt:   timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

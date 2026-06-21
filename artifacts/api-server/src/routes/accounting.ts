@@ -229,6 +229,7 @@ accountingRouter.post("/invoices", async (req, res) => {
 
 // PATCH /api/accounting/invoices/:id
 accountingRouter.patch("/invoices/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   const { status, notes, dueDate, currency, taxRate, items } = req.body as {
@@ -381,14 +382,18 @@ accountingRouter.post("/invoices/from-quote/:quoteId", async (req, res) => {
   res.status(201).json(await enrichInvoice(inv!));
 });
 
-// POST /api/accounting/quotes/:id/to-invoice — legacy alias, kept for backwards-compat (no approval check)
+// POST /api/accounting/quotes/:id/to-invoice — legacy alias; enforces same approval rules as primary endpoint
 accountingRouter.post("/quotes/:id/to-invoice", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const quoteId = Number(req.params["id"]);
 
   const [quote] = await db.select().from(quotesTable)
     .where(and(eq(quotesTable.id, quoteId), eq(quotesTable.orgId, orgId)));
   if (!quote) { res.status(404).json({ error: "Presupuesto no encontrado" }); return; }
+  if (quote.status !== "approved" && quote.status !== "accepted") {
+    res.status(422).json({ error: "Solo se pueden convertir presupuestos aprobados (estado: aprobado)" }); return;
+  }
 
   const quoteItems = await db.select().from(quoteItemsTable)
     .where(eq(quoteItemsTable.quoteId, quoteId))
@@ -666,9 +671,9 @@ accountingRouter.get("/expenses", async (req, res) => {
 accountingRouter.post("/expenses", async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
-  const { category = "general", description, amount, currency = "EUR", vendor, expenseDate, receiptUrl, taxDeductible = false } = req.body as {
+  const { category = "general", description, amount, currency = "EUR", vendor, expenseDate, receiptUrl, taxDeductible = false, taxRate = 0 } = req.body as {
     category?: string; description: string; amount: number; currency?: string;
-    vendor?: string; expenseDate?: string; receiptUrl?: string; taxDeductible?: boolean;
+    vendor?: string; expenseDate?: string; receiptUrl?: string; taxDeductible?: boolean; taxRate?: number;
   };
 
   if (!description?.trim()) { res.status(400).json({ error: "Descripción requerida" }); return; }
@@ -677,11 +682,11 @@ accountingRouter.post("/expenses", async (req, res) => {
   const [exp] = await db.insert(expensesTable).values({
     orgId, category, description: description.trim(), amount: String(amount), currency,
     vendor: vendor ?? null, expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
-    receiptUrl: receiptUrl ?? null, taxDeductible,
+    receiptUrl: receiptUrl ?? null, taxDeductible, taxRate: String(taxRate),
   }).returning();
 
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "expense_created", resource: "expense", resourceId: exp!.id, orgId, details: { category, amount }, req });
-  res.status(201).json({ ...exp, amount: parseFloat(String(exp!.amount)) });
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "expense_created", resource: "expense", resourceId: exp!.id, orgId, details: { category, amount, taxRate }, req });
+  res.status(201).json({ ...exp, amount: parseFloat(String(exp!.amount)), taxRate: parseFloat(String(exp!.taxRate)) });
 });
 
 // PATCH /api/accounting/expenses/:id
@@ -689,8 +694,8 @@ accountingRouter.patch("/expenses/:id", async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
-  const { category, description, amount, vendor, expenseDate, taxDeductible } = req.body as {
-    category?: string; description?: string; amount?: number; vendor?: string; expenseDate?: string; taxDeductible?: boolean;
+  const { category, description, amount, vendor, expenseDate, taxDeductible, taxRate } = req.body as {
+    category?: string; description?: string; amount?: number; vendor?: string; expenseDate?: string; taxDeductible?: boolean; taxRate?: number;
   };
 
   const upd: Partial<typeof expensesTable.$inferInsert> = { updatedAt: new Date() };
@@ -700,6 +705,7 @@ accountingRouter.patch("/expenses/:id", async (req, res) => {
   if (vendor !== undefined) upd.vendor = vendor;
   if (expenseDate) upd.expenseDate = new Date(expenseDate);
   if (taxDeductible !== undefined) upd.taxDeductible = taxDeductible;
+  if (taxRate !== undefined) upd.taxRate = String(taxRate);
 
   await db.update(expensesTable).set(upd).where(and(eq(expensesTable.id, id), eq(expensesTable.orgId, orgId)));
   res.json({ ok: true });
@@ -805,11 +811,11 @@ accountingRouter.get("/summary", async (req, res) => {
     .from(invoicesTable)
     .where(and(eq(invoicesTable.orgId, orgId), gte(invoicesTable.createdAt, startOfYear)));
 
-  // IVA soportado = IVA paid on deductible expenses (21% estimate)
+  // IVA soportado = IVA paid on expenses with a tax_rate > 0 (use stored rate per expense)
   const [{ ivaSoportado }] = await db.execute(sql`
-    SELECT COALESCE(SUM(amount * 0.21), 0)::numeric AS "ivaSoportado"
+    SELECT COALESCE(SUM(amount * tax_rate / 100), 0)::numeric AS "ivaSoportado"
     FROM expenses
-    WHERE org_id = ${orgId} AND tax_deductible = true AND expense_date >= ${startOfYear}
+    WHERE org_id = ${orgId} AND tax_rate > 0 AND expense_date >= ${startOfYear}
   `) as unknown as [{ ivaSoportado: string }];
 
   // Tasa de cobro = paid invoices / total invoiced this year

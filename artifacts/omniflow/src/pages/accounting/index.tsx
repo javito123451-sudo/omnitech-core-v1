@@ -14,7 +14,7 @@ type Tab = "dashboard" | "invoices" | "payments" | "expenses" | "credit-notes";
 const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; minRole: "member" | "manager" | "admin" }[] = [
   { id: "dashboard",    label: "Resumen",        icon: BarChart3,    minRole: "member"  },
   { id: "invoices",     label: "Facturas",        icon: Receipt,      minRole: "member"  },
-  { id: "payments",     label: "Cobros",          icon: CreditCard,   minRole: "manager" },
+  { id: "payments",     label: "Cobros",          icon: CreditCard,   minRole: "admin"   },
   { id: "expenses",     label: "Gastos",          icon: TrendingDown, minRole: "admin"   },
   { id: "credit-notes", label: "Notas Crédito",   icon: FileX,        minRole: "admin"   },
 ];
@@ -24,6 +24,7 @@ const ROLE_LEVEL: Record<string, number> = {
   manager: 1,
   admin: 2,
   owner: 2,
+  SUPER_ADMIN: 2,
 };
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
