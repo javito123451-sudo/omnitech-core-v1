@@ -540,7 +540,7 @@ const APPT_STATUS_LABEL: Record<string, string> = {
   cancelled: "❌ Cancelada",
 };
 
-async function executeCrmTool(
+export async function executeCrmTool(
   toolName: string,
   args: Record<string, unknown>,
   orgId: number,

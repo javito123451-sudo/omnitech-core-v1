@@ -52,8 +52,8 @@ const ACTION_LABELS: Record<string, string> = {
   strategic_brief:      "Briefing estratégico",
   notify_owner:         "Notificar al propietario",
   send_whatsapp:        "Enviar WhatsApp",
+  create_task:          "Crear seguimiento (actividad)",
   update_client_status: "Actualizar estado de cliente",
-  log_activity:         "Registrar actividad",
 };
 
 const TRIGGERS = Object.entries(TRIGGER_LABELS);
@@ -106,11 +106,11 @@ const TEMPLATES: Template[] = [
     name:          "Seguimiento de leads",
     triggerType:   "inactive_clients_30d",
     triggerConfig: { days: 7 },
-    actionType:    "log_activity",
-    actionConfig:  {},
+    actionType:    "create_task",
+    actionConfig:  { note: "Seguimiento requerido — sin actividad en 7 días" },
     icon:          Calendar,
     color:         "text-cyan-400 bg-cyan-400/10 border-cyan-400/25",
-    description:   "Registra actividad cuando leads llevan 7 días sin contacto.",
+    description:   "Crea actividades de seguimiento cuando leads llevan 7 días sin contacto.",
   },
 ];
 
@@ -261,6 +261,47 @@ function TaskModal({
                   rows={3}
                   className="w-full text-sm bg-background/50 border border-border rounded-lg px-3 py-2.5 text-white placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
+              </div>
+            </>
+          )}
+
+          {actionType === "create_task" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">Nota de seguimiento</label>
+              <Input
+                value={String(actionConfig["note"] ?? "")}
+                onChange={e => setActionConfig(prev => ({ ...prev, note: e.target.value }))}
+                placeholder="Ej: Llamar al cliente para seguimiento"
+                className="bg-background/50 border-border"
+              />
+            </div>
+          )}
+
+          {actionType === "update_client_status" && (
+            <>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Estado origen</label>
+                <select
+                  value={String(actionConfig["from_status"] ?? "lead")}
+                  onChange={e => setActionConfig(prev => ({ ...prev, from_status: e.target.value }))}
+                  className="w-full text-sm bg-background/50 border border-border rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+                >
+                  {["lead","active","inactive","churned"].map(s => (
+                    <option key={s} value={s} className="bg-background">{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Estado destino</label>
+                <select
+                  value={String(actionConfig["to_status"] ?? "inactive")}
+                  onChange={e => setActionConfig(prev => ({ ...prev, to_status: e.target.value }))}
+                  className="w-full text-sm bg-background/50 border border-border rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+                >
+                  {["lead","active","inactive","churned"].map(s => (
+                    <option key={s} value={s} className="bg-background">{s}</option>
+                  ))}
+                </select>
               </div>
             </>
           )}
@@ -431,11 +472,18 @@ function TaskCard({
         </div>
       </div>
 
-      {task.lastRunAt && (
-        <p className="text-[10px] text-muted-foreground/60">
-          Última ejecución: {formatDistanceToNow(new Date(task.lastRunAt), { locale: es, addSuffix: true })}
-        </p>
-      )}
+      <div className="space-y-0.5">
+        {task.lastRunAt && (
+          <p className="text-[10px] text-muted-foreground/60">
+            Última: {formatDistanceToNow(new Date(task.lastRunAt), { locale: es, addSuffix: true })}
+          </p>
+        )}
+        {task.nextRunAt && task.enabled && (
+          <p className="text-[10px] text-primary/50">
+            Próxima: {formatDistanceToNow(new Date(task.nextRunAt), { locale: es, addSuffix: true })}
+          </p>
+        )}
+      </div>
 
       <div className="flex items-center gap-1 border-t border-white/[0.05] pt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <button

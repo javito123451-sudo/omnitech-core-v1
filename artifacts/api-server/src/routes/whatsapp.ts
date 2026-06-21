@@ -57,7 +57,7 @@ function normalizePhone(phone: string): string {
 }
 
 // ── Send WhatsApp message with full logging ───────────────────────────────────
-async function sendAutoReply(orgId: number, toPhone: string, message: string): Promise<boolean> {
+export async function sendAutoReply(orgId: number, toPhone: string, message: string): Promise<boolean> {
   const toClean = toPhone.replace(/\D/g, "");
   try {
     const creds = await getWhatsAppCreds(orgId);
