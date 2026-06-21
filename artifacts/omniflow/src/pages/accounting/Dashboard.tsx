@@ -2,14 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import {
   TrendingUp, TrendingDown, Receipt, AlertTriangle, Clock,
-  DollarSign, BarChart3, CreditCard,
+  DollarSign, BarChart3, CreditCard, FileText, Percent, CheckCircle2,
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 interface Summary {
   invoices: Record<string, { count: number; total: number }>;
   overdueCount: number;
+  overdueTotal: number;
   pendingTotal: number;
+  pendingQuotesCount: number;
+  tasaCobro: number;
+  ivaRepercutido: number;
+  ivaSoportado: number;
   revenue: { thisMonth: number; thisYear: number };
   expenses: { thisMonth: number; thisYear: number };
   profit: { thisMonth: number; thisYear: number };
@@ -44,26 +49,26 @@ export default function AccountingDashboard({ onNavigate }: { onNavigate: (tab: 
     );
   }
 
-  const paidTotal = data.invoices["paid"]?.total ?? 0;
-  const paidCount = data.invoices["paid"]?.count ?? 0;
-  const sentCount = (data.invoices["sent"]?.count ?? 0) + (data.invoices["partial"]?.count ?? 0);
+  const paidTotal  = data.invoices["paid"]?.total ?? 0;
+  const paidCount  = data.invoices["paid"]?.count ?? 0;
+  const sentCount  = (data.invoices["sent"]?.count ?? 0) + (data.invoices["partial"]?.count ?? 0);
   const draftCount = data.invoices["draft"]?.count ?? 0;
+  const pendingCount = (data.invoices["draft"]?.count ?? 0) + (data.invoices["sent"]?.count ?? 0) + (data.invoices["partial"]?.count ?? 0);
 
-  // Build merged chart data
   const allMonths = Array.from(new Set([
     ...data.charts.monthlyRevenue.map(r => r.month),
     ...data.charts.monthlyExpenses.map(e => e.month),
   ])).sort();
 
   const chartData = allMonths.map(m => ({
-    month: MonthLabel(m),
+    month:    MonthLabel(m),
     ingresos: data.charts.monthlyRevenue.find(r => r.month === m)?.revenue ?? 0,
-    gastos:   data.charts.monthlyExpenses.find(e => e.month === m)?.amount ?? 0,
+    gastos:   data.charts.monthlyExpenses.find(e => e.month === m)?.amount  ?? 0,
   }));
 
   const kpis = [
     {
-      label: "Ingresos este mes",
+      label: "Ventas del mes",
       value: fmt(data.revenue.thisMonth),
       sub: `Año: ${fmt(data.revenue.thisYear)}`,
       icon: TrendingUp,
@@ -72,16 +77,52 @@ export default function AccountingDashboard({ onNavigate }: { onNavigate: (tab: 
       onClick: () => onNavigate("payments"),
     },
     {
-      label: "Gastos este mes",
-      value: fmt(data.expenses.thisMonth),
-      sub: `Año: ${fmt(data.expenses.thisYear)}`,
+      label: "Facturas pendientes",
+      value: fmt(data.pendingTotal),
+      sub: `${pendingCount} factura${pendingCount !== 1 ? "s" : ""} sin cobrar`,
+      icon: Clock,
+      color: "text-amber-400",
+      bg: "bg-amber-500/10 border-amber-500/20",
+      onClick: () => onNavigate("invoices"),
+    },
+    {
+      label: "Facturas vencidas",
+      value: fmt(data.overdueTotal),
+      sub: `${data.overdueCount} vencida${data.overdueCount !== 1 ? "s" : ""}`,
+      icon: AlertTriangle,
+      color: data.overdueCount > 0 ? "text-rose-400" : "text-slate-400",
+      bg: data.overdueCount > 0 ? "bg-rose-500/10 border-rose-500/20" : "bg-slate-500/10 border-slate-500/20",
+      onClick: () => onNavigate("invoices"),
+    },
+    {
+      label: "Presupuestos pendientes",
+      value: String(data.pendingQuotesCount),
+      sub: "Sin convertir a factura",
+      icon: FileText,
+      color: "text-violet-400",
+      bg: "bg-violet-500/10 border-violet-500/20",
+      onClick: undefined,
+    },
+    {
+      label: "Ingresos acumulados",
+      value: fmt(data.revenue.thisYear),
+      sub: "Este año",
+      icon: CreditCard,
+      color: "text-cyan-400",
+      bg: "bg-cyan-500/10 border-cyan-500/20",
+      onClick: () => onNavigate("payments"),
+    },
+    {
+      label: "Gastos acumulados",
+      value: fmt(data.expenses.thisYear),
+      sub: "Este año",
       icon: TrendingDown,
       color: "text-rose-400",
       bg: "bg-rose-500/10 border-rose-500/20",
       onClick: () => onNavigate("expenses"),
     },
     {
-      label: "Beneficio neto",
+      label: "Beneficio estimado",
       value: fmt(data.profit.thisMonth),
       sub: data.profit.thisMonth >= 0 ? "Positivo este mes" : "Negativo este mes",
       icon: DollarSign,
@@ -90,39 +131,56 @@ export default function AccountingDashboard({ onNavigate }: { onNavigate: (tab: 
       onClick: undefined,
     },
     {
-      label: "Pendiente de cobro",
-      value: fmt(data.pendingTotal),
-      sub: `${sentCount} factura${sentCount !== 1 ? "s" : ""} en curso`,
-      icon: Clock,
-      color: "text-amber-400",
-      bg: "bg-amber-500/10 border-amber-500/20",
+      label: "IVA repercutido",
+      value: fmt(data.ivaRepercutido),
+      sub: "IVA en facturas emitidas (año)",
+      icon: Percent,
+      color: "text-blue-400",
+      bg: "bg-blue-500/10 border-blue-500/20",
+      onClick: undefined,
+    },
+    {
+      label: "IVA soportado",
+      value: fmt(data.ivaSoportado),
+      sub: "IVA en gastos deducibles (año)",
+      icon: Percent,
+      color: "text-indigo-400",
+      bg: "bg-indigo-500/10 border-indigo-500/20",
+      onClick: () => onNavigate("expenses"),
+    },
+    {
+      label: "Tasa de cobro",
+      value: `${data.tasaCobro}%`,
+      sub: "Facturas cobradas vs emitidas",
+      icon: CheckCircle2,
+      color: data.tasaCobro >= 80 ? "text-emerald-400" : data.tasaCobro >= 50 ? "text-amber-400" : "text-rose-400",
+      bg: data.tasaCobro >= 80 ? "bg-emerald-500/10 border-emerald-500/20" : data.tasaCobro >= 50 ? "bg-amber-500/10 border-amber-500/20" : "bg-rose-500/10 border-rose-500/20",
       onClick: () => onNavigate("invoices"),
     },
   ];
 
   return (
     <div className="space-y-5">
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 10 KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {kpis.map((kpi) => (
           <button
             key={kpi.label}
             onClick={kpi.onClick}
-            className={`text-left p-4 rounded-xl border ${kpi.bg} transition-all hover:brightness-110 ${kpi.onClick ? "cursor-pointer" : "cursor-default"}`}
+            className={`text-left p-3.5 rounded-xl border ${kpi.bg} transition-all hover:brightness-110 ${kpi.onClick ? "cursor-pointer" : "cursor-default"}`}
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-slate-400 font-medium">{kpi.label}</span>
-              <kpi.icon className={`w-4 h-4 ${kpi.color}`} />
+              <span className="text-[10px] text-slate-400 font-medium leading-tight">{kpi.label}</span>
+              <kpi.icon className={`w-3.5 h-3.5 ${kpi.color} shrink-0`} />
             </div>
-            <div className={`text-xl font-bold ${kpi.color}`}>{kpi.value}</div>
-            <div className="text-xs text-slate-500 mt-0.5">{kpi.sub}</div>
+            <div className={`text-base font-bold ${kpi.color} truncate`}>{kpi.value}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{kpi.sub}</div>
           </button>
         ))}
       </div>
 
-      {/* Charts + invoice status */}
+      {/* Chart + invoice status */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Revenue vs expenses chart */}
         <div className="lg:col-span-2 bg-slate-800/40 border border-white/5 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-4 h-4 text-cyan-400" />
@@ -150,7 +208,7 @@ export default function AccountingDashboard({ onNavigate }: { onNavigate: (tab: 
           )}
         </div>
 
-        {/* Invoice status */}
+        {/* Invoice status breakdown */}
         <div className="bg-slate-800/40 border border-white/5 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Receipt className="w-4 h-4 text-cyan-400" />
@@ -158,8 +216,8 @@ export default function AccountingDashboard({ onNavigate }: { onNavigate: (tab: 
           </div>
 
           {[
-            { label: "Pagadas", count: paidCount, total: paidTotal, color: "bg-emerald-500", text: "text-emerald-400" },
-            { label: "En curso", count: sentCount, total: (data.invoices["sent"]?.total ?? 0) + (data.invoices["partial"]?.total ?? 0), color: "bg-amber-500", text: "text-amber-400" },
+            { label: "Pagadas",    count: paidCount,  total: paidTotal, color: "bg-emerald-500", text: "text-emerald-400" },
+            { label: "En curso",   count: sentCount,  total: (data.invoices["sent"]?.total ?? 0) + (data.invoices["partial"]?.total ?? 0), color: "bg-amber-500", text: "text-amber-400" },
             { label: "Borradores", count: draftCount, total: data.invoices["draft"]?.total ?? 0, color: "bg-slate-500", text: "text-slate-400" },
           ].map((s) => (
             <div key={s.label} className="flex items-center justify-between">
@@ -192,12 +250,12 @@ export default function AccountingDashboard({ onNavigate }: { onNavigate: (tab: 
         </div>
       </div>
 
-      {/* Quick stats */}
+      {/* IVA summary strip */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Total facturado (año)", value: fmt(data.revenue.thisYear + data.pendingTotal), icon: Receipt, color: "text-slate-300" },
-          { label: "Cobrado (año)", value: fmt(data.revenue.thisYear), icon: CreditCard, color: "text-emerald-400" },
-          { label: "Gastos (año)", value: fmt(data.expenses.thisYear), icon: TrendingDown, color: "text-rose-400" },
+          { label: "Total facturado (año)",  value: fmt(data.revenue.thisYear + data.pendingTotal), icon: Receipt,     color: "text-slate-300" },
+          { label: "IVA neto a liquidar",    value: fmt(data.ivaRepercutido - data.ivaSoportado),  icon: Percent,     color: data.ivaRepercutido >= data.ivaSoportado ? "text-amber-400" : "text-emerald-400" },
+          { label: "Beneficio acumulado",    value: fmt(data.profit.thisYear),                       icon: TrendingUp,  color: data.profit.thisYear >= 0 ? "text-emerald-400" : "text-rose-400" },
         ].map((s) => (
           <div key={s.label} className="bg-slate-800/30 border border-white/5 rounded-xl p-4 text-center">
             <s.icon className={`w-5 h-5 mx-auto mb-1 ${s.color}`} />

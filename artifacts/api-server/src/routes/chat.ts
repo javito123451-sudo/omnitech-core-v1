@@ -12,8 +12,11 @@ import {
   activityTable,
   quotesTable,
   quoteItemsTable,
+  invoicesTable,
+  invoiceItemsTable,
+  paymentsTable,
 } from "@workspace/db";
-import { eq, and, asc, desc, gte, lt, inArray, ilike } from "drizzle-orm";
+import { eq, and, asc, desc, gte, lt, inArray, ilike, sum, count, sql } from "drizzle-orm";
 
 const router = Router();
 const AGENT_SLUG = "operator";
@@ -519,6 +522,168 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           },
         },
         required: ["client_name", "title", "items"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_invoice",
+      description:
+        "Crea una factura real en el módulo de contabilidad y la guarda en la base de datos. " +
+        "Úsala cuando el usuario diga 'crear factura', 'emitir factura', 'facturar a', o similar. " +
+        "El módulo omni_accounting debe estar habilitado.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          client_name: {
+            type: "string",
+            description: "Nombre del cliente tal como aparece en el CRM.",
+          },
+          items: {
+            type: "array",
+            description: "Líneas de la factura. Mínimo 1.",
+            items: {
+              type: "object",
+              properties: {
+                description: { type: "string", description: "Descripción del servicio o producto." },
+                quantity:    { type: "number", description: "Cantidad." },
+                unit_price:  { type: "number", description: "Precio unitario en euros." },
+              },
+              required: ["description", "quantity", "unit_price"],
+            },
+          },
+          tax_rate: {
+            type: "number",
+            description: "Porcentaje de IVA. Por defecto 21.",
+          },
+          notes: {
+            type: "string",
+            description: "Notas adicionales. Opcional.",
+          },
+          due_date: {
+            type: "string",
+            description: "Fecha de vencimiento en formato YYYY-MM-DD. Opcional.",
+          },
+        },
+        required: ["client_name", "items"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_invoice",
+      description:
+        "Obtiene el detalle de una factura por su número o ID. " +
+        "Úsala cuando el usuario pregunte por una factura específica.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          invoice_number: {
+            type: "string",
+            description: "Número de factura, ej: 'F2026-0001'.",
+          },
+          invoice_id: {
+            type: "number",
+            description: "ID numérico de la factura (alternativa al número).",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_pending_invoices",
+      description:
+        "Lista las facturas pendientes de cobro (estado: borrador, enviada, pago parcial). " +
+        "Úsala para '¿qué facturas tengo pendientes?', '¿qué me deben?', '¿cuánto tengo por cobrar?'.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          include_overdue: {
+            type: "boolean",
+            description: "Si true, incluye solo las vencidas. Por defecto devuelve todas las pendientes.",
+          },
+          limit: {
+            type: "number",
+            description: "Número máximo de facturas. Por defecto 20.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "register_payment",
+      description:
+        "Registra un pago recibido contra una factura existente. La factura se marca como pagada automáticamente si el importe cubre el total. " +
+        "Úsala cuando el usuario diga 'han pagado', 'registra el pago', 'marca como pagado', etc.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          invoice_number: {
+            type: "string",
+            description: "Número de factura, ej: 'F2026-0001'.",
+          },
+          amount: {
+            type: "number",
+            description: "Importe recibido en euros.",
+          },
+          method: {
+            type: "string",
+            enum: ["transfer", "card", "cash", "check", "other"],
+            description: "Medio de pago. Por defecto 'transfer'.",
+          },
+          reference: {
+            type: "string",
+            description: "Referencia bancaria o número de transacción. Opcional.",
+          },
+        },
+        required: ["invoice_number", "amount"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_client_debt",
+      description:
+        "Obtiene el total de deuda pendiente de un cliente (facturas no pagadas). " +
+        "Úsala para '¿cuánto me debe X?', '¿qué deuda tiene el cliente Y?'.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          client_name: {
+            type: "string",
+            description: "Nombre del cliente.",
+          },
+        },
+        required: ["client_name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_monthly_income",
+      description:
+        "Obtiene un resumen de ingresos, gastos y beneficio del mes actual o del año. " +
+        "Úsala para '¿cuánto hemos ingresado este mes?', '¿cuál es el beneficio del mes?', '¿cómo van las ventas?'.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          period: {
+            type: "string",
+            enum: ["this_month", "this_year"],
+            description: "'this_month' = mes actual · 'this_year' = acumulado anual. Por defecto 'this_month'.",
+          },
+        },
+        required: [],
       },
     },
   },
@@ -1094,6 +1259,317 @@ export async function executeCrmTool(
         })),
         downloadPath: `/api/quotes/${quote!.id}/pdf`,
         message: `Presupuesto #${String(quote!.id).padStart(5, "0")} creado con éxito. Disponible en la sección Presupuestos.`,
+      });
+    }
+
+    // ── create_invoice ──────────────────────────────────────────────────────
+    if (toolName === "create_invoice") {
+      const accountingEnabled = await isModuleEnabled(orgId, "omni_accounting");
+      if (!accountingEnabled) {
+        return JSON.stringify({ error: "El módulo de contabilidad (omni_accounting) no está habilitado para este workspace." });
+      }
+
+      const clientName = String(args["client_name"] ?? "");
+      const rawItems   = (args["items"] as { description: string; quantity: number; unit_price: number }[]) ?? [];
+      const taxRate    = Number(args["tax_rate"] ?? 21);
+      const notes      = args["notes"]    ? String(args["notes"])    : null;
+      const dueDateStr = args["due_date"] ? String(args["due_date"]) : null;
+
+      if (!clientName || rawItems.length === 0) {
+        return JSON.stringify({ error: "Se necesita client_name y al menos un ítem" });
+      }
+
+      const matchedClients = await db.select()
+        .from(clientsTable)
+        .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientName}%`)))
+        .limit(5);
+      if (matchedClients.length === 0) {
+        return JSON.stringify({ error: `No encontré ningún cliente que coincida con "${clientName}".` });
+      }
+      const client = matchedClients[0]!;
+
+      const lineItems = rawItems.map((item, idx) => ({
+        description: item.description,
+        quantity:    Number(item.quantity)   || 1,
+        unitPrice:   Number(item.unit_price) || 0,
+        total:       (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
+        orderIndex:  idx,
+      }));
+      const subtotal  = lineItems.reduce((acc, i) => acc + i.total, 0);
+      const taxAmount = parseFloat(((subtotal * taxRate) / 100).toFixed(2));
+      const total     = parseFloat((subtotal + taxAmount).toFixed(2));
+
+      // Generate invoice number
+      const year = new Date().getFullYear();
+      const [{ cnt }] = await db.select({ cnt: count() }).from(invoicesTable)
+        .where(and(eq(invoicesTable.orgId, orgId), gte(invoicesTable.createdAt, new Date(`${year}-01-01`))));
+      const invoiceNumber = `F${year}-${String(Number(cnt ?? 0) + 1).padStart(4, "0")}`;
+
+      const [inv] = await db.insert(invoicesTable).values({
+        orgId,
+        clientId: client.id,
+        invoiceNumber,
+        status: "draft",
+        currency: "EUR",
+        subtotal: String(subtotal),
+        taxRate:  String(taxRate),
+        taxAmount: String(taxAmount),
+        total:    String(total),
+        notes:    notes,
+        dueDate:  dueDateStr ? new Date(dueDateStr) : null,
+      }).returning();
+
+      await db.insert(invoiceItemsTable).values(
+        lineItems.map(item => ({
+          invoiceId: inv!.id,
+          description: item.description,
+          quantity:  String(item.quantity),
+          unitPrice: String(item.unitPrice),
+          total:     String(parseFloat(item.total.toFixed(2))),
+          orderIndex: item.orderIndex,
+        })),
+      );
+
+      return JSON.stringify({
+        success: true,
+        invoiceId: inv!.id,
+        invoiceNumber,
+        clientName: client.name,
+        total,
+        taxRate,
+        taxAmount,
+        subtotal,
+        status: "draft",
+        items: lineItems.map(i => ({ description: i.description, quantity: i.quantity, unitPrice: i.unitPrice, total: parseFloat(i.total.toFixed(2)) })),
+        message: `Factura ${invoiceNumber} creada en borrador para ${client.name} — ${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(total)}. Disponible en Contabilidad > Facturas.`,
+      });
+    }
+
+    // ── get_invoice ─────────────────────────────────────────────────────────
+    if (toolName === "get_invoice") {
+      const invoiceNumber = args["invoice_number"] ? String(args["invoice_number"]) : null;
+      const invoiceId     = args["invoice_id"]     ? Number(args["invoice_id"])     : null;
+
+      if (!invoiceNumber && !invoiceId) {
+        return JSON.stringify({ error: "Se necesita invoice_number o invoice_id" });
+      }
+
+      const conditions = [eq(invoicesTable.orgId, orgId)];
+      if (invoiceNumber) conditions.push(eq(invoicesTable.invoiceNumber, invoiceNumber));
+      if (invoiceId)     conditions.push(eq(invoicesTable.id, invoiceId));
+
+      const [inv] = await db.select().from(invoicesTable).where(and(...conditions));
+      if (!inv) return JSON.stringify({ error: "Factura no encontrada" });
+
+      const invItems = await db.select().from(invoiceItemsTable)
+        .where(eq(invoiceItemsTable.invoiceId, inv.id));
+      const invPayments = await db.select().from(paymentsTable)
+        .where(eq(paymentsTable.invoiceId, inv.id));
+      const client = inv.clientId
+        ? await db.select({ name: clientsTable.name, company: clientsTable.company })
+            .from(clientsTable).where(eq(clientsTable.id, inv.clientId)).then(r => r[0] ?? null)
+        : null;
+
+      const totalPaid = invPayments.reduce((s, p) => s + parseFloat(String(p.amount)), 0);
+
+      return JSON.stringify({
+        invoiceNumber: inv.invoiceNumber,
+        status: inv.status,
+        client: client?.name ?? null,
+        company: client?.company ?? null,
+        total: parseFloat(String(inv.total)),
+        totalPaid,
+        balance: parseFloat(String(inv.total)) - totalPaid,
+        dueDate: inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("es-ES") : null,
+        paidAt:  inv.paidAt  ? new Date(inv.paidAt).toLocaleDateString("es-ES")  : null,
+        items: invItems.map(i => ({
+          description: i.description,
+          quantity:    parseFloat(String(i.quantity)),
+          unitPrice:   parseFloat(String(i.unitPrice)),
+          total:       parseFloat(String(i.total)),
+        })),
+      });
+    }
+
+    // ── list_pending_invoices ────────────────────────────────────────────────
+    if (toolName === "list_pending_invoices") {
+      const includeOverdue = args["include_overdue"] === true;
+      const limit = Math.min(Number(args["limit"] ?? 20), 50);
+
+      const statusFilter = includeOverdue
+        ? ["sent", "partial"]
+        : ["draft", "sent", "partial"];
+
+      const rows = await db.select({
+        id: invoicesTable.id,
+        invoiceNumber: invoicesTable.invoiceNumber,
+        status: invoicesTable.status,
+        total:  invoicesTable.total,
+        dueDate: invoicesTable.dueDate,
+        clientName: clientsTable.name,
+      })
+      .from(invoicesTable)
+      .leftJoin(clientsTable, eq(invoicesTable.clientId, clientsTable.id))
+      .where(and(
+        eq(invoicesTable.orgId, orgId),
+        inArray(invoicesTable.status, statusFilter),
+        ...(includeOverdue ? [sql`${invoicesTable.dueDate} < NOW()`] : []),
+      ))
+      .orderBy(desc(invoicesTable.createdAt))
+      .limit(limit);
+
+      const pendingTotal = rows.reduce((s, r) => s + parseFloat(String(r.total)), 0);
+
+      return JSON.stringify({
+        count: rows.length,
+        pendingTotal: Math.round(pendingTotal * 100) / 100,
+        invoices: rows.map(r => ({
+          invoiceNumber: r.invoiceNumber,
+          client:  r.clientName ?? "Sin cliente",
+          total:   parseFloat(String(r.total)),
+          status:  r.status,
+          dueDate: r.dueDate ? new Date(r.dueDate).toLocaleDateString("es-ES") : null,
+          overdue: r.dueDate ? new Date(r.dueDate) < new Date() : false,
+        })),
+        message: rows.length === 0
+          ? "No hay facturas pendientes."
+          : `Hay ${rows.length} factura${rows.length !== 1 ? "s" : ""} pendiente${rows.length !== 1 ? "s" : ""} por un total de ${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(pendingTotal)}.`,
+      });
+    }
+
+    // ── register_payment ─────────────────────────────────────────────────────
+    if (toolName === "register_payment") {
+      const invoiceNumber = String(args["invoice_number"] ?? "");
+      const amount        = Number(args["amount"] ?? 0);
+      const method        = String(args["method"] ?? "transfer");
+      const reference     = args["reference"] ? String(args["reference"]) : null;
+
+      if (!invoiceNumber || amount <= 0) {
+        return JSON.stringify({ error: "Se necesitan invoice_number y amount > 0" });
+      }
+
+      const [inv] = await db.select().from(invoicesTable)
+        .where(and(eq(invoicesTable.invoiceNumber, invoiceNumber), eq(invoicesTable.orgId, orgId)));
+      if (!inv) return JSON.stringify({ error: `Factura "${invoiceNumber}" no encontrada` });
+
+      const [payment] = await db.insert(paymentsTable).values({
+        orgId,
+        invoiceId: inv.id,
+        clientId:  inv.clientId ?? null,
+        amount:    String(amount),
+        currency:  "EUR",
+        method,
+        reference,
+        paidAt:    new Date(),
+      }).returning();
+
+      // Auto-advance invoice status
+      const [{ totalPaid }] = await db.select({ totalPaid: sum(paymentsTable.amount) })
+        .from(paymentsTable).where(eq(paymentsTable.invoiceId, inv.id));
+      const paid     = parseFloat(String(totalPaid ?? 0));
+      const invTotal = parseFloat(String(inv.total));
+      let newStatus  = inv.status;
+      if (paid >= invTotal) {
+        await db.update(invoicesTable)
+          .set({ status: "paid", paidAt: new Date(), updatedAt: new Date() })
+          .where(eq(invoicesTable.id, inv.id));
+        newStatus = "paid";
+      } else if (paid > 0) {
+        await db.update(invoicesTable)
+          .set({ status: "partial", updatedAt: new Date() })
+          .where(eq(invoicesTable.id, inv.id));
+        newStatus = "partial";
+      }
+
+      const fmt = (n: number) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
+      return JSON.stringify({
+        success:    true,
+        paymentId:  payment!.id,
+        invoiceNumber,
+        amount,
+        paid,
+        balance:    Math.max(0, invTotal - paid),
+        invoiceStatus: newStatus,
+        message: newStatus === "paid"
+          ? `Pago de ${fmt(amount)} registrado. La factura ${invoiceNumber} queda completamente pagada.`
+          : `Pago parcial de ${fmt(amount)} registrado. Quedan ${fmt(invTotal - paid)} pendientes en ${invoiceNumber}.`,
+      });
+    }
+
+    // ── get_client_debt ──────────────────────────────────────────────────────
+    if (toolName === "get_client_debt") {
+      const clientName = String(args["client_name"] ?? "");
+      if (!clientName) return JSON.stringify({ error: "Se necesita client_name" });
+
+      const matched = await db.select()
+        .from(clientsTable)
+        .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientName}%`)))
+        .limit(3);
+      if (matched.length === 0) return JSON.stringify({ error: `No encontré el cliente "${clientName}"` });
+      const client = matched[0]!;
+
+      const invoices = await db.select({
+        id: invoicesTable.id,
+        invoiceNumber: invoicesTable.invoiceNumber,
+        total: invoicesTable.total,
+        status: invoicesTable.status,
+        dueDate: invoicesTable.dueDate,
+      })
+      .from(invoicesTable)
+      .where(and(
+        eq(invoicesTable.orgId, orgId),
+        eq(invoicesTable.clientId, client.id),
+        inArray(invoicesTable.status, ["draft", "sent", "partial"]),
+      ));
+
+      const totalDebt = invoices.reduce((s, i) => s + parseFloat(String(i.total)), 0);
+      const fmt = (n: number) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
+
+      return JSON.stringify({
+        clientName: client.name,
+        totalDebt,
+        pendingInvoices: invoices.map(i => ({
+          invoiceNumber: i.invoiceNumber,
+          total:   parseFloat(String(i.total)),
+          status:  i.status,
+          overdue: i.dueDate ? new Date(i.dueDate) < new Date() : false,
+        })),
+        message: invoices.length === 0
+          ? `${client.name} no tiene facturas pendientes.`
+          : `${client.name} tiene una deuda pendiente de ${fmt(totalDebt)} en ${invoices.length} factura${invoices.length !== 1 ? "s" : ""}.`,
+      });
+    }
+
+    // ── get_monthly_income ───────────────────────────────────────────────────
+    if (toolName === "get_monthly_income") {
+      const period     = String(args["period"] ?? "this_month");
+      const now        = new Date();
+      const startDate  = period === "this_year"
+        ? new Date(now.getFullYear(), 0, 1)
+        : new Date(now.getFullYear(), now.getMonth(), 1);
+      const periodLabel = period === "this_year" ? "este año" : "este mes";
+
+      const [{ revenue }] = await db.select({ revenue: sum(paymentsTable.amount) })
+        .from(paymentsTable)
+        .where(and(eq(paymentsTable.orgId, orgId), gte(paymentsTable.paidAt, startDate)));
+
+      const [expRow] = await db.execute(sql`
+        SELECT COALESCE(SUM(amount),0)::numeric AS expenses
+        FROM expenses
+        WHERE org_id = ${orgId} AND expense_date >= ${startDate}
+      `) as unknown as [{ expenses: string }];
+
+      const rev  = parseFloat(String(revenue ?? 0));
+      const exp  = parseFloat(String(expRow?.expenses ?? 0));
+      const profit = rev - exp;
+      const fmt = (n: number) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
+
+      return JSON.stringify({
+        period: periodLabel,
+        revenue: rev,
+        expenses: exp,
+        profit,
+        message: `${periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1)}: Ingresos ${fmt(rev)} · Gastos ${fmt(exp)} · Beneficio ${fmt(profit)}.`,
       });
     }
 

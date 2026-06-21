@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { AIQuoteModal } from "@/components/ai-quote-modal";
 import { WhatsAppModal } from "@/components/whatsapp-modal";
 import {
   useListClients, useCreateClient, useUpdateClient, useDeleteClient,
   getListClientsQueryKey, useListMessages,
 } from "@workspace/api-client-react";
+import { authFetch } from "@/lib/authFetch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import {
 import {
   Search, Plus, Phone, Mail, Building2, Tag, FileText,
   DollarSign, X, Pencil, Trash2, ChevronRight, Clock, User,
-  MessageCircle, Bot, Send,
+  MessageCircle, Bot, Send, Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -221,6 +222,112 @@ function ClientFormModal({
   );
 }
 
+// ── Finanzas Tab ──────────────────────────────────────────────────────────────
+function FinanzasTab({ clientId }: { clientId: number }) {
+  const { data, isLoading } = useQuery<{
+    invoices: {
+      id: number; invoiceNumber: string; status: string; total: number;
+      dueDate: string | null; paidAt: string | null; createdAt: string;
+    }[];
+    total: number;
+  }>({
+    queryKey: ["client-invoices", clientId],
+    queryFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/invoices?clientId=${clientId}&limit=50`);
+      if (!r.ok) throw new Error("módulo contabilidad no disponible");
+      return r.json();
+    },
+    retry: false,
+  });
+
+  const STATUS_COLOR: Record<string, string> = {
+    draft:    "bg-slate-500/10 text-slate-400 border-slate-500/20",
+    sent:     "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    partial:  "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    paid:     "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    overdue:  "bg-rose-500/10 text-rose-400 border-rose-500/20",
+    cancelled:"bg-slate-500/10 text-slate-400 border-slate-500/20",
+  };
+  const STATUS_LABEL: Record<string, string> = {
+    draft: "Borrador", sent: "Enviada", partial: "Parcial",
+    paid: "Pagada", overdue: "Vencida", cancelled: "Cancelada",
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2 pt-1">
+        {[1,2,3].map(i => <div key={i} className="h-10 bg-background/40 rounded-lg animate-pulse" />)}
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+        <Receipt className="w-7 h-7 mb-2 opacity-20" />
+        <p className="text-xs text-center">Módulo de contabilidad no disponible.<br />Actívalo en Control Center → Módulos.</p>
+      </div>
+    );
+  }
+
+  const invoices = data.invoices ?? [];
+  const totalFacturado = invoices.reduce((s, i) => s + i.total, 0);
+  const totalPendiente = invoices
+    .filter(i => ["draft","sent","partial"].includes(i.status))
+    .reduce((s, i) => s + i.total, 0);
+
+  const fmtEur = (n: number) =>
+    new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
+
+  if (invoices.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+        <Receipt className="w-7 h-7 mb-2 opacity-20" />
+        <p className="text-sm">Sin facturas</p>
+        <p className="text-xs mt-1">Las facturas de este cliente aparecerán aquí.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+          <p className="text-[10px] text-emerald-400/70 font-medium">Total facturado</p>
+          <p className="text-base font-bold text-emerald-400">{fmtEur(totalFacturado)}</p>
+          <p className="text-[10px] text-emerald-400/50">{invoices.length} factura{invoices.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+          <p className="text-[10px] text-amber-400/70 font-medium">Pendiente</p>
+          <p className="text-base font-bold text-amber-400">{fmtEur(totalPendiente)}</p>
+          <p className="text-[10px] text-amber-400/50">Sin cobrar</p>
+        </div>
+      </div>
+
+      {/* Invoice list */}
+      <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+        {invoices.map(inv => (
+          <div key={inv.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-background/40 border border-border/50">
+            <div className="min-w-0">
+              <p className="text-xs font-mono text-white/80 truncate">{inv.invoiceNumber}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {new Date(inv.createdAt).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant="outline" className={cn("text-[9px] px-1.5 h-4", STATUS_COLOR[inv.status])}>
+                {STATUS_LABEL[inv.status] ?? inv.status}
+              </Badge>
+              <span className="text-xs font-semibold text-white">{fmtEur(inv.total)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Messages Tab ─────────────────────────────────────────────────────────────
 function MessagesTab({ clientId }: { clientId: number }) {
   const { data: messages, isLoading } = useListMessages({ clientId });
@@ -298,7 +405,7 @@ function ClientProfileDialog({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showQuote, setShowQuote]         = useState(false);
   const [showWhatsApp, setShowWhatsApp]   = useState(false);
-  const [activeTab, setActiveTab]         = useState<"info" | "messages">("info");
+  const [activeTab, setActiveTab]         = useState<"info" | "messages" | "finanzas">("info");
   const tags = parseTags(client.tags);
 
   const handleDelete = () => {
@@ -362,12 +469,30 @@ function ClientProfileDialog({
           >
             <MessageCircle className="w-3 h-3" /> Mensajes
           </button>
+          <button
+            onClick={() => setActiveTab("finanzas")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all",
+              activeTab === "finanzas"
+                ? "bg-card text-white shadow-sm"
+                : "text-muted-foreground hover:text-white"
+            )}
+          >
+            <Receipt className="w-3 h-3" /> Finanzas
+          </button>
         </div>
 
         {/* ── TAB: Messages ── */}
         {activeTab === "messages" && (
           <div className="mt-3">
             <MessagesTab clientId={client.id} />
+          </div>
+        )}
+
+        {/* ── TAB: Finanzas ── */}
+        {activeTab === "finanzas" && (
+          <div className="mt-3">
+            <FinanzasTab clientId={client.id} />
           </div>
         )}
 

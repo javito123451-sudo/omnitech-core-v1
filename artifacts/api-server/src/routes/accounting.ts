@@ -4,7 +4,7 @@ import {
   invoicesTable, invoiceItemsTable, paymentsTable,
   creditNotesTable, expensesTable, clientsTable, quotesTable, quoteItemsTable,
 } from "@workspace/db";
-import { eq, and, desc, count, sum, sql, gte, lte, or, ilike } from "drizzle-orm";
+import { eq, and, desc, count, sum, sql, gte, or, ilike } from "drizzle-orm";
 import { logAudit } from "../utils/auditLogger";
 import { generateInvoicePdf } from "../utils/pdf-invoice";
 
@@ -303,7 +303,58 @@ accountingRouter.get("/invoices/:id/pdf", async (req, res) => {
   res.end(pdfBuffer);
 });
 
-// POST /api/accounting/quotes/:id/to-invoice — convert quote to invoice
+// POST /api/accounting/invoices/from-quote/:quoteId — convert approved quote to invoice (spec endpoint)
+accountingRouter.post("/invoices/from-quote/:quoteId", async (req, res) => {
+  const orgId   = req.orgId!;
+  const quoteId = Number(req.params["quoteId"]);
+
+  const [quote] = await db.select().from(quotesTable)
+    .where(and(eq(quotesTable.id, quoteId), eq(quotesTable.orgId, orgId)));
+  if (!quote) { res.status(404).json({ error: "Presupuesto no encontrado" }); return; }
+  if (quote.status !== "approved" && quote.status !== "accepted") {
+    res.status(422).json({ error: "Solo se pueden convertir presupuestos aprobados (estado: aprobado)" }); return;
+  }
+
+  const quoteItems = await db.select().from(quoteItemsTable)
+    .where(eq(quoteItemsTable.quoteId, quoteId))
+    .orderBy(quoteItemsTable.orderIndex);
+
+  const invoiceNumber = await nextInvoiceNumber(orgId);
+  const taxRate = parseFloat(String(quote.taxRate ?? 21));
+  const items = quoteItems.map(i => ({
+    quantity:  parseFloat(String(i.quantity)),
+    unitPrice: parseFloat(String(i.unitPrice)),
+  }));
+  const { subtotal, taxAmount, total } = calcTotals(items, taxRate);
+
+  const [inv] = await db.insert(invoicesTable).values({
+    orgId,
+    clientId: quote.clientId ?? null,
+    quoteId,
+    invoiceNumber,
+    status: "draft",
+    currency: (quote as Record<string, unknown>)["currency"] as string ?? "EUR",
+    subtotal: String(subtotal), taxRate: String(taxRate),
+    taxAmount: String(taxAmount), total: String(total),
+    notes: quote.notes ?? null,
+  }).returning();
+
+  await db.insert(invoiceItemsTable).values(
+    quoteItems.map((item, idx) => ({
+      invoiceId: inv!.id,
+      description: item.description,
+      quantity:  String(parseFloat(String(item.quantity))),
+      unitPrice: String(parseFloat(String(item.unitPrice))),
+      total:     String(parseFloat(String(item.total))),
+      orderIndex: idx,
+    })),
+  );
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "invoice_from_quote", resource: "invoice", resourceId: inv!.id, orgId, details: { quoteId, invoiceNumber }, req });
+  res.status(201).json(await enrichInvoice(inv!));
+});
+
+// POST /api/accounting/quotes/:id/to-invoice — legacy alias, kept for backwards-compat (no approval check)
 accountingRouter.post("/quotes/:id/to-invoice", async (req, res) => {
   const orgId = req.orgId!;
   const quoteId = Number(req.params["id"]);
@@ -330,7 +381,7 @@ accountingRouter.post("/quotes/:id/to-invoice", async (req, res) => {
     quoteId,
     invoiceNumber,
     status: "draft",
-    currency: quote.currency ?? "EUR",
+    currency: (quote as Record<string, unknown>)["currency"] as string ?? "EUR",
     subtotal: String(subtotal), taxRate: String(taxRate),
     taxAmount: String(taxAmount), total: String(total),
     notes: quote.notes ?? null,
@@ -357,9 +408,16 @@ accountingRouter.post("/quotes/:id/to-invoice", async (req, res) => {
 
 // GET /api/accounting/payments
 accountingRouter.get("/payments", async (req, res) => {
-  const orgId  = req.orgId!;
-  const limit  = Math.min(Number(req.query["limit"] ?? 50), 200);
-  const offset = Number(req.query["offset"] ?? 0);
+  const orgId     = req.orgId!;
+  const limit     = Math.min(Number(req.query["limit"] ?? 50), 200);
+  const offset    = Number(req.query["offset"] ?? 0);
+  const invoiceId = req.query["invoiceId"] ? Number(req.query["invoiceId"]) : null;
+  const clientId  = req.query["clientId"]  ? Number(req.query["clientId"])  : null;
+
+  const conditions = [eq(paymentsTable.orgId, orgId)];
+  if (invoiceId) conditions.push(eq(paymentsTable.invoiceId, invoiceId));
+  if (clientId)  conditions.push(eq(paymentsTable.clientId, clientId));
+  const whereClause = and(...conditions);
 
   const rows = await db.select({
     id: paymentsTable.id,
@@ -378,7 +436,7 @@ accountingRouter.get("/payments", async (req, res) => {
   .from(paymentsTable)
   .leftJoin(invoicesTable, eq(paymentsTable.invoiceId, invoicesTable.id))
   .leftJoin(clientsTable, eq(paymentsTable.clientId, clientsTable.id))
-  .where(eq(paymentsTable.orgId, orgId))
+  .where(whereClause)
   .orderBy(desc(paymentsTable.paidAt))
   .limit(limit)
   .offset(offset);
@@ -386,7 +444,7 @@ accountingRouter.get("/payments", async (req, res) => {
   const [{ total: totalCount }] = await db
     .select({ total: count() })
     .from(paymentsTable)
-    .where(eq(paymentsTable.orgId, orgId));
+    .where(whereClause);
 
   res.json({
     payments: rows.map(r => ({ ...r, amount: parseFloat(String(r.amount)) })),
@@ -412,7 +470,9 @@ accountingRouter.post("/payments", async (req, res) => {
   }).returning();
 
   if (invoiceId) {
-    const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invoiceId));
+    // Security: always scope invoice lookup to the caller's org
+    const [inv] = await db.select().from(invoicesTable)
+      .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
     if (inv) {
       const [{ totalPaid }] = await db
         .select({ totalPaid: sum(paymentsTable.amount) })
@@ -423,11 +483,11 @@ accountingRouter.post("/payments", async (req, res) => {
       if (paid >= invTotal) {
         await db.update(invoicesTable)
           .set({ status: "paid", paidAt: new Date(), updatedAt: new Date() })
-          .where(eq(invoicesTable.id, invoiceId));
+          .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
       } else if (paid > 0) {
         await db.update(invoicesTable)
           .set({ status: "partial", updatedAt: new Date() })
-          .where(eq(invoicesTable.id, invoiceId));
+          .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
       }
     }
   }
@@ -491,6 +551,18 @@ accountingRouter.post("/credit-notes", async (req, res) => {
   };
 
   if (!amount || amount <= 0) { res.status(400).json({ error: "Importe inválido" }); return; }
+
+  // Validate: if an invoiceId is provided, the invoice must belong to this org and be paid
+  if (invoiceId) {
+    const [inv] = await db.select({ id: invoicesTable.id, status: invoicesTable.status })
+      .from(invoicesTable)
+      .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
+    if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
+    if (inv.status !== "paid") {
+      res.status(422).json({ error: "Solo se pueden emitir notas de crédito contra facturas pagadas" }); return;
+    }
+  }
+
   const noteNumber = await nextCreditNoteNumber(orgId);
 
   const [note] = await db.insert(creditNotesTable).values({
@@ -608,89 +680,113 @@ accountingRouter.get("/summary", async (req, res) => {
     .where(eq(invoicesTable.orgId, orgId))
     .groupBy(invoicesTable.status);
 
-  // Overdue (sent, not paid, past due date)
-  const [{ overdueCount }] = await db
-    .select({ overdueCount: count() })
+  // Overdue invoices (sent/partial, past due date) — count + total
+  const overdueRows = await db
+    .select({ cnt: count(), total: sum(invoicesTable.total) })
     .from(invoicesTable)
     .where(and(
       eq(invoicesTable.orgId, orgId),
       or(eq(invoicesTable.status, "sent"), eq(invoicesTable.status, "partial")),
       sql`${invoicesTable.dueDate} < NOW()`,
     ));
+  const overdueCount = Number(overdueRows[0]?.cnt ?? 0);
+  const overdueTotal = parseFloat(String(overdueRows[0]?.total ?? 0));
 
-  // Revenue this month (payments)
+  // Pending quotes (draft / sent but not converted)
+  const [{ pendingQuotesCount }] = await db.execute(sql`
+    SELECT COUNT(*)::int AS "pendingQuotesCount"
+    FROM quotes
+    WHERE org_id = ${orgId} AND status IN ('draft','sent')
+  `) as unknown as [{ pendingQuotesCount: number }];
+
+  // Revenue this month/year (payments received)
   const [{ monthRevenue }] = await db
     .select({ monthRevenue: sum(paymentsTable.amount) })
     .from(paymentsTable)
     .where(and(eq(paymentsTable.orgId, orgId), gte(paymentsTable.paidAt, startOfMonth)));
 
-  // Revenue this year
   const [{ yearRevenue }] = await db
     .select({ yearRevenue: sum(paymentsTable.amount) })
     .from(paymentsTable)
     .where(and(eq(paymentsTable.orgId, orgId), gte(paymentsTable.paidAt, startOfYear)));
 
-  // Expenses this month
+  // Expenses this month/year
   const [{ monthExpenses }] = await db
     .select({ monthExpenses: sum(expensesTable.amount) })
     .from(expensesTable)
     .where(and(eq(expensesTable.orgId, orgId), gte(expensesTable.expenseDate, startOfMonth)));
 
-  // Expenses this year
   const [{ yearExpenses }] = await db
     .select({ yearExpenses: sum(expensesTable.amount) })
     .from(expensesTable)
     .where(and(eq(expensesTable.orgId, orgId), gte(expensesTable.expenseDate, startOfYear)));
 
-  // Monthly revenue last 6 months
+  // Monthly revenue / expenses last 6 months (for chart)
   const monthlyRevenue = await db.execute(sql`
-    SELECT
-      DATE_TRUNC('month', paid_at) AS month,
-      SUM(amount)::numeric AS revenue
+    SELECT DATE_TRUNC('month', paid_at) AS month, SUM(amount)::numeric AS revenue
     FROM accounting_payments
-    WHERE org_id = ${orgId}
-      AND paid_at >= NOW() - INTERVAL '6 months'
-    GROUP BY 1
-    ORDER BY 1
+    WHERE org_id = ${orgId} AND paid_at >= NOW() - INTERVAL '6 months'
+    GROUP BY 1 ORDER BY 1
   `);
 
-  // Monthly expenses last 6 months
   const monthlyExpenses = await db.execute(sql`
-    SELECT
-      DATE_TRUNC('month', expense_date) AS month,
-      SUM(amount)::numeric AS amount
+    SELECT DATE_TRUNC('month', expense_date) AS month, SUM(amount)::numeric AS amount
     FROM expenses
-    WHERE org_id = ${orgId}
-      AND expense_date >= NOW() - INTERVAL '6 months'
-    GROUP BY 1
-    ORDER BY 1
+    WHERE org_id = ${orgId} AND expense_date >= NOW() - INTERVAL '6 months'
+    GROUP BY 1 ORDER BY 1
   `);
 
-  // Pending (unpaid) invoices total
+  // Pending invoices total (not yet paid)
   const pendingTotal = invoiceStats
     .filter(s => ["draft", "sent", "partial"].includes(s.status))
     .reduce((acc, s) => acc + parseFloat(String(s.total ?? 0)), 0);
 
-  const statusMap = Object.fromEntries(invoiceStats.map(s => [s.status, { count: Number(s.cnt), total: parseFloat(String(s.total ?? 0)) }]));
+  const statusMap = Object.fromEntries(invoiceStats.map(s => [
+    s.status,
+    { count: Number(s.cnt), total: parseFloat(String(s.total ?? 0)) },
+  ]));
+
+  // IVA repercutido = IVA charged on sales invoices (21% by default on taxAmount)
+  const [{ ivaRepercutido }] = await db
+    .select({ ivaRepercutido: sum(invoicesTable.taxAmount) })
+    .from(invoicesTable)
+    .where(and(eq(invoicesTable.orgId, orgId), gte(invoicesTable.createdAt, startOfYear)));
+
+  // IVA soportado = IVA paid on deductible expenses (21% estimate)
+  const [{ ivaSoportado }] = await db.execute(sql`
+    SELECT COALESCE(SUM(amount * 0.21), 0)::numeric AS "ivaSoportado"
+    FROM expenses
+    WHERE org_id = ${orgId} AND tax_deductible = true AND expense_date >= ${startOfYear}
+  `) as unknown as [{ ivaSoportado: string }];
+
+  // Tasa de cobro = paid invoices / total invoiced this year
+  const totalInvoiced = invoiceStats.reduce((acc, s) => acc + parseFloat(String(s.total ?? 0)), 0);
+  const totalPaid     = parseFloat(String(statusMap["paid"]?.total ?? 0));
+  const tasaCobro     = totalInvoiced > 0 ? Math.round((totalPaid / totalInvoiced) * 100) : 0;
 
   res.json({
     invoices: statusMap,
-    overdueCount: Number(overdueCount),
+    overdueCount,
+    overdueTotal,
     pendingTotal,
+    pendingQuotesCount: Number(pendingQuotesCount ?? 0),
+    tasaCobro,
+    ivaRepercutido: parseFloat(String(ivaRepercutido ?? 0)),
+    ivaSoportado:   parseFloat(String(ivaSoportado  ?? 0)),
     revenue: {
-      thisMonth: parseFloat(String(monthRevenue ?? 0)),
-      thisYear:  parseFloat(String(yearRevenue  ?? 0)),
+      thisMonth: parseFloat(String(monthRevenue  ?? 0)),
+      thisYear:  parseFloat(String(yearRevenue   ?? 0)),
     },
     expenses: {
       thisMonth: parseFloat(String(monthExpenses ?? 0)),
       thisYear:  parseFloat(String(yearExpenses  ?? 0)),
     },
     profit: {
-      thisMonth: parseFloat(String(monthRevenue ?? 0)) - parseFloat(String(monthExpenses ?? 0)),
-      thisYear:  parseFloat(String(yearRevenue  ?? 0)) - parseFloat(String(yearExpenses  ?? 0)),
+      thisMonth: parseFloat(String(monthRevenue  ?? 0)) - parseFloat(String(monthExpenses ?? 0)),
+      thisYear:  parseFloat(String(yearRevenue   ?? 0)) - parseFloat(String(yearExpenses  ?? 0)),
     },
     charts: {
-      monthlyRevenue: (monthlyRevenue as { rows: { month: string; revenue: string }[] }).rows.map(r => ({
+      monthlyRevenue:  (monthlyRevenue  as { rows: { month: string; revenue: string }[] }).rows.map(r => ({
         month: r.month, revenue: parseFloat(r.revenue ?? "0"),
       })),
       monthlyExpenses: (monthlyExpenses as { rows: { month: string; amount: string }[] }).rows.map(r => ({
