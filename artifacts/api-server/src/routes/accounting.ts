@@ -147,10 +147,19 @@ accountingRouter.get("/invoices", async (req, res) => {
     .limit(limit)
     .offset(offset);
 
+  // Count query must mirror the search filter so pagination totals are accurate
+  const countWhere = search
+    ? and(where, or(
+        ilike(invoicesTable.invoiceNumber, `%${search}%`),
+        ilike(clientsTable.name, `%${search}%`),
+      ))
+    : where;
+
   const [{ total: totalCount }] = await db
     .select({ total: count() })
     .from(invoicesTable)
-    .where(where);
+    .leftJoin(clientsTable, eq(invoicesTable.clientId, clientsTable.id))
+    .where(countWhere);
 
   res.json({
     invoices: rows.map(r => ({
@@ -881,4 +890,124 @@ accountingRouter.get("/summary", async (req, res) => {
       })),
     },
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECURRING INVOICES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface RecurringItem { description: string; quantity: number; unitPrice: number; }
+
+function calcRecurringTotal(items: RecurringItem[], taxRate: number): number {
+  const sub = items.reduce((s, i) => s + Number(i.quantity) * Number(i.unitPrice), 0);
+  return parseFloat((sub + sub * taxRate / 100).toFixed(2));
+}
+
+// GET /api/accounting/recurring
+accountingRouter.get("/recurring", async (req, res) => {
+  const orgId  = req.orgId!;
+  const limit  = Math.min(Number(req.query["limit"]  ?? 50), 200);
+  const offset = Number(req.query["offset"] ?? 0);
+
+  const rows = await db.execute(sql`
+    SELECT
+      r.id, r.org_id, r.client_id, r.description, r.frequency,
+      r.currency, r.tax_rate, r.items, r.is_active, r.send_on_create,
+      r.next_run_at, r.last_run_at, r.created_at,
+      c.name AS client_name
+    FROM recurring_invoices r
+    LEFT JOIN clients c ON c.id = r.client_id AND c.org_id = r.org_id
+    WHERE r.org_id = ${orgId}
+    ORDER BY r.created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `) as unknown as { rows: Array<{
+    id: number; org_id: number; client_id: number | null; description: string;
+    frequency: string; currency: string; tax_rate: string;
+    items: RecurringItem[]; is_active: boolean; send_on_create: boolean;
+    next_run_at: string; last_run_at: string | null; created_at: string;
+    client_name: string | null;
+  }> };
+
+  const cntResult = await db.execute(sql`SELECT COUNT(*)::int AS cnt FROM recurring_invoices WHERE org_id = ${orgId}`);
+  const cntRow = (cntResult as unknown as { rows: Array<{ cnt: number }> }).rows[0];
+  const cnt = cntRow?.cnt ?? 0;
+
+  res.json({
+    recurring: rows.rows.map(r => {
+      const items = Array.isArray(r.items) ? r.items : JSON.parse(String(r.items || "[]"));
+      const taxRate = parseFloat(r.tax_rate ?? "21");
+      return {
+        id: r.id, orgId: r.org_id, clientId: r.client_id, clientName: r.client_name,
+        description: r.description, frequency: r.frequency, currency: r.currency,
+        taxRate, items, isActive: r.is_active, sendOnCreate: r.send_on_create,
+        nextRunAt: r.next_run_at, lastRunAt: r.last_run_at, createdAt: r.created_at,
+        total: calcRecurringTotal(items, taxRate),
+      };
+    }),
+    total: cnt ?? 0, limit, offset,
+  });
+});
+
+// POST /api/accounting/recurring
+accountingRouter.post("/recurring", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
+  const orgId = req.orgId!;
+  const {
+    clientId, description, frequency = "monthly", currency = "EUR",
+    taxRate = 21, items = [], sendOnCreate = false, nextRunAt,
+  } = req.body as {
+    clientId?: number; description: string; frequency?: string; currency?: string;
+    taxRate?: number; items?: RecurringItem[]; sendOnCreate?: boolean; nextRunAt: string;
+  };
+
+  if (!description?.trim()) { res.status(400).json({ error: "Descripción requerida" }); return; }
+  if (!nextRunAt) { res.status(400).json({ error: "next_run_at requerido" }); return; }
+
+  if (clientId) {
+    const [cl] = await db.select({ id: clientsTable.id }).from(clientsTable)
+      .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
+    if (!cl) { res.status(404).json({ error: "Cliente no encontrado" }); return; }
+  }
+
+  await db.execute(sql`
+    INSERT INTO recurring_invoices
+      (org_id, client_id, description, frequency, currency, tax_rate, items, is_active, send_on_create, next_run_at)
+    VALUES
+      (${orgId}, ${clientId ?? null}, ${description.trim()}, ${frequency}, ${currency},
+       ${taxRate}, ${JSON.stringify(items)}::jsonb, TRUE, ${sendOnCreate}, ${new Date(nextRunAt).toISOString()})
+  `);
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "recurring_invoice_created", resource: "recurring_invoice", resourceId: 0, orgId, details: { description, frequency }, req });
+  res.status(201).json({ ok: true });
+});
+
+// PATCH /api/accounting/recurring/:id — toggle active or update nextRunAt
+accountingRouter.patch("/recurring/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
+  const orgId = req.orgId!;
+  const id    = Number(req.params["id"]);
+  const { isActive, nextRunAt } = req.body as { isActive?: boolean; nextRunAt?: string };
+
+  const existing = await db.execute(sql`SELECT id FROM recurring_invoices WHERE id = ${id} AND org_id = ${orgId} LIMIT 1`) as unknown as { rows: unknown[] };
+  if (!existing.rows.length) { res.status(404).json({ error: "No encontrado" }); return; }
+
+  if (typeof isActive === "boolean") {
+    await db.execute(sql`UPDATE recurring_invoices SET is_active = ${isActive}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`);
+  }
+  if (nextRunAt) {
+    await db.execute(sql`UPDATE recurring_invoices SET next_run_at = ${new Date(nextRunAt).toISOString()}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`);
+  }
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "recurring_invoice_updated", resource: "recurring_invoice", resourceId: id, orgId, details: { isActive, nextRunAt }, req });
+  res.json({ ok: true });
+});
+
+// DELETE /api/accounting/recurring/:id
+accountingRouter.delete("/recurring/:id", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin"])) return;
+  const orgId = req.orgId!;
+  const id    = Number(req.params["id"]);
+  await db.execute(sql`DELETE FROM recurring_invoices WHERE id = ${id} AND org_id = ${orgId}`);
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "recurring_invoice_deleted", resource: "recurring_invoice", resourceId: id, orgId, details: {}, req });
+  res.json({ ok: true });
 });

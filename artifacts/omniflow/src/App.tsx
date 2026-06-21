@@ -48,6 +48,7 @@ import ModuleMatrixPage from "@/pages/control-center/module-matrix";
 import ImportAiPage from "@/pages/import-ai";
 import AutomationsPage from "@/pages/automations";
 import AccountingPage from "@/pages/accounting/index";
+import PortalPage from "@/pages/portal";
 import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import ManualHome from "@/pages/manual/index";
@@ -230,6 +231,7 @@ function AppRoutes() {
   return (
     <Switch>
       <Route path="/" component={HomeRedirect} />
+      <Route path="/portal" component={PortalPage} />
       <Route path="/sign-in/*?" component={SignInPage} />
       <Route path="/sign-up/*?" component={SignUpPage} />
       <Route path="/setup">

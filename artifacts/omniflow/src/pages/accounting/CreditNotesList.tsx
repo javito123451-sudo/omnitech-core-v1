@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
-import { FileX, Plus, X } from "lucide-react";
+import { FileX, Plus, X, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -19,8 +19,7 @@ interface CreditNote {
   createdAt: string;
 }
 
-interface Invoice { id: number; invoiceNumber: string; }
-interface Client  { id: number; name: string; }
+interface Invoice { id: number; invoiceNumber: string; total: number; currency: string; clientName: string | null; }
 
 const STATUS_COLORS: Record<string, string> = {
   issued:    "bg-blue-500/20 text-blue-400",
@@ -43,7 +42,6 @@ export default function CreditNotesList() {
   const { toast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [invoiceId, setInvoiceId] = useState<number | "">("");
-  const [clientId,  setClientId]  = useState<number | "">("");
   const [amount,    setAmount]    = useState("");
   const [currency,  setCurrency]  = useState("EUR");
   const [reason,    setReason]    = useState("");
@@ -56,66 +54,68 @@ export default function CreditNotesList() {
     },
   });
 
-  const { data: invoices = [] } = useQuery<Invoice[]>({
-    queryKey: ["invoices-simple"],
+  // Only show paid invoices — credit notes must always reference a paid invoice
+  const { data: paidInvoices = [] } = useQuery<Invoice[]>({
+    queryKey: ["invoices-paid"],
     queryFn: async () => {
-      const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/invoices?limit=200`);
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/invoices?status=paid&limit=200`);
       const d = await r.json();
       return d.invoices ?? [];
     },
     enabled: showModal,
   });
 
-  const { data: clients = [] } = useQuery<Client[]>({
-    queryKey: ["clients-simple"],
-    queryFn: async () => {
-      const r = await authFetch(`${import.meta.env.BASE_URL}api/clients?limit=200`);
-      const d = await r.json();
-      return d.clients ?? d ?? [];
-    },
-    enabled: showModal,
-  });
+  const selectedInvoice = paidInvoices.find(i => i.id === invoiceId);
+
+  function openModal() {
+    setInvoiceId("");
+    setAmount("");
+    setCurrency("EUR");
+    setReason("");
+    setShowModal(true);
+  }
 
   const createMut = useMutation({
     mutationFn: async () => {
+      if (!invoiceId) throw new Error("Debes seleccionar una factura pagada");
       const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/credit-notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          invoiceId: invoiceId || undefined,
-          clientId:  clientId  || undefined,
+          invoiceId,
           amount: parseFloat(amount),
           currency,
           reason: reason || undefined,
         }),
       });
-      if (!r.ok) throw new Error((await r.json()).error ?? "Error");
+      if (!r.ok) throw new Error((await r.json()).error ?? "Error al emitir nota");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["credit-notes"] });
       toast({ title: "Nota de crédito emitida" });
       setShowModal(false);
-      setAmount(""); setReason(""); setInvoiceId(""); setClientId("");
     },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
   const patchMut = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      await authFetch(`${import.meta.env.BASE_URL}api/accounting/credit-notes/${id}`, {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/credit-notes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Error");
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["credit-notes"] }),
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
         <button
-          onClick={() => setShowModal(true)}
+          onClick={openModal}
           className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" /> Nueva nota de crédito
@@ -130,7 +130,7 @@ export default function CreditNotesList() {
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <FileX className="w-12 h-12 text-slate-600 mb-3" />
           <p className="text-slate-400 font-medium">Sin notas de crédito</p>
-          <p className="text-slate-500 text-sm">Las notas de crédito se usan para corregir o anular facturas</p>
+          <p className="text-slate-500 text-sm">Las notas de crédito se usan para corregir o anular facturas pagadas</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-white/5">
@@ -194,39 +194,53 @@ export default function CreditNotesList() {
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Factura asociada</label>
-                <select
-                  value={invoiceId}
-                  onChange={e => setInvoiceId(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
-                >
-                  <option value="">Sin factura</option>
-                  {invoices.map(i => (
-                    <option key={i.id} value={i.id}>#{i.invoiceNumber}</option>
-                  ))}
-                </select>
+              {/* Info banner */}
+              <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-300">Las notas de crédito solo pueden emitirse contra facturas ya <strong>pagadas</strong>.</p>
               </div>
-              {!invoiceId && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Cliente</label>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Factura pagada <span className="text-red-400">*</span>
+                </label>
+                {paidInvoices.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-2">No hay facturas pagadas disponibles</p>
+                ) : (
                   <select
-                    value={clientId}
-                    onChange={e => setClientId(e.target.value === "" ? "" : Number(e.target.value))}
+                    value={invoiceId}
+                    onChange={e => {
+                      const inv = paidInvoices.find(i => i.id === Number(e.target.value));
+                      setInvoiceId(e.target.value === "" ? "" : Number(e.target.value));
+                      if (inv) setCurrency(inv.currency);
+                    }}
                     className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
                   >
-                    <option value="">Sin cliente</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    <option value="">— Selecciona una factura —</option>
+                    {paidInvoices.map(i => (
+                      <option key={i.id} value={i.id}>
+                        #{i.invoiceNumber} · {i.clientName ?? "Sin cliente"} · {fmt(i.total, i.currency)}
+                      </option>
+                    ))}
                   </select>
-                </div>
-              )}
+                )}
+                {selectedInvoice && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    Total factura: <span className="text-white font-medium">{fmt(selectedInvoice.total, selectedInvoice.currency)}</span>
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Importe *</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    Importe a acreditar <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="number" step="0.01" min="0.01"
                     value={amount}
                     onChange={e => setAmount(e.target.value)}
+                    placeholder="0.00"
                     className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
                   />
                 </div>
@@ -241,6 +255,7 @@ export default function CreditNotesList() {
                   </select>
                 </div>
               </div>
+
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Motivo</label>
                 <textarea
@@ -256,7 +271,7 @@ export default function CreditNotesList() {
               <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white rounded-lg hover:bg-white/5">Cancelar</button>
               <button
                 onClick={() => createMut.mutate()}
-                disabled={createMut.isPending || !amount}
+                disabled={createMut.isPending || !amount || !invoiceId}
                 className="px-5 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
               >
                 {createMut.isPending ? "Emitiendo…" : "Emitir nota"}

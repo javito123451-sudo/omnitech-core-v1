@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import {
   Plus, Download, Search, ChevronDown, Check, X, Clock,
-  AlertTriangle, FileText, Trash2, Eye, FileInput,
+  AlertTriangle, FileText, Trash2, Eye, FileInput, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import InvoiceModal from "./InvoiceModal";
@@ -71,6 +71,25 @@ export default function InvoicesList() {
       await authFetch(`${import.meta.env.BASE_URL}api/accounting/invoices/${id}`, { method: "DELETE" });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["invoices"] }); qc.invalidateQueries({ queryKey: ["accounting-summary"] }); },
+  });
+
+  const portalMut = useMutation({
+    mutationFn: async (clientId: number) => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/portal/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, expiresInDays: 30 }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Error al generar enlace");
+      return r.json() as Promise<{ token: string }>;
+    },
+    onSuccess: async (data) => {
+      const base = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, "");
+      const url  = `${base}/portal?token=${data.token}`;
+      await navigator.clipboard.writeText(url).catch(() => {});
+      toast({ title: "Enlace de portal copiado", description: "Válido 30 días. Pégalo y envíaselo al cliente." });
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
   const downloadPdf = async (id: number, num: string) => {
@@ -206,6 +225,16 @@ export default function InvoicesList() {
                         >
                           <Download className="w-3.5 h-3.5" />
                         </button>
+                        {inv.clientId && (
+                          <button
+                            onClick={() => portalMut.mutate(inv.clientId!)}
+                            disabled={portalMut.isPending}
+                            className="p-1.5 text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors"
+                            title="Copiar enlace del portal del cliente"
+                          >
+                            <Link2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             if (confirm(`¿Eliminar factura #${inv.invoiceNumber}?`)) deleteMut.mutate(inv.id);

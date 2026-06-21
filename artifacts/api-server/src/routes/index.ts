@@ -26,11 +26,16 @@ import { knowledgeBaseRouter } from "./knowledge-base";
 import { docsRouter } from "./docs";
 import { autopilotRouter } from "./autopilot";
 import { accountingRouter } from "./accounting";
+import { portalRouter } from "./portal";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use("/auth", authRouter);
+
+// ── Client portal — public GET endpoints (no Clerk auth on reads) ─────────────
+// POST /portal/token uses its own requireAuth internally
+router.use("/portal", portalRouter);
 
 // ── Control Center — uses its own requireSuperAdmin middleware ─────────────────
 router.use("/control-center", controlCenterRouter);

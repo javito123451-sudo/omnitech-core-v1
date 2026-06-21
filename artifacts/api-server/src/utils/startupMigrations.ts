@@ -173,6 +173,44 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-F: Overdue invoices auto-advanced");
 
+    // ── FIX G: Client portal tokens table ───────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS client_portal_tokens (
+        id          SERIAL PRIMARY KEY,
+        org_id      INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        client_id   INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        token       VARCHAR(128) NOT NULL UNIQUE,
+        expires_at  TIMESTAMP NOT NULL,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (org_id, client_id)
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS portal_tokens_token_idx ON client_portal_tokens(token)`);
+    logger.info("[Migration] ✅ FIX-G: client_portal_tokens table ensured");
+
+    // ── FIX H: Recurring invoices table ─────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS recurring_invoices (
+        id              SERIAL PRIMARY KEY,
+        org_id          INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        client_id       INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+        description     TEXT NOT NULL,
+        frequency       VARCHAR(20) NOT NULL DEFAULT 'monthly',
+        currency        VARCHAR(10) NOT NULL DEFAULT 'EUR',
+        tax_rate        NUMERIC(5,2) NOT NULL DEFAULT 21,
+        items           JSONB NOT NULL DEFAULT '[]',
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        send_on_create  BOOLEAN NOT NULL DEFAULT FALSE,
+        next_run_at     TIMESTAMP NOT NULL,
+        last_run_at     TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS recurring_invoices_org_id_idx      ON recurring_invoices(org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS recurring_invoices_next_run_at_idx ON recurring_invoices(next_run_at) WHERE is_active = TRUE`);
+    logger.info("[Migration] ✅ FIX-H: recurring_invoices table ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
