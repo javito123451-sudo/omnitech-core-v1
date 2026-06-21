@@ -306,17 +306,15 @@ export async function runAutopilotTask(task: AutopilotTask): Promise<void> {
         .where(eq(autopilotTasksTable.id, task.id)),
     ]);
   } catch (err) {
-    // 4. On failure: mark run as error; do NOT advance nextRunAt so the task
-    //    remains eligible for retry on the next scheduler tick.
+    // 4. On failure: mark run as error only.
+    //    Do NOT touch lastRunAt — shouldRunTask() uses lastRunAt to enforce
+    //    the 23h cooldown for condition-based triggers. Updating it here would
+    //    suppress retries for up to 23h instead of allowing the next minute tick
+    //    to retry immediately.
     const msg = err instanceof Error ? err.message : String(err);
-    await Promise.all([
-      db.update(autopilotRunsTable)
-        .set({ status: "error", completedAt: new Date(), errorMessage: msg.slice(0, 500) })
-        .where(eq(autopilotRunsTable.id, runId)),
-      db.update(autopilotTasksTable)
-        .set({ lastRunAt: new Date(), updatedAt: new Date() })
-        .where(eq(autopilotTasksTable.id, task.id)),
-    ]);
+    await db.update(autopilotRunsTable)
+      .set({ status: "error", completedAt: new Date(), errorMessage: msg.slice(0, 500) })
+      .where(eq(autopilotRunsTable.id, runId));
     throw err;
   }
 }

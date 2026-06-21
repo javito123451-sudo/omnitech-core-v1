@@ -11,11 +11,11 @@ description: Key design decisions for the autonomous autopilot scheduler to avoi
 
 **How to apply:** Any new condition-based trigger must add a corresponding DB existence/count check inside `shouldRunTask()`, separate from the action dispatch.
 
-## nextRunAt advances only after successful execution
+## nextRunAt and lastRunAt advance only after successful execution
 
-`runAutopilotTask()` commits `nextRunAt = calcNextRunAt(...)` inside the success branch only. On failure, only `lastRunAt` is updated so the task retries on the next scheduler tick.
+`runAutopilotTask()` commits both `lastRunAt` and `nextRunAt = calcNextRunAt(...)` inside the success branch ONLY. On failure, neither is updated — only the run record is marked as error.
 
-**Why:** Pre-advancing `nextRunAt` before execution means failed tasks silently wait the full interval before retrying.
+**Why:** `shouldRunTask()` uses `lastRunAt` for the 23h cooldown on condition-based triggers. Updating `lastRunAt` on failure would suppress retries for up to 23h. Not updating it lets the task retry immediately on the next scheduler tick (next minute).
 
 ## In-flight idempotency guard
 
