@@ -1,27 +1,33 @@
 ---
-name: Ava Autopilot module
-description: Capa 3 autonomous execution layer — scheduled/condition-based CRM tasks running in the background.
+name: Ava Autopilot scheduler design
+description: Key design decisions for the autonomous autopilot scheduler to avoid silent misbehavior.
 ---
 
-## Architecture
+## Condition-based triggers must evaluate CRM data — not just rate-limit
 
-- **DB**: `autopilot_tasks` (id, org_id, name, enabled, trigger_type, trigger_config jsonb, action_type, action_config jsonb, last_run_at, next_run_at) + `autopilot_runs` (id, task_id, org_id, status, started_at, completed_at, result_summary, error_message). Created via direct SQL (drizzle-kit push requires TTY).
-- **Engine**: `artifacts/api-server/src/utils/autopilotEngine.ts` — `shouldRunTask`, `calcNextRunAt`, `executeAction` (switch on actionType), `runAutopilotTask` (wraps in run record).
-- **Scheduler**: `artifacts/api-server/src/utils/autopilotScheduler.ts` — node-cron `* * * * *`, fire-and-forget, started in `index.ts` if `NODE_ENV !== "test"`.
-- **API**: `routes/autopilot.ts` — GET/POST /tasks, PATCH/DELETE /tasks/:id, GET /tasks/:id/runs. Registered in routes/index.ts: `router.use("/autopilot", requireModule("automations"), autopilotRouter)`.
-- **Frontend**: `pages/automations.tsx` at route `/automations`, sidebar entry in "Sistema" group gated by `moduleKey: "automations"`.
+`shouldRunTask()` is async and queries the DB before executing condition-based triggers (`inactive_clients_30d`, `quotes_expiring_7d`). It returns `false` if no matching records exist, even if the 23h cooldown has elapsed.
 
-## Trigger types
-- `daily`, `weekly`, `monthly` — time-based (uses nextRunAt)
-- `inactive_clients_30d`, `quotes_expiring_7d` — condition-based (runs once per 23h max)
+**Why:** Without the DB condition check, tasks fire daily regardless of whether the triggering state is actually present. Rate-limiting alone is not sufficient.
 
-## Action types
-- `strategic_brief` — DB query summary → activity log + optional WhatsApp to owner_phone
-- `notify_owner` — custom message → activity log + optional WhatsApp
-- `send_whatsapp` — sends WhatsApp to cfg.phone with cfg.message
-- `log_activity` — writes to activity table
-- `update_client_status` — (default branch, condition-triggered)
+**How to apply:** Any new condition-based trigger must add a corresponding DB existence/count check inside `shouldRunTask()`, separate from the action dispatch.
 
-**Why:** Reuses `getWhatsAppCreds` from integrationCreds util directly in the engine (avoids circular imports with whatsapp.ts). Does NOT import executeCrmTool from chat.ts — engine has its own lightweight DB queries.
+## nextRunAt advances only after successful execution
 
-**How to apply:** When adding new trigger or action types, add to both `TRIGGER_LABELS`/`ACTION_LABELS` in the engine AND in the frontend `automations.tsx`. DB migration must be done via direct SQL (`executeSql` in code_execution sandbox), not drizzle-kit push (requires TTY).
+`runAutopilotTask()` commits `nextRunAt = calcNextRunAt(...)` inside the success branch only. On failure, only `lastRunAt` is updated so the task retries on the next scheduler tick.
+
+**Why:** Pre-advancing `nextRunAt` before execution means failed tasks silently wait the full interval before retrying.
+
+## In-flight idempotency guard
+
+Before inserting a run record, `runAutopilotTask()` checks for an existing row with `status = "running"` for that task. The inserted "running" row is the distributed lock — prevents duplicate executions when a task takes longer than the 1-minute cron interval.
+
+## Shared primitives (must reuse)
+
+- `executeCrmTool(toolName, args, orgId)` — exported from `routes/chat.ts`; use for `strategic_brief` and any CRM data fetch.
+- `sendAutoReply(orgId, phone, message)` — exported from `routes/whatsapp.ts`; use for all WhatsApp sending in the engine.
+
+Do not re-implement these inline in the engine.
+
+## DB migration note
+
+Autopilot tables created via direct SQL — drizzle-kit push requires TTY. Use `executeSql` in code_execution sandbox for all DDL on this project.
