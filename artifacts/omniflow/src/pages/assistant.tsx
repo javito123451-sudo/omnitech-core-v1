@@ -681,6 +681,8 @@ export default function Assistant() {
   const [contextId,      setContextId]      = useState<number | null>(null);
   const [showPicker,     setShowPicker]     = useState(false);
 
+  const [avaDetailsOpen,  setAvaDetailsOpen]  = useState(false);
+
   const [memories,        setMemories]        = useState<AgentMemory[]>([]);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [flashedMemId,    setFlashedMemId]    = useState<number | null>(null);
@@ -1080,11 +1082,54 @@ export default function Assistant() {
         </div>
 
         <div className="p-3 border-t border-border shrink-0">
-          <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/5 border border-primary/10">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"/>
-            <span className="text-xs text-muted-foreground">
-              OmniTech AI <span className="text-primary font-medium">GPT-4o mini</span>
-            </span>
+          <div className="rounded-lg bg-primary/5 border border-primary/10 overflow-hidden">
+            <div className="px-2.5 pt-2.5 pb-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-semibold text-white">🤖 Ava Online</span>
+                <button
+                  onClick={() => setAvaDetailsOpen(v => !v)}
+                  className="text-[10px] text-muted-foreground/50 hover:text-primary transition-colors"
+                  title={avaDetailsOpen ? "Ocultar detalles" : "Ver detalles técnicos"}>
+                  {avaDetailsOpen ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>}
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"/>
+                <span className="text-[10px] text-emerald-400 font-medium">Conectada</span>
+              </div>
+              {(() => {
+                const allAiMsgs = sessions.flatMap(s => s.msgs).filter(m => m.role === "ai" && !m.streaming);
+                const lastTs = allAiMsgs.length > 0
+                  ? allAiMsgs.reduce((latest, m) => m.ts > latest ? m.ts : latest, allAiMsgs[0]!.ts)
+                  : null;
+                const SKILLS_COUNT = 18;
+                return (
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] text-muted-foreground/55">
+                      Última actividad:{" "}
+                      {lastTs
+                        ? formatDistanceToNow(lastTs, { locale: es, addSuffix: true })
+                        : "Sin actividad reciente"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/55">
+                      Skills activas: <span className="text-primary/70 font-medium">{SKILLS_COUNT}</span>
+                    </p>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {avaDetailsOpen && (
+              <div className="border-t border-primary/10 px-2.5 py-2 bg-black/20">
+                <p className="text-[9px] text-muted-foreground/40 uppercase tracking-wider mb-1.5">
+                  Detalles técnicos
+                </p>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground/55">Proveedor: <span className="text-white/50">OpenAI</span></p>
+                  <p className="text-[10px] text-muted-foreground/55">Modelo: <span className="text-white/50">GPT-4o mini</span></p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1104,12 +1149,12 @@ export default function Assistant() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-white truncate">
-              {activeSession ? activeSession.title : "OmniTech AI"}
+              {activeSession ? activeSession.title : "Ava"}
             </p>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
               <span className="text-[10px] text-emerald-400 font-medium">
-                {isThinking ? "Procesando…" : "Conectado · GPT-4o mini"}
+                {isThinking ? "Procesando…" : "Conectada"}
               </span>
             </div>
           </div>
@@ -1304,7 +1349,7 @@ export default function Assistant() {
           </div>
 
           <p className="text-center text-[10px] text-muted-foreground/40 mt-1.5">
-            GPT-4o mini · OmniTech AI puede cometer errores. Verifica información importante.
+            Ava puede cometer errores. Verifica información importante.
           </p>
         </div>
       </div>
