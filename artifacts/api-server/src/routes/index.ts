@@ -25,6 +25,7 @@ import { backupRouter } from "./backup";
 import { knowledgeBaseRouter } from "./knowledge-base";
 import { docsRouter } from "./docs";
 import { autopilotRouter } from "./autopilot";
+import { accountingRouter } from "./accounting";
 
 const router: IRouter = Router();
 
@@ -81,5 +82,6 @@ router.use("/import",        requireModule("omni_import_ai"),  importAiRouter);
 router.use("/knowledge-base",requireModule("ai_agents"),       knowledgeBaseRouter);
 router.use("/docs",          requireModule("omni_docs"),       docsRouter);
 router.use("/autopilot",     requireModule("automations"),     autopilotRouter);
+router.use("/accounting",    requireModule("omni_accounting"), accountingRouter);
 
 export default router;

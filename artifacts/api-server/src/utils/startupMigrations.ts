@@ -62,6 +62,100 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info(`[Migration] ✅ FIX-C: Created membership ${email} → org_id=${orgId} (${role})`);
     }
 
+    // ── FIX D: Accounting tables ─────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id              SERIAL PRIMARY KEY,
+        org_id          INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        client_id       INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+        quote_id        INTEGER REFERENCES quotes(id) ON DELETE SET NULL,
+        invoice_number  VARCHAR(50) NOT NULL,
+        status          VARCHAR(30) NOT NULL DEFAULT 'draft',
+        currency        VARCHAR(10) NOT NULL DEFAULT 'EUR',
+        subtotal        NUMERIC(12,2) NOT NULL DEFAULT 0,
+        tax_rate        NUMERIC(5,2)  NOT NULL DEFAULT 21,
+        tax_amount      NUMERIC(12,2) NOT NULL DEFAULT 0,
+        total           NUMERIC(12,2) NOT NULL DEFAULT 0,
+        notes           TEXT,
+        due_date        TIMESTAMP,
+        paid_at         TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS invoices_org_id_idx    ON invoices(org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS invoices_client_id_idx ON invoices(client_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS invoices_status_idx    ON invoices(status)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS invoice_items (
+        id          SERIAL PRIMARY KEY,
+        invoice_id  INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+        description TEXT    NOT NULL,
+        quantity    NUMERIC(10,2) NOT NULL DEFAULT 1,
+        unit_price  NUMERIC(12,2) NOT NULL DEFAULT 0,
+        total       NUMERIC(12,2) NOT NULL DEFAULT 0,
+        order_index INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS invoice_items_invoice_id_idx ON invoice_items(invoice_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS accounting_payments (
+        id          SERIAL PRIMARY KEY,
+        org_id      INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        invoice_id  INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+        client_id   INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+        amount      NUMERIC(12,2) NOT NULL,
+        currency    VARCHAR(10) NOT NULL DEFAULT 'EUR',
+        method      VARCHAR(50) NOT NULL DEFAULT 'transfer',
+        reference   VARCHAR(200),
+        notes       TEXT,
+        paid_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS payments_org_id_idx     ON accounting_payments(org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS payments_invoice_id_idx ON accounting_payments(invoice_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS credit_notes (
+        id          SERIAL PRIMARY KEY,
+        org_id      INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        invoice_id  INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+        client_id   INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+        note_number VARCHAR(50) NOT NULL,
+        amount      NUMERIC(12,2) NOT NULL,
+        currency    VARCHAR(10) NOT NULL DEFAULT 'EUR',
+        reason      TEXT,
+        status      VARCHAR(30) NOT NULL DEFAULT 'issued',
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS credit_notes_org_id_idx ON credit_notes(org_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id             SERIAL PRIMARY KEY,
+        org_id         INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        category       VARCHAR(100) NOT NULL DEFAULT 'general',
+        description    TEXT NOT NULL,
+        amount         NUMERIC(12,2) NOT NULL,
+        currency       VARCHAR(10)  NOT NULL DEFAULT 'EUR',
+        vendor         VARCHAR(200),
+        expense_date   TIMESTAMP NOT NULL DEFAULT NOW(),
+        receipt_url    TEXT,
+        tax_deductible BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS expenses_org_id_idx   ON expenses(org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS expenses_category_idx ON expenses(category)`);
+
+    logger.info("[Migration] ✅ FIX-D: Accounting tables ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

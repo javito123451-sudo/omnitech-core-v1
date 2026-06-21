@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot, BookOpen,
-  Eye, ArrowLeft, Library,
+  Eye, ArrowLeft, Library, Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -63,6 +63,12 @@ const sidebarGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Finanzas",
+    items: [
+      { icon: Receipt, label: "Contabilidad", href: "/accounting", moduleKey: "omni_accounting" },
+    ],
+  },
+  {
     label: "Sistema",
     items: [
       { icon: Zap,      label: "Ava Autopilot",  href: "/automations",   moduleKey: "automations" },
@@ -93,6 +99,7 @@ const moreItems: MoreItem[] = [
   { icon: Puzzle,          label: "Integraciones",   href: "/integrations",   group: "Sistema",    moduleKey: "integrations" },
   { icon: Settings,        label: "Configuración",   href: "/settings",       group: "Sistema" },
   { icon: Zap,             label: "Ava Autopilot",   href: "/automations",    group: "Sistema",    moduleKey: "automations" },
+  { icon: Receipt,         label: "Contabilidad",    href: "/accounting",     group: "Finanzas",   moduleKey: "omni_accounting" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

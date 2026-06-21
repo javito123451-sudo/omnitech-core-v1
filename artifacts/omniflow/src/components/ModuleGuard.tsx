@@ -13,7 +13,8 @@ const MODULE_LABELS: Record<string, string> = {
   omni_marketing:"Marketing Hub",
   omni_security: "Security Core",
   integrations:  "Integraciones",
-  ai_agents:     "AI Center",
+  ai_agents:       "AI Center",
+  omni_accounting: "Omni Accounting",
 };
 
 function ModuleNotAvailable({ moduleKey }: { moduleKey: string }) {
