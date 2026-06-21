@@ -280,6 +280,27 @@ accountingRouter.patch("/invoices/:id", async (req, res) => {
   res.json(await enrichInvoice(updated!));
 });
 
+// PATCH /api/accounting/invoices/:id/status — spec-correct status-only alias
+accountingRouter.patch("/invoices/:id/status", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
+  const orgId = req.orgId!;
+  const id    = Number(req.params["id"]);
+  const { status } = req.body as { status: string };
+  if (!status) { res.status(400).json({ error: "status requerido" }); return; }
+
+  const [existing] = await db.select().from(invoicesTable)
+    .where(and(eq(invoicesTable.id, id), eq(invoicesTable.orgId, orgId)));
+  if (!existing) { res.status(404).json({ error: "Factura no encontrada" }); return; }
+
+  const upd: Partial<typeof invoicesTable.$inferInsert> = { status, updatedAt: new Date() };
+  if (status === "paid" && !existing.paidAt) upd.paidAt = new Date();
+
+  await db.update(invoicesTable).set(upd).where(eq(invoicesTable.id, id));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "invoice_status_updated", resource: "invoice", resourceId: id, orgId, details: { status }, req });
+  const [updated] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  res.json(await enrichInvoice(updated!));
+});
+
 // DELETE /api/accounting/invoices/:id
 accountingRouter.delete("/invoices/:id", async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
@@ -333,6 +354,7 @@ accountingRouter.get("/invoices/:id/pdf", async (req, res) => {
 
 // POST /api/accounting/invoices/from-quote/:quoteId — convert approved quote to invoice (spec endpoint)
 accountingRouter.post("/invoices/from-quote/:quoteId", async (req, res) => {
+  if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId   = req.orgId!;
   const quoteId = Number(req.params["quoteId"]);
 
@@ -599,19 +621,23 @@ accountingRouter.post("/credit-notes", async (req, res) => {
 
   if (!amount || amount <= 0) { res.status(400).json({ error: "Importe inválido" }); return; }
 
-  // Validate: if an invoiceId is provided, the invoice must belong to this org and be paid
-  if (invoiceId) {
-    const [inv] = await db.select({ id: invoicesTable.id, status: invoicesTable.status })
-      .from(invoicesTable)
-      .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
-    if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
-    if (inv.status !== "paid") {
-      res.status(422).json({ error: "Solo se pueden emitir notas de crédito contra facturas pagadas" }); return;
-    }
+  // Require invoiceId — credit notes must always be tied to a paid invoice
+  if (!invoiceId) {
+    res.status(400).json({ error: "Se requiere invoiceId: las notas de crédito deben emitirse contra una factura pagada" }); return;
   }
 
-  // Validate clientId belongs to this org
-  if (clientId) {
+  // Validate: invoice must belong to this org and be paid
+  const [inv] = await db.select({ id: invoicesTable.id, status: invoicesTable.status, clientId: invoicesTable.clientId })
+    .from(invoicesTable)
+    .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
+  if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
+  if (inv.status !== "paid") {
+    res.status(422).json({ error: "Solo se pueden emitir notas de crédito contra facturas pagadas" }); return;
+  }
+
+  // Derive clientId from invoice if not supplied; if supplied, validate ownership
+  const resolvedClientId = clientId ?? inv.clientId ?? null;
+  if (clientId && clientId !== inv.clientId) {
     const [cl] = await db.select({ id: clientsTable.id }).from(clientsTable)
       .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
     if (!cl) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
@@ -620,12 +646,12 @@ accountingRouter.post("/credit-notes", async (req, res) => {
   const noteNumber = await nextCreditNoteNumber(orgId);
 
   const [note] = await db.insert(creditNotesTable).values({
-    orgId, invoiceId: invoiceId ?? null, clientId: clientId ?? null,
+    orgId, invoiceId, clientId: resolvedClientId,
     noteNumber, amount: String(amount), currency,
     reason: reason ?? null, status: "issued",
   }).returning();
 
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "credit_note_created", resource: "credit_note", resourceId: note!.id, orgId, details: { noteNumber, amount }, req });
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "credit_note_created", resource: "credit_note", resourceId: note!.id, orgId, details: { noteNumber, amount, invoiceId }, req });
   res.status(201).json({ ...note, amount: parseFloat(String(note!.amount)) });
 });
 
@@ -635,8 +661,10 @@ accountingRouter.patch("/credit-notes/:id", async (req, res) => {
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   const { status } = req.body as { status?: string };
-  await db.update(creditNotesTable).set({ status: status ?? "issued", updatedAt: new Date() })
+  const newStatus = status ?? "issued";
+  await db.update(creditNotesTable).set({ status: newStatus, updatedAt: new Date() })
     .where(and(eq(creditNotesTable.id, id), eq(creditNotesTable.orgId, orgId)));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "credit_note_updated", resource: "credit_note", resourceId: id, orgId, details: { status: newStatus }, req });
   res.json({ ok: true });
 });
 
