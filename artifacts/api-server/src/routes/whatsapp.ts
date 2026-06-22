@@ -508,19 +508,58 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
   const body = req.body as MetaWebhookPayload;
   if (!body || body.object !== "whatsapp_business_account") return;
 
+  // Resolve a fallback orgId (first org in DB) for audit events where org is unknown
+  const resolveAuditOrgId = async (): Promise<number> => {
+    try {
+      const [first] = await db.select({ id: organizationsTable.id }).from(organizationsTable).limit(1);
+      return first?.id ?? 1;
+    } catch { return 1; }
+  };
+
   void (async () => {
+    const auditOrgId = await resolveAuditOrgId();
+
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
+        const value = change.value;
+
+        // ── Status updates (delivered, read, failed, sent) ──────────────────
+        for (const status of value.statuses ?? []) {
+          logIntegrationEvent({
+            orgId:           auditOrgId,
+            integrationSlug: "whatsapp",
+            direction:       "inbound",
+            eventType:       `message_status_${status.status ?? "unknown"}`,
+            status:          "processed",
+            summary:         `Estado de mensaje: ${status.status} (ID: ${status.id?.slice(-12)}, para: +${String(status.recipient_id ?? "").slice(-9)})`,
+            payloadJson:     { messageId: status.id, recipientId: status.recipient_id, status: status.status, timestamp: status.timestamp },
+          });
+        }
+
         if (change.field !== "messages") continue;
-        for (const msg of change.value.messages ?? []) {
-          if (msg.type !== "text") continue;
-          await processIncomingMessage({
-            fromPhone:   msg.from,
-            text:        msg.text?.body ?? "",
-            waMessageId: msg.id,
-          }).catch((err) =>
-            console.error("[WhatsApp Webhook] Processing error:", err),
-          );
+
+        // ── Text messages → full processing pipeline ─────────────────────────
+        for (const msg of value.messages ?? []) {
+          if (msg.type === "text") {
+            await processIncomingMessage({
+              fromPhone:   msg.from,
+              text:        msg.text?.body ?? "",
+              waMessageId: msg.id,
+            }).catch((err) =>
+              console.error("[WhatsApp Webhook] Processing error:", err),
+            );
+          } else {
+            // Non-text messages (image, audio, document, etc.) — log but don't process
+            logIntegrationEvent({
+              orgId:           auditOrgId,
+              integrationSlug: "whatsapp",
+              direction:       "inbound",
+              eventType:       `message_non_text`,
+              status:          "skipped",
+              summary:         `Mensaje de tipo "${msg.type}" de +${String(msg.from ?? "").slice(-9)} — sin procesamiento`,
+              payloadJson:     { type: msg.type, from: msg.from, messageId: msg.id },
+            });
+          }
         }
       }
     }
