@@ -211,6 +211,35 @@ export async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS recurring_invoices_next_run_at_idx ON recurring_invoices(next_run_at) WHERE is_active = TRUE`);
     logger.info("[Migration] ✅ FIX-H: recurring_invoices table ensured");
 
+    // ── FIX I: Seed WhatsApp integration row from env vars ───────────────────
+    // If WHATSAPP_BUSINESS_PHONE_ID + WHATSAPP_ACCESS_TOKEN are set but the
+    // org has no row in org_integrations, create it so the UI shows "conectado".
+    const waPhoneId = process.env["WHATSAPP_BUSINESS_PHONE_ID"];
+    const waToken   = process.env["WHATSAPP_ACCESS_TOKEN"];
+    const waVerify  = process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] ?? "omnitech-webhook";
+
+    if (waPhoneId && waToken) {
+      // Encode same as encryptCredentials() when no INTEGRATION_ENCRYPTION_KEY (base64 JSON)
+      const credsJson = JSON.stringify({ phoneNumberId: waPhoneId, accessToken: waToken, verifyToken: waVerify });
+      const credsEnc  = Buffer.from(credsJson).toString("base64");
+
+      const orgsResult = await db.execute(sql`SELECT id FROM organizations`);
+      for (const org of (orgsResult as { rows: Array<{ id: number }> }).rows) {
+        const existing = await db.execute(sql`
+          SELECT 1 FROM org_integrations
+          WHERE org_id = ${org.id} AND integration_slug = 'whatsapp'
+          LIMIT 1
+        `);
+        if ((existing as { rows: unknown[] }).rows.length > 0) continue;
+
+        await db.execute(sql`
+          INSERT INTO org_integrations (org_id, integration_slug, status, credentials_enc, display_name)
+          VALUES (${org.id}, 'whatsapp', 'active', ${credsEnc}, 'WhatsApp Business API')
+        `);
+        logger.info(`[Migration] ✅ FIX-I: WhatsApp seeded from env vars → org ${org.id}`);
+      }
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
