@@ -225,18 +225,14 @@ export async function runStartupMigrations(): Promise<void> {
 
       const orgsResult = await db.execute(sql`SELECT id FROM organizations`);
       for (const org of (orgsResult as { rows: Array<{ id: number }> }).rows) {
-        const existing = await db.execute(sql`
-          SELECT 1 FROM org_integrations
-          WHERE org_id = ${org.id} AND integration_slug = 'whatsapp'
-          LIMIT 1
-        `);
-        if ((existing as { rows: unknown[] }).rows.length > 0) continue;
-
+        // UPSERT — always sync env-var credentials so phone ID / token changes take effect immediately
         await db.execute(sql`
           INSERT INTO org_integrations (org_id, integration_slug, status, credentials_enc, display_name)
           VALUES (${org.id}, 'whatsapp', 'active', ${credsEnc}, 'WhatsApp Business API')
+          ON CONFLICT (org_id, integration_slug)
+          DO UPDATE SET credentials_enc = ${credsEnc}, status = 'active', updated_at = NOW()
         `);
-        logger.info(`[Migration] ✅ FIX-I: WhatsApp seeded from env vars → org ${org.id}`);
+        logger.info(`[Migration] ✅ FIX-I: WhatsApp credentials synced from env vars → org ${org.id}`);
       }
     }
 
