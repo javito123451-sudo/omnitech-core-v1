@@ -1,0 +1,248 @@
+AUDITORÍA Y REFACTORIZACIÓN COMPLETA DE AVA OMNITECH
+
+Actúa como arquitecto senior de software, especialista en SaaS, CRM, WhatsApp Business API, IA conversacional y sistemas multiagente.
+
+Tu misión es analizar TODO el proyecto OmniTech y corregir de forma autónoma cualquier problema que impida que Ava funcione como asistente empresarial real.
+
+CONTEXTO
+
+Actualmente:
+
+* WhatsApp ya está conectado y recibe mensajes.
+* Ava responde correctamente.
+* Los webhooks funcionan.
+* El número de producción está conectado.
+* El CRM existe.
+* Existe un sistema de citas.
+* Existe integración IA.
+
+Sin embargo:
+
+* Ava pierde contexto entre mensajes.
+* Reinicia conversaciones incorrectamente.
+* No mantiene estados conversacionales.
+* No ejecuta correctamente los flujos CRM.
+* No siempre utiliza el CRM como fuente de verdad.
+* Hay código heredado de pruebas y configuraciones antiguas.
+
+⸻
+
+OBJETIVO PRINCIPAL
+
+Implementar la arquitectura oficial Ava V2.
+
+PRINCIPIOS OBLIGATORIOS
+
+1. CRM = FUENTE DE VERDAD
+
+Ava nunca debe inventar:
+
+* clientes
+* citas
+* presupuestos
+* tareas
+* estados
+
+Todo debe consultarse en el CRM.
+
+⸻
+
+2. SKILL ENGINE
+
+Crear o corregir un Skill Engine central.
+
+Cada acción debe ser una skill independiente:
+
+* create_appointment
+* get_appointment
+* reschedule_appointment
+* cancel_appointment
+* create_customer
+* create_task
+* create_quote
+
+Las skills deben funcionar independientemente de la IA.
+
+⸻
+
+3. AVA ES SOLO CAPA CONVERSACIONAL
+
+La IA NO debe ejecutar lógica de negocio.
+
+La IA debe:
+
+* interpretar intención
+* solicitar datos faltantes
+* resumir resultados
+* responder al usuario
+
+Toda la lógica debe ejecutarse mediante Skills.
+
+⸻
+
+4. ESTADO CONVERSACIONAL PERSISTENTE
+
+Implementar conversation_state.
+
+Guardar:
+
+* userId
+* currentIntent
+* currentStep
+* collectedData
+* lastInteraction
+
+Ejemplo:
+
+{
+“currentIntent”:“create_appointment”,
+“currentStep”:“waiting_service”,
+“collectedData”:{
+“date”:“2026-06-24”,
+“time”:“15:00”
+}
+}
+
+⸻
+
+5. CONTINUIDAD DE CONVERSACIÓN
+
+Mensajes como:
+
+* sí
+* vale
+* ok
+* perfecto
+* adelante
+* correcto
+
+deben continuar el flujo activo.
+
+NO deben reiniciar la conversación.
+
+⸻
+
+6. MOTOR DE INTENCIONES OFICIAL
+
+Implementar:
+
+* crear cita
+* consultar cita
+* reprogramar cita
+* cancelar cita
+* crear cliente
+* crear tarea
+* crear presupuesto
+
+⸻
+
+7. GESTIÓN DE CITAS OFICIAL
+
+Reglas obligatorias:
+
+Crear cita:
+
+* estado pending
+
+Confirmar:
+
+* estado confirmed
+
+Reprogramar:
+
+* marcar anterior como rescheduled
+* crear o actualizar nueva
+
+Cancelar:
+
+* marcar como cancelled
+
+Completada:
+
+* completed
+
+Ava solo considera activas:
+
+* pending
+* confirmed
+
+⸻
+
+8. VALIDACIÓN CRM
+
+Después de:
+
+* crear
+* modificar
+* cancelar
+* reprogramar
+
+Ava debe volver a consultar el CRM antes de responder.
+
+⸻
+
+9. REDUCCIÓN DE LLAMADAS IA
+
+Las consultas de:
+
+* CRM
+* Analytics
+* Finanzas
+* Agenda
+
+NO deben depender del LLM.
+
+Deben resolverse mediante Skills.
+
+Objetivo:
+
+20% IA
+80% motor OmniTech
+
+⸻
+
+10. LIMPIEZA DE CÓDIGO
+
+Eliminar:
+
+* código muerto
+* endpoints antiguos
+* configuraciones duplicadas
+* lógica experimental
+* referencias a números de prueba antiguos
+* Phone IDs obsoletos
+* Tokens obsoletos
+
+⸻
+
+11. WHATSAPP
+
+Verificar:
+
+* Webhook
+* Verificación
+* Phone Number ID
+* Business Account ID
+* Access Token
+* Suscripciones
+
+Corregir automáticamente inconsistencias.
+
+⸻
+
+12. INFORME FINAL
+
+Al terminar:
+
+Generar informe completo indicando:
+
+1. Problemas encontrados.
+2. Problemas corregidos.
+3. Archivos modificados.
+4. Arquitectura resultante.
+5. Riesgos pendientes.
+6. Próximas mejoras recomendadas.
+
+No pedir confirmación.
+
+Analizar, corregir, refactorizar y dejar el sistema listo para producción.
