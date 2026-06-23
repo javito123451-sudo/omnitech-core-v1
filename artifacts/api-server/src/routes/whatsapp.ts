@@ -162,12 +162,13 @@ REGLAS OBLIGATORIAS:
 
 // ── Core: process one incoming WhatsApp message ───────────────────────────────
 async function processIncomingMessage(payload: {
-  fromPhone:   string;
-  text:        string;
-  waMessageId: string;
+  fromPhone:    string;
+  text:         string;
+  waMessageId:  string;
+  contactName?: string; // from Meta contacts[] array
 }): Promise<void> {
-  const { fromPhone, text } = payload;
-  const normalizedIncoming  = normalizePhone(fromPhone);
+  const { fromPhone, text, contactName } = payload;
+  const normalizedIncoming = normalizePhone(fromPhone);
 
   // 1. Find client by phone (across all orgs — normalize & compare last 9 digits)
   const allWithPhone = await db
@@ -175,34 +176,60 @@ async function processIncomingMessage(payload: {
     .from(clientsTable)
     .where(isNotNull(clientsTable.phone));
 
-  const client = allWithPhone.find((c) =>
+  let client = allWithPhone.find((c) =>
     c.phone ? normalizePhone(c.phone) === normalizedIncoming : false,
-  );
+  ) ?? null;
+
+  // Resolve the real first org for audit events (not hardcoded 1)
+  let auditOrgId = 1;
+  try {
+    const [firstOrg] = await db.select({ id: organizationsTable.id }).from(organizationsTable).limit(1);
+    if (firstOrg?.id) auditOrgId = firstOrg.id;
+  } catch { /* non-critical */ }
+
+  // 2. Auto-create client if not found (like Telegram does)
+  if (!client) {
+    const displayName = contactName?.trim() || `WhatsApp +${normalizedIncoming}`;
+    console.log(`[WhatsApp Webhook] Número desconocido +${normalizedIncoming} — creando cliente automáticamente: "${displayName}"`);
+    try {
+      const [newClient] = await db.insert(clientsTable).values({
+        orgId:  auditOrgId,
+        name:   displayName,
+        phone:  `+${fromPhone.replace(/\D/g, "")}`,
+        status: "lead",
+        tags:   "whatsapp,auto-creado",
+        notes:  `Cliente creado automáticamente al contactar por WhatsApp el ${new Date().toLocaleDateString("es-ES")}`,
+      }).returning();
+      client = newClient ?? null;
+      console.log(`[WhatsApp Webhook] ✅ Cliente auto-creado: id=${client?.id} name="${displayName}"`);
+    } catch (err) {
+      console.error("[WhatsApp Webhook] ❌ Error creando cliente automático:", err);
+    }
+  }
+
+  // If we still have no client (insert failed), log and bail
+  if (!client) {
+    logIntegrationEvent({
+      orgId:           auditOrgId,
+      integrationSlug: "whatsapp",
+      direction:       "inbound",
+      eventType:       "message_unknown_sender",
+      status:          "error",
+      summary:         `No se pudo crear cliente para +${normalizedIncoming}: "${text.slice(0, 80)}"`,
+      payloadJson:     { phone: fromPhone, phoneNorm: normalizedIncoming, messageText: text.slice(0, 200) },
+    });
+    return;
+  }
 
   // Log message_received with structured payload
   const basePayload: Record<string, unknown> = {
     phone:       fromPhone,
     phoneNorm:   normalizedIncoming,
     messageText: text.slice(0, 200),
-    clientFound: !!client,
-    clientId:    client?.id ?? null,
-    clientName:  client?.name ?? null,
+    clientFound: true,
+    clientId:    client.id,
+    clientName:  client.name,
   };
-
-  if (!client) {
-    console.log(`[WhatsApp Webhook] Sin cliente para +${fromPhone} (${normalizedIncoming}) — mensaje no almacenado`);
-    // Log for audit visibility even when no client matched
-    logIntegrationEvent({
-      orgId:           1, // generic — no org known
-      integrationSlug: "whatsapp",
-      direction:       "inbound",
-      eventType:       "message_unknown_sender",
-      status:          "processed",
-      summary:         `Mensaje de número desconocido +${fromPhone.slice(-9)}: "${text.slice(0, 80)}"`,
-      payloadJson:     { phone: fromPhone, phoneNorm: normalizedIncoming, messageText: text.slice(0, 200), clientFound: false },
-    });
-    return;
-  }
 
   const orgId = client.orgId;
 
@@ -539,12 +566,19 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
         if (change.field !== "messages") continue;
 
         // ── Text messages → full processing pipeline ─────────────────────────
+        // contacts[] maps wa_id → display name provided by Meta
+        const contactNameMap: Record<string, string> = {};
+        for (const c of value.contacts ?? []) {
+          if (c.wa_id && c.profile?.name) contactNameMap[c.wa_id] = c.profile.name;
+        }
+
         for (const msg of value.messages ?? []) {
           if (msg.type === "text") {
             await processIncomingMessage({
-              fromPhone:   msg.from,
-              text:        msg.text?.body ?? "",
-              waMessageId: msg.id,
+              fromPhone:    msg.from,
+              text:         msg.text?.body ?? "",
+              waMessageId:  msg.id,
+              contactName:  contactNameMap[msg.from],
             }).catch((err) =>
               console.error("[WhatsApp Webhook] Processing error:", err),
             );
