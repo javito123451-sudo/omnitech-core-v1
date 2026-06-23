@@ -1,6 +1,5 @@
 import { Router } from "express";
 import multer from "multer";
-import OpenAI from "openai";
 import { createRequire } from "module";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
@@ -10,6 +9,7 @@ import { clientsTable, activityTable } from "@workspace/db";
 import { eq, and, ilike, sql } from "drizzle-orm";
 import { logAiCall } from "../utils/aiUsageLogger";
 import { logAudit } from "../utils/auditLogger";
+import { getProviderSingleton } from "../ai/types";
 
 // CJS interop: pdf-parse v2 uses class-based API (requires a file path URL, not buffer)
 const _require = createRequire(import.meta.url);
@@ -156,7 +156,7 @@ function applyColumnMapping(
 
 // ── analyzeWithAI — full extraction (images, PDFs, small text) ────────────────
 async function analyzeWithAI(
-  openai: OpenAI,
+  aiProvider: ReturnType<typeof getProviderSingleton>,
   content: { type: "image"; b64: string; mime: string } | { type: "text"; text: string },
   orgId: number,
   clerkUserId: string | null,
@@ -168,41 +168,33 @@ async function analyzeWithAI(
     textLen: content.type === "text" ? content.text.length : undefined,
   });
 
-  const userContent: OpenAI.Chat.ChatCompletionMessageParam["content"] =
-    content.type === "image"
-      ? [
-          { type: "image_url" as const, image_url: { url: `data:${content.mime};base64,${content.b64}`, detail: "high" as const } },
-          { type: "text" as const, text: "Extrae toda la información. Devuelve SOLO el JSON." },
-        ]
-      : `Extrae toda la información del siguiente contenido:\n\n${content.text}`;
+  const userContent = content.type === "image"
+    ? [
+        { type: "image_url" as const, image_url: { url: `data:${content.mime};base64,${content.b64}`, detail: "high" as const } },
+        { type: "text" as const, text: "Extrae toda la información. Devuelve SOLO el JSON." },
+      ]
+    : `Extrae toda la información del siguiente contenido:\n\n${content.text}`;
 
-  let completion: OpenAI.Chat.ChatCompletion;
+  let result;
   try {
-    completion = await openai.chat.completions.create({
-      model:           "gpt-4o",
-      messages:        [
-        { role: "system", content: FULL_EXTRACTION_PROMPT },
-        { role: "user",   content: userContent },
-      ],
-      temperature:     0.1,
-      max_tokens:      16000,
-      response_format: { type: "json_object" },
+    result = await aiProvider.generate([
+      { role: "system", content: FULL_EXTRACTION_PROMPT },
+      { role: "user",   content: userContent },
+    ], {
+      model:       "gpt-4o",
+      temperature: 0.1,
+      maxTokens:   16000,
     });
   } catch (err) {
     console.error("[ImportAI][AI-FULL-ERR]", (err as Error).message);
     throw err;
   }
 
-  const rawContent   = completion.choices[0]?.message?.content ?? null;
-  const finishReason = completion.choices[0]?.finish_reason ?? null;
-  const tokensIn     = completion.usage?.prompt_tokens    ?? 0;
-  const tokensOut    = completion.usage?.completion_tokens ?? 0;
+  const rawContent = result.text ?? null;
+  const tokensIn   = result.usage?.promptTokens     ?? 0;
+  const tokensOut  = result.usage?.completionTokens ?? 0;
 
-  console.log("[ImportAI][AI-FULL] RESPONSE", { finishReason, tokensIn, tokensOut, rawLen: rawContent?.length });
-
-  if (finishReason === "length") {
-    console.warn("[ImportAI][AI-FULL] TRUNCATED — response cut by max_tokens, attempting partial parse");
-  }
+  console.log("[ImportAI][AI-FULL] RESPONSE", { tokensIn, tokensOut, rawLen: rawContent?.length });
 
   try {
     const parsed = JSON.parse(rawContent ?? "{}") as Record<string, unknown>;
@@ -220,7 +212,7 @@ async function analyzeWithAI(
 
 // ── detectColumnMapping — AI on sample rows only ──────────────────────────────
 async function detectColumnMapping(
-  openai: OpenAI,
+  aiProvider: ReturnType<typeof getProviderSingleton>,
   sampleRows: Record<string, unknown>[],
   orgId: number,
   clerkUserId: string | null,
@@ -235,26 +227,24 @@ async function detectColumnMapping(
 
   console.log("[ImportAI][AI-MAPPING] Sending", sampleRows.length, "sample rows, cols:", Object.keys(sampleRows[0] ?? {}));
 
-  let completion: OpenAI.Chat.ChatCompletion;
+  let result;
   try {
-    completion = await openai.chat.completions.create({
-      model:           "gpt-4o",
-      messages:        [
-        { role: "system", content: COLUMN_MAPPING_PROMPT },
-        { role: "user",   content: `Filas de muestra:\n${sampleText}` },
-      ],
-      temperature:     0.1,
-      max_tokens:      1000,
-      response_format: { type: "json_object" },
+    result = await aiProvider.generate([
+      { role: "system", content: COLUMN_MAPPING_PROMPT },
+      { role: "user",   content: `Filas de muestra:\n${sampleText}` },
+    ], {
+      model:       "gpt-4o",
+      temperature: 0.1,
+      maxTokens:   1000,
     });
   } catch (err) {
     console.error("[ImportAI][AI-MAPPING-ERR]", (err as Error).message);
     throw err;
   }
 
-  const rawContent = completion.choices[0]?.message?.content ?? null;
-  const tokensIn   = completion.usage?.prompt_tokens    ?? 0;
-  const tokensOut  = completion.usage?.completion_tokens ?? 0;
+  const rawContent = result.text ?? null;
+  const tokensIn   = result.usage?.promptTokens     ?? 0;
+  const tokensOut  = result.usage?.completionTokens ?? 0;
 
   console.log("[ImportAI][AI-MAPPING] RESPONSE", { tokensIn, tokensOut, raw: rawContent?.slice(0, 400) });
 
@@ -291,7 +281,7 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
   const orgId       = (req as typeof req & { orgId?: number }).orgId ?? 1;
   const clerkUserId = (req as typeof req & { clerkUserId?: string }).clerkUserId ?? null;
   const ext         = getExt(file.originalname);
-  const openai      = new OpenAI({ apiKey });
+  const aiProvider  = getProviderSingleton();
   let rawTextForDB  = "";
 
   console.log("[ImportAI][1] FILE RECEIVED", {
@@ -315,7 +305,7 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
 
     // ── IMAGE ────────────────────────────────────────────────────────────────
     if (branch === "IMAGE") {
-      result = await analyzeWithAI(openai,
+      result = await analyzeWithAI(aiProvider,
         { type: "image", b64: file.buffer.toString("base64"), mime: mimeForExt(ext) },
         orgId, clerkUserId);
 
@@ -323,7 +313,7 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
     } else if (branch === "PDF") {
       rawTextForDB = await parsePdfBuffer(file.buffer);
       console.log("[ImportAI][PDF] Extracted", rawTextForDB.length, "chars");
-      result = await analyzeWithAI(openai, { type: "text", text: rawTextForDB }, orgId, clerkUserId);
+      result = await analyzeWithAI(aiProvider, { type: "text", text: rawTextForDB }, orgId, clerkUserId);
 
     // ── XLSX/XLS — HYBRID: AI column mapping + client-side row mapping ────────
     } else if (branch === "XLSX") {
@@ -356,11 +346,11 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
       } else if (rows.length <= 15) {
         // Small file — full AI extraction
         const text = `Excel con ${rows.length} filas:\n${JSON.stringify(rows, null, 2)}`;
-        result = await analyzeWithAI(openai, { type: "text", text }, orgId, clerkUserId);
+        result = await analyzeWithAI(aiProvider, { type: "text", text }, orgId, clerkUserId);
       } else {
         // Large file — AI maps columns using first 10 rows, Node.js maps the rest
         const sample     = rows.slice(0, 10);
-        const mappingRes = await detectColumnMapping(openai, sample, orgId, clerkUserId);
+        const mappingRes = await detectColumnMapping(aiProvider, sample, orgId, clerkUserId);
         console.log("[ImportAI][XLSX] Column mapping:", mappingRes.column_mapping);
         const allRecords = applyColumnMapping(rows, mappingRes.column_mapping, mappingRes.status_mapping);
         console.log("[ImportAI][XLSX] Mapped", allRecords.length, "records");
@@ -394,10 +384,10 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
         result = { detected_type: "other", confidence: 0, records: [], summary: "El CSV está vacío", suggested_destination: "CRM" };
       } else if (rows.length <= 15) {
         const text = `CSV con ${rows.length} filas:\n${JSON.stringify(rows, null, 2)}`;
-        result = await analyzeWithAI(openai, { type: "text", text }, orgId, clerkUserId);
+        result = await analyzeWithAI(aiProvider, { type: "text", text }, orgId, clerkUserId);
       } else {
         const sample     = rows.slice(0, 10);
-        const mappingRes = await detectColumnMapping(openai, sample, orgId, clerkUserId);
+        const mappingRes = await detectColumnMapping(aiProvider, sample, orgId, clerkUserId);
         console.log("[ImportAI][CSV] Column mapping:", mappingRes.column_mapping);
         const allRecords = applyColumnMapping(rows, mappingRes.column_mapping, mappingRes.status_mapping);
         console.log("[ImportAI][CSV] Mapped", allRecords.length, "records");
@@ -414,7 +404,7 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
     } else {
       const text   = file.buffer.toString("utf-8");
       rawTextForDB = text.slice(0, 2000);
-      result = await analyzeWithAI(openai, { type: "text", text }, orgId, clerkUserId);
+      result = await analyzeWithAI(aiProvider, { type: "text", text }, orgId, clerkUserId);
     }
 
     const detectedType  = String(result.detected_type ?? "other");

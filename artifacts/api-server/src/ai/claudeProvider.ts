@@ -3,7 +3,7 @@
 //  Implementación pendiente — placeholder para futura integración
 // ═══════════════════════════════════════════════════════════════════════════
 
-import type { AIProvider, Message, GenerateOptions, GenerateResult, EmbedResult } from "./types";
+import type { AIProvider, Message, GenerateOptions, GenerateResult, EmbedResult, StreamChunk } from "./types";
 
 export class ClaudeProvider implements AIProvider {
   id   = "claude";
@@ -27,5 +27,9 @@ export class ClaudeProvider implements AIProvider {
     params: Record<string, unknown>;
   }> {
     throw new Error("ClaudeProvider.classifyIntent() not yet implemented.");
+  }
+
+  async *stream(_messages: Message[], _options?: GenerateOptions): AsyncGenerator<StreamChunk> {
+    throw new Error("ClaudeProvider.stream() not yet implemented. Set AI_PROVIDER=openai.");
   }
 }

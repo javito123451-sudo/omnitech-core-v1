@@ -4,7 +4,7 @@ import {
   db, clientsTable, appointmentsTable, quotesTable, activityTable,
 } from "@workspace/db";
 import { eq, and, desc, gte } from "drizzle-orm";
-import OpenAI from "openai";
+import { getProviderSingleton } from "../ai/types";
 
 export const executiveRouter = Router();
 
@@ -419,15 +419,11 @@ executiveRouter.post("/report", async (req, res) => {
     `${allAppointments.filter(a => a.status === "completed").length} citas completadas en total`,
   ].join("\n");
 
-  const openai = new OpenAI({ apiKey });
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.3,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `Eres el CFO/estratega de OmniTech. Genera un informe ejecutivo en español basado en datos reales de negocio.
+  const aiProvider = getProviderSingleton();
+  const result = await aiProvider.generate([
+    {
+      role: "system",
+      content: `Eres el CFO/estratega de OmniTech. Genera un informe ejecutivo en español basado en datos reales de negocio.
 Devuelve SOLO JSON con esta estructura exacta:
 {
   "estado_general": {
@@ -462,20 +458,22 @@ Devuelve SOLO JSON con esta estructura exacta:
   }
 }
 Máximo 3 clientes prioritarios y 3 bloqueadores. Sé directo y accionable. Sin texto fuera del JSON.`,
-      },
-      { role: "user", content: context },
-    ],
+    },
+    { role: "user", content: context },
+  ], {
+    model:       "gpt-4o-mini",
+    temperature: 0.3,
   });
 
   logAiCall({
     orgId:        orgId,
     functionName: "executive_report",
     model:        "gpt-4o-mini",
-    tokensInput:  completion.usage?.prompt_tokens    ?? 0,
-    tokensOutput: completion.usage?.completion_tokens ?? 0,
+    tokensInput:  result.usage?.promptTokens     ?? 0,
+    tokensOutput: result.usage?.completionTokens ?? 0,
   }).catch(() => {});
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const raw = result.text ?? "{}";
   let report: Record<string, unknown>;
   try {
     report = JSON.parse(raw) as Record<string, unknown>;
@@ -551,15 +549,11 @@ executiveRouter.post("/ceo", async (req, res) => {
       : "Ninguna",
   ].join("\n");
 
-  const openai = new OpenAI({ apiKey });
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.25,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `Eres un CEO experimentado con mentalidad de máximo retorno económico. Analiza los datos del negocio y da instrucciones directas, sin rodeos.
+  const aiProvider = getProviderSingleton();
+  const result = await aiProvider.generate([
+    {
+      role: "system",
+      content: `Eres un CEO experimentado con mentalidad de máximo retorno económico. Analiza los datos del negocio y da instrucciones directas, sin rodeos.
 
 Devuelve SOLO este JSON (sin texto fuera):
 {
@@ -589,20 +583,22 @@ Reglas:
 - no_hacer: exactamente 2 cosas
 - Sé brutal y directo como un CEO. Sin frases corporativas vacías.
 - Todo ordenado por impacto económico real.`,
-      },
-      { role: "user", content: context },
-    ],
+    },
+    { role: "user", content: context },
+  ], {
+    model:       "gpt-4o-mini",
+    temperature: 0.25,
   });
 
   logAiCall({
     orgId:        orgId,
     functionName: "executive_ceo",
     model:        "gpt-4o-mini",
-    tokensInput:  completion.usage?.prompt_tokens    ?? 0,
-    tokensOutput: completion.usage?.completion_tokens ?? 0,
+    tokensInput:  result.usage?.promptTokens     ?? 0,
+    tokensOutput: result.usage?.completionTokens ?? 0,
   }).catch(() => {});
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const raw = result.text ?? "{}";
   let decision: Record<string, unknown>;
   try {
     decision = JSON.parse(raw) as Record<string, unknown>;

@@ -11,7 +11,6 @@ import {
   organizationsTable,
 } from "@workspace/db";
 import { eq, and, desc, gt, isNotNull, inArray } from "drizzle-orm";
-import OpenAI from "openai";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Ava V2 imports

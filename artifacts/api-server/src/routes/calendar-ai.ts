@@ -1,5 +1,5 @@
 import { Router } from "express";
-import OpenAI from "openai";
+import { getProviderSingleton } from "../ai/types";
 import { logAiCall } from "../utils/aiUsageLogger";
 
 export const calendarAiRouter = Router();
@@ -54,16 +54,15 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
       return;
     }
 
-    const openai = new OpenAI({ apiKey });
+    const aiProvider = getProviderSingleton();
     const calAiStart = Date.now();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
+    const result = await aiProvider.generate([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ], {
+      model:       "gpt-4o-mini",
       temperature: 0.7,
-      max_tokens: 500,
+      maxTokens:   500,
     });
 
     logAiCall({
@@ -71,12 +70,12 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
       userClerkId:  (req as Request & { clerkUserId?: string }).clerkUserId ?? null,
       functionName: `calendar_ai_${action as string}`,
       model:        "gpt-4o-mini",
-      tokensInput:  completion.usage?.prompt_tokens    ?? 0,
-      tokensOutput: completion.usage?.completion_tokens ?? 0,
+      tokensInput:  result.usage?.promptTokens     ?? 0,
+      tokensOutput: result.usage?.completionTokens ?? 0,
       durationMs:   Date.now() - calAiStart,
     }).catch(() => {});
 
-    const raw = completion.choices[0]?.message?.content ?? "";
+    const raw = result.text ?? "";
 
     if (action === "create" || action === "suggest-time") {
       try {

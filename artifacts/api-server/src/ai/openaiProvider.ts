@@ -5,7 +5,7 @@
 import OpenAI from "openai";
 import type {
   AIProvider, Message, GenerateOptions, GenerateResult, EmbedResult,
-  ToolCall,
+  ToolCall, StreamChunk,
 } from "./types";
 
 export class OpenAIProvider implements AIProvider {
@@ -22,12 +22,36 @@ export class OpenAIProvider implements AIProvider {
 
     const body: OpenAI.Chat.ChatCompletionCreateParams = {
       model,
-      messages: messages.map(m => ({
-        role: m.role,
-        content: m.content,
-        name: m.name,
-        tool_call_id: m.tool_call_id,
-      })) as any,
+      messages: messages.map(m => {
+        const msg: any = {
+          role: m.role,
+          name: m.name,
+          tool_call_id: m.tool_call_id,
+        };
+        // Support multimodal content (array of text/image_url objects)
+        if (typeof m.content === "string") {
+          msg.content = m.content;
+        } else if (Array.isArray(m.content)) {
+          msg.content = m.content.map(c => {
+            if (c.type === "image_url") {
+              return { type: "image_url", image_url: { url: c.image_url.url, detail: c.image_url.detail } };
+            }
+            return { type: "text", text: c.text };
+          });
+        }
+        // Forward tool_calls for round-trip assistant messages
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          msg.tool_calls = m.tool_calls.map(tc => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          }));
+        }
+        return msg;
+      }) as any,
       max_tokens:      options.maxTokens ?? 4000,
       temperature:     options.temperature ?? 0.7,
     };
@@ -76,6 +100,77 @@ export class OpenAIProvider implements AIProvider {
           }
         : undefined,
     };
+  }
+
+  async *stream(messages: Message[], options: GenerateOptions = {}): AsyncGenerator<StreamChunk> {
+    const model = options.model ?? "gpt-4o-mini";
+
+    const body: any = {
+      model,
+      messages: messages.map(m => {
+        const msg: any = {
+          role: m.role,
+          name: m.name,
+          tool_call_id: m.tool_call_id,
+        };
+        if (typeof m.content === "string") {
+          msg.content = m.content;
+        } else if (Array.isArray(m.content)) {
+          msg.content = m.content.map(c => {
+            if (c.type === "image_url") {
+              return { type: "image_url", image_url: { url: c.image_url.url, detail: c.image_url.detail } };
+            }
+            return { type: "text", text: c.text };
+          });
+        }
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          msg.tool_calls = m.tool_calls.map(tc => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          }));
+        }
+        return msg;
+      }),
+      max_tokens:  options.maxTokens ?? 4000,
+      temperature: options.temperature ?? 0.7,
+      stream:      true,
+      stream_options: { include_usage: true },
+    };
+
+    if (options.tools && options.tools.length > 0) {
+      body.tools = options.tools.map(t => ({
+        type: t.type,
+        function: {
+          name: t.function.name,
+          description: t.function.description,
+          parameters: t.function.parameters,
+        },
+      }));
+      if (options.toolChoice) {
+        if (options.toolChoice === "auto" || options.toolChoice === "none") {
+          body.tool_choice = options.toolChoice;
+        } else {
+          body.tool_choice = options.toolChoice;
+        }
+      }
+    }
+
+    const stream = await this.client.chat.completions.create(body);
+    for await (const chunk of stream) {
+      const token = chunk.choices[0]?.delta?.content ?? "";
+      const usage = chunk.usage
+        ? {
+            promptTokens:     chunk.usage.prompt_tokens,
+            completionTokens: chunk.usage.completion_tokens,
+            totalTokens:      chunk.usage.total_tokens,
+          }
+        : undefined;
+      yield { token, usage };
+    }
   }
 
   async embed(text: string, model?: string): Promise<EmbedResult> {

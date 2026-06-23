@@ -1,7 +1,7 @@
 import { Router } from "express";
-import OpenAI from "openai";
 import { db, agentMemoryTable, memoryHistoryTable } from "@workspace/db";
 import { eq, and, desc, or, ilike } from "drizzle-orm";
+import { getProviderSingleton } from "../ai/types";
 
 export const memoryRouter = Router();
 
@@ -11,18 +11,11 @@ type MemRow = typeof agentMemoryTable.$inferSelect;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getOpenAI(): OpenAI | null {
-  const key = process.env["OPENAI_API_KEY"];
-  return key ? new OpenAI({ apiKey: key }) : null;
-}
-
-async function generateEmbedding(openai: OpenAI, text: string): Promise<number[] | null> {
+async function generateEmbedding(text: string): Promise<number[] | null> {
   try {
-    const res = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text.slice(0, 2000),
-    });
-    return res.data[0]?.embedding ?? null;
+    const aiProvider = getProviderSingleton();
+    const res = await aiProvider.embed(text.slice(0, 2000));
+    return res.embedding ?? null;
   } catch {
     return null;
   }
@@ -110,11 +103,10 @@ memoryRouter.get("/search", async (req, res) => {
       .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, AGENT_SLUG)))
       .orderBy(desc(agentMemoryTable.updatedAt));
 
-    const openai = getOpenAI();
     const withEmbeddings = all.filter(r => r.embedding && (r.embedding as number[]).length > 0);
 
-    if (openai && withEmbeddings.length > 0) {
-      const qEmb = await generateEmbedding(openai, q);
+    if (withEmbeddings.length > 0) {
+      const qEmb = await generateEmbedding(q);
       if (qEmb) {
         const scored = all
           .map(r => ({
@@ -203,9 +195,8 @@ memoryRouter.post("/", async (req, res) => {
     const titleStr  = title?.trim() ?? null;
 
     // Generate embedding
-    const openai  = getOpenAI();
     const embText = `${titleStr ?? memoryKey} ${value}`;
-    const emb     = openai ? await generateEmbedding(openai, embText) : null;
+    const emb     = await generateEmbedding(embText);
 
     const [mem] = await db
       .insert(agentMemoryTable)
@@ -276,9 +267,8 @@ memoryRouter.put("/:id", async (req, res) => {
     const cat      = category?.toLowerCase().trim() || resolveCategory(existing);
 
     // Re-generate embedding if content changed
-    const openai    = getOpenAI();
     const embText   = `${titleStr ?? existing.memoryKey} ${value}`;
-    const emb       = openai ? await generateEmbedding(openai, embText) : existing.embedding;
+    const emb       = await generateEmbedding(embText);
 
     const [updated] = await db
       .update(agentMemoryTable)

@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { randomBytes } from "crypto";
-import OpenAI from "openai";
 import {
   db, orgIntegrationsTable, integrationEventsTable,
   clientsTable, quotesTable, agentMemoryTable, organizationsTable, messagesTable,
@@ -236,14 +235,14 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
   const tgTools = getOpenAIFunctions();
 
   // ── 5. Build messages array ───────────────────────────────────────────────────
-  const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+  const loopMessages: import("../ai/types").Message[] = [
     { role: "system", content: systemPrompt },
     ...convHistory,
     { role: "user", content: text },
   ];
 
   console.log(
-    `[TG Memoria] OpenAI call: ${openaiMessages.length} messages total ` +
+    `[TG Memoria] AI call: ${loopMessages.length} messages total ` +
     `(1 system + ${convHistory.length} history + 1 current)`,
   );
 
@@ -252,39 +251,33 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
 
     // ── Multi-round tool calling loop (max 4 rounds) ──────────────────────────
     // Supports sequential patterns like: get_client_appointments → reschedule_appointment
-    // NOTE: For complex multi-round tool loops, we still use the native OpenAI SDK
-    // because the AIProvider interface is designed for simple chat completions.
-    // The key Ava V2 win is that tool calls are routed through executeSkill().
-    const openai = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
-    const loopMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [...openaiMessages];
+    // All tool calls are routed through executeSkill() for deterministic DB-backed results.
     let totalTokens = 0;
     const MAX_ROUNDS = 4;
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const response = await openai.chat.completions.create({
+      const response = await aiProvider.generate(loopMessages, {
         model:       "gpt-4o-mini",
         temperature: round === 0 ? 0.72 : 0.65,
-        max_tokens:  round < MAX_ROUNDS - 1 ? 600 : 400,
-        messages:    loopMessages,
+        maxTokens:   round < MAX_ROUNDS - 1 ? 600 : 400,
         tools:       tgTools,
-        tool_choice: "auto",
+        toolChoice:  "auto",
       });
 
-      totalTokens += response.usage?.total_tokens ?? 0;
-      const msg = response.choices[0]?.message;
-      if (!msg) break;
+      totalTokens += response.usage?.totalTokens ?? 0;
+      const textReply = response.text;
+      const toolCalls = response.toolCalls;
 
       // ── No tool call → this is the final text reply ───────────────────────
-      if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        const reply = (msg.content ?? "").trim();
-        console.log(`[TG Memoria] Respuesta generada | round=${round} | tokens=${totalTokens} | len=${reply.length}`);
-        return reply || null;
+      if (!toolCalls || toolCalls.length === 0) {
+        console.log(`[TG Memoria] Respuesta generada | round=${round} | tokens=${totalTokens} | len=${textReply.length}`);
+        return textReply || null;
       }
 
       // ── Execute the tool call ──────────────────────────────────────────────
-      const toolCall  = msg.tool_calls[0]!;
-      const toolName  = toolCall.function.name;
-      const args      = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+      const toolCall = toolCalls[0]!;
+      const toolName = toolCall.function.name;
+      const args     = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
 
       console.log(`[TG Tool] round=${round} calling=${toolName} | args=${toolCall.function.arguments.slice(0, 200)}`);
 
@@ -304,7 +297,11 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
       console.log(`[TG Tool] ${toolName} → ${toolResult.slice(0, 250)}`);
 
       // Append assistant message + tool result for next round
-      loopMessages.push(msg);
+      loopMessages.push({
+        role:        "assistant",
+        content:     textReply,
+        tool_calls:  toolCalls,
+      });
       loopMessages.push({
         role:         "tool",
         tool_call_id: toolCall.id,
@@ -317,7 +314,7 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
     return null;
 
   } catch (err) {
-    console.error("[Telegram AI] OpenAI error:", err);
+    console.error("[Telegram AI] AI error:", err);
     return null;
   }
 }

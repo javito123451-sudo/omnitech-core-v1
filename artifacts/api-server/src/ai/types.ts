@@ -3,11 +3,22 @@
 //  Interchangeable LLM providers
 // ═══════════════════════════════════════════════════════════════════════════
 
+export interface ImageContent {
+  type: "image_url";
+  image_url: { url: string; detail?: "auto" | "high" | "low" };
+}
+
+export interface TextContent {
+  type: "text";
+  text: string;
+}
+
 export interface Message {
   role:    "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | (TextContent | ImageContent)[];
   name?:   string;
   tool_call_id?: string;
+  tool_calls?: ToolCall[]; // For assistant messages with pending tool calls (round-trip loops)
 }
 
 export interface ToolCall {
@@ -51,12 +62,20 @@ export interface EmbedResult {
   usage?:    { promptTokens: number; totalTokens: number };
 }
 
+export interface StreamChunk {
+  token: string;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+}
+
 export interface AIProvider {
   id: string;
   name: string;
 
   // Chat completion
   generate(messages: Message[], options?: GenerateOptions): Promise<GenerateResult>;
+
+  // Streaming chat completion
+  stream(messages: Message[], options?: GenerateOptions): AsyncGenerator<StreamChunk>;
 
   // Embeddings
   embed(text: string, model?: string): Promise<EmbedResult>;

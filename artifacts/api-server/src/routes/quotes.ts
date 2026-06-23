@@ -3,7 +3,7 @@ import { logAiCall } from "../utils/aiUsageLogger";
 import { db, quotesTable, quoteItemsTable, clientsTable, activityTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { generateQuotePdf } from "../utils/pdf-quote";
-import OpenAI from "openai";
+import { getProviderSingleton } from "../ai/types";
 
 export const quotesRouter = Router();
 
@@ -370,16 +370,11 @@ quotesRouter.post("/ai-prioritize", async (req, res) => {
     " | Score: " + q.score
   ).join("\n");
 
-  const openai = new OpenAI({ apiKey });
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.3,
-    response_format: { type: "json_object" },
-    max_tokens: 600,
-    messages: [
-      {
-        role: "system",
-        content: `Eres un consultor comercial senior. Analiza los presupuestos ordenados por score (valor x probabilidad x dias sin respuesta).
+  const aiProvider = getProviderSingleton();
+  const result = await aiProvider.generate([
+    {
+      role: "system",
+      content: `Eres un consultor comercial senior. Analiza los presupuestos ordenados por score (valor x probabilidad x dias sin respuesta).
 Devuelve SOLO este JSON:
 {
   "top_id": <id del presupuesto 1>,
@@ -389,9 +384,12 @@ Devuelve SOLO este JSON:
   ]
 }
 El array actions debe tener exactamente los mismos IDs en el mismo orden. Solo JSON.`,
-      },
-      { role: "user", content: "Presupuestos a analizar (ordenados por score):\n" + listForAI },
-    ],
+    },
+    { role: "user", content: "Presupuestos a analizar (ordenados por score):\n" + listForAI },
+  ], {
+    model:       "gpt-4o-mini",
+    temperature: 0.3,
+    maxTokens:   600,
   });
 
   logAiCall({
@@ -399,11 +397,11 @@ El array actions debe tener exactamente los mismos IDs en el mismo orden. Solo J
     userClerkId:  (req as import("express").Request & { clerkUserId?: string }).clerkUserId ?? null,
     functionName: "quotes_ai_rank",
     model:        "gpt-4o-mini",
-    tokensInput:  completion.usage?.prompt_tokens    ?? 0,
-    tokensOutput: completion.usage?.completion_tokens ?? 0,
+    tokensInput:  result.usage?.promptTokens     ?? 0,
+    tokensOutput: result.usage?.completionTokens ?? 0,
   }).catch(() => {});
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const raw = result.text ?? "{}";
   let ai: { top_id?: number; summary?: string; actions?: { id: number; action: string; reason: string }[] };
   try { ai = JSON.parse(raw) as typeof ai; } catch { ai = {}; }
 
@@ -463,15 +461,11 @@ quotesRouter.post("/ai-generate", async (req, res) => {
     "Validez: " + validStr,
   ].filter(Boolean).join("\n");
 
-  const openai = new OpenAI({ apiKey });
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.2,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `Eres un experto en redacción de presupuestos comerciales profesionales en español.
+  const aiProvider = getProviderSingleton();
+  const result = await aiProvider.generate([
+    {
+      role: "system",
+      content: `Eres un experto en redacción de presupuestos comerciales profesionales en español.
 Genera un presupuesto estructurado basado en el servicio descrito. Desglosa el servicio en partidas detalladas.
 
 Devuelve SOLO este JSON:
@@ -490,12 +484,14 @@ Reglas:
 - Las notas deben incluir: condiciones de pago (50% inicio / 50% entrega), alcance, exclusiones y validez 30 días
 - Precios en euros, sin símbolo
 - Solo JSON, sin texto extra`,
-      },
-      { role: "user", content: prompt },
-    ],
+    },
+    { role: "user", content: prompt },
+  ], {
+    model:       "gpt-4o-mini",
+    temperature: 0.2,
   });
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const raw = result.text ?? "{}";
   let generated: { title: string; items: { description: string; quantity: number; unitPrice: number }[]; notes: string };
   try {
     generated = JSON.parse(raw) as typeof generated;

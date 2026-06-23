@@ -1,5 +1,4 @@
 import { Router } from "express";
-import OpenAI from "openai";
 import { logAiCall, checkBudgetBlocked } from "../utils/aiUsageLogger";
 import { isModuleEnabled } from "../middlewares/requireModule";
 
@@ -1921,15 +1920,12 @@ const SAVE_MEMORY_TOOL: OpenAI.Chat.ChatCompletionTool = {
 };
 
 async function extractAndSaveMemories(
-  _aiProvider: ReturnType<typeof getProviderSingleton>,
+  aiProvider: ReturnType<typeof getProviderSingleton>,
   orgId: number,
   lastUserMessage: string,
   aiResponse: string,
   existingMemories: AgentMemoryRow[],
 ): Promise<AgentMemoryRow[]> {
-  // NOTE: extractAndSaveMemories usa tool calls nativos de OpenAI
-  // que el AIProvider interface no soporta todavía. Usamos el SDK directamente aquí.
-  const openai = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
   const existingList =
     existingMemories.length > 0
       ? existingMemories
@@ -1940,16 +1936,10 @@ async function extractAndSaveMemories(
 
   let extraction;
   try {
-    extraction = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 400,
-      temperature: 0.1,
-      tool_choice: "auto",
-      tools: [SAVE_MEMORY_TOOL],
-      messages: [
-        {
-          role: "system",
-          content: `Eres un extractor de información organizacional. Analiza el intercambio y determina si hay hechos importantes que guardar en la memoria de la organización.
+    extraction = await aiProvider.generate([
+      {
+        role: "system",
+        content: `Eres un extractor de información organizacional. Analiza el intercambio y determina si hay hechos importantes que guardar en la memoria de la organización.
 
 REGLAS:
 - Solo guarda información DURABLE Y FACTUAL: datos de clientes, procesos, decisiones, hechos de la empresa, preferencias
@@ -1960,22 +1950,27 @@ REGLAS:
 
 Memorias ya existentes:
 ${existingList}`,
-        },
-        {
-          role: "user",
-          content: `Usuario: "${lastUserMessage.slice(0, 400)}"`,
-        },
-        {
-          role: "assistant",
-          content: aiResponse.slice(0, 800),
-        },
-      ],
+      },
+      {
+        role: "user",
+        content: `Usuario: "${lastUserMessage.slice(0, 400)}"`,
+      },
+      {
+        role: "assistant",
+        content: aiResponse.slice(0, 800),
+      },
+    ], {
+      model:       "gpt-4o-mini",
+      maxTokens:   400,
+      temperature: 0.1,
+      tools:       [SAVE_MEMORY_TOOL],
+      toolChoice:  "auto",
     });
   } catch {
     return [];
   }
 
-  const toolCalls = extraction.choices[0]?.message?.tool_calls ?? [];
+  const toolCalls = extraction.toolCalls ?? [];
   const saved: AgentMemoryRow[] = [];
 
   for (const tc of toolCalls) {
@@ -1993,11 +1988,10 @@ ${existingList}`,
       // Generate embedding for AI-saved memory
       let emb: number[] | null = null;
       try {
-        const embRes = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: `${normalizedKey} ${args.value}`.slice(0, 2000),
-        });
-        emb = embRes.data[0]?.embedding ?? null;
+        const embRes = await aiProvider.embed(
+          `${normalizedKey} ${args.value}`.slice(0, 2000),
+        );
+        emb = embRes.embedding ?? null;
       } catch { /* Non-critical */ }
 
       const [mem] = await db
@@ -2218,17 +2212,15 @@ router.post("/", async (req, res) => {
     } else {
       // ── Phase 1: CRM tool resolution (non-streaming) ─────────────────────
       // Let OpenAI decide which tools to call based on the user's question.
-      const phase1 = await openai.chat.completions.create({
-        model:        "gpt-4o-mini",
-        messages:     apiMessages,
-        tools:        CRM_TOOLS,
-        tool_choice:  "auto",
-        max_tokens:   300,
-        temperature:  0.1,
+      const phase1 = await aiProvider.generate(apiMessages, {
+        model:       "gpt-4o-mini",
+        maxTokens:   300,
+        temperature: 0.1,
+        tools:       CRM_TOOLS,
+        toolChoice:  "auto",
       });
 
-      const phase1Msg    = phase1.choices[0]?.message;
-      const crmToolCalls = (phase1Msg?.tool_calls ?? []).filter(
+      const crmToolCalls = (phase1.toolCalls ?? []).filter(
         tc => CRM_TOOL_NAMES.has(tc.function.name),
       );
 
@@ -2273,21 +2265,16 @@ router.post("/", async (req, res) => {
     // ── Phase 2: Final streaming response (always) ─────────────────────────
     // Executive reports get more token budget for complete structured output.
     const chatStreamStart = Date.now();
-    const stream = await openai.chat.completions.create({
-      model:          "gpt-4o-mini",
-      messages:       apiMessages,
-      stream:         true,
-      stream_options: { include_usage: true },
-      max_tokens:     isExecutive ? 1200 : 700,
-      temperature:    0.7,
-    });
-
     let accumulatedResponse = "";
-    let streamUsage: { prompt_tokens: number; completion_tokens: number } | undefined;
+    let streamUsage: { promptTokens: number; completionTokens: number } | undefined;
 
-    for await (const chunk of stream) {
+    for await (const chunk of aiProvider.stream(apiMessages, {
+      model:       "gpt-4o-mini",
+      maxTokens:   isExecutive ? 1200 : 700,
+      temperature: 0.7,
+    })) {
       if (chunk.usage) streamUsage = chunk.usage;
-      const token = chunk.choices[0]?.delta?.content ?? "";
+      const token = chunk.token;
       if (token) {
         accumulatedResponse += token;
         res.write(`data: ${JSON.stringify({ token })}\n\n`);
@@ -2300,8 +2287,8 @@ router.post("/", async (req, res) => {
       userClerkId:  req.clerkUserId ?? null,
       functionName: isExecutive ? "chat_executive" : "chat_stream",
       model:        "gpt-4o-mini",
-      tokensInput:  streamUsage?.prompt_tokens    ?? 0,
-      tokensOutput: streamUsage?.completion_tokens ?? 0,
+      tokensInput:  streamUsage?.promptTokens    ?? 0,
+      tokensOutput: streamUsage?.completionTokens ?? 0,
       durationMs:   Date.now() - chatStreamStart,
     }).catch(() => {});
 

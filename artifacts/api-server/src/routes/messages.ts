@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { db, messagesTable, clientsTable, activityTable } from "@workspace/db";
 import { eq, desc, and } from "drizzle-orm";
-import OpenAI from "openai";
+import { getProviderSingleton } from "../ai/types";
 import {
   ListMessagesQueryParams,
   SendMessageBody,
@@ -72,7 +72,7 @@ messagesRouter.post("/ai-reply", async (req, res) => {
       return;
     }
 
-    const openai = new OpenAI({ apiKey });
+    const aiProvider = getProviderSingleton();
 
     const [org] = await db
       .select({ name: clientsTable.name })
@@ -82,17 +82,16 @@ messagesRouter.post("/ai-reply", async (req, res) => {
 
     const systemPrompt = `Eres el asistente AI de OmniTech Core. Ayudas a equipos de ventas a responder a clientes de forma profesional y concisa. Responde SIEMPRE en español. Máximo 3-4 frases. Tono profesional pero cálido.`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const result = await aiProvider.generate([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Contexto del cliente: ${body.context || "Ninguno"}. \n\nMensaje del cliente: "${body.message}". \n\nGenera una respuesta profesional apropiada.` },
+    ], {
+      model:       "gpt-4o-mini",
       temperature: 0.7,
-      max_tokens: 250,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Contexto del cliente: ${body.context || "Ninguno"}. \n\nMensaje del cliente: "${body.message}". \n\nGenera una respuesta profesional apropiada.` },
-      ],
+      maxTokens:   250,
     });
 
-    const reply = (completion.choices[0]?.message?.content ?? "").trim();
+    const reply = result.text.trim();
     res.json({ reply: reply || "Gracias por tu mensaje. Te responderemos en breve." });
   } catch (err) {
     console.error("[AI Reply] Error:", err);
