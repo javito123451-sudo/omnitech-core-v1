@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { SkillDefinition, SkillContext, SkillResult } from "./types";
+import { trackSkillEngineCall } from "../utils/avaMetrics";
 
 import {
   createAppointmentSkill, rescheduleAppointmentSkill,
@@ -19,8 +20,7 @@ import {
   createQuoteSkill, getQuotesSkill,
 } from "./quoteSkills";
 
-// NOTE: taskSkills removed — no tasks table exists in DB schema yet.
-// When tasks table is added to lib/db/src/schema, re-enable taskSkills here.
+import { createTaskSkill, getTasksSkill } from "./taskSkills";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Registry
@@ -36,7 +36,8 @@ const SKILLS: SkillDefinition[] = [
   getClientDetailSkill,
   createQuoteSkill,
   getQuotesSkill,
-  // taskSkills will be added when tasks table exists in DB schema
+  createTaskSkill,
+  getTasksSkill,
 ];
 
 const SKILL_MAP: Map<string, SkillDefinition> = new Map(SKILLS.map(s => [s.id, s]));
@@ -46,7 +47,7 @@ SKILL_MAP.set("get_client_appointments", getAppointmentsSkill);
 SKILL_MAP.set("get_client", getClientDetailSkill);
 SKILL_MAP.set("list_clients", getClientsSkill);
 SKILL_MAP.set("list_quotes", getQuotesSkill);
-// SKILL_MAP.set("list_tasks", getTasksSkill);  // disabled: no tasks table in DB
+SKILL_MAP.set("list_tasks", getTasksSkill);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Public API
@@ -104,6 +105,7 @@ export async function executeSkill(
 
   try {
     const result = await skill.execute(merged, orgId, context);
+    trackSkillEngineCall();
     return {
       success: true,
       skillId,

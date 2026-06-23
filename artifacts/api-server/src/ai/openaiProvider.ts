@@ -7,6 +7,7 @@ import type {
   AIProvider, Message, GenerateOptions, GenerateResult, EmbedResult,
   ToolCall, StreamChunk,
 } from "./types";
+import { trackLLMDirectCall } from "../utils/avaMetrics";
 
 export class OpenAIProvider implements AIProvider {
   id   = "openai";
@@ -75,6 +76,7 @@ export class OpenAIProvider implements AIProvider {
     }
 
     const resp = await this.client.chat.completions.create(body);
+    trackLLMDirectCall();
     const choice = resp.choices[0]!;
     const msg = choice.message;
 
@@ -160,6 +162,7 @@ export class OpenAIProvider implements AIProvider {
     }
 
     const stream = await this.client.chat.completions.create(body);
+    trackLLMDirectCall();
     for await (const chunk of stream) {
       const token = chunk.choices[0]?.delta?.content ?? "";
       const usage = chunk.usage
@@ -178,6 +181,7 @@ export class OpenAIProvider implements AIProvider {
       model: model ?? "text-embedding-3-small",
       input: text.slice(0, 500),
     });
+    trackLLMDirectCall();
     return {
       embedding: resp.data[0]!.embedding,
       usage:     resp.usage
@@ -204,6 +208,7 @@ export class OpenAIProvider implements AIProvider {
       max_tokens: 200,
       temperature: 0.0,
     });
+    trackLLMDirectCall();
 
     const content = resp.choices[0]!.message.content ?? "{}";
     try {
