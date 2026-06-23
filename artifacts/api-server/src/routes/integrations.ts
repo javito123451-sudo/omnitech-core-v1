@@ -11,6 +11,7 @@ import {
   decryptCredentials,
 } from "../utils/integrationCreds";
 import { logAudit } from "../utils/auditLogger";
+import { autoSetupTelegramWebhooks } from "./telegram";
 
 export const integrationsRouter = Router();
 
@@ -291,6 +292,15 @@ integrationsRouter.post("/:slug/connect", async (req, res) => {
       status:          "processed",
       summary:         `Integración "${catalogItem.name}" configurada`,
     }).catch(() => {/* non-critical */});
+
+    // ── Telegram: register webhook immediately after saving bot token ─────────
+    // autoSetupTelegramWebhooks reads from DB, so credentials must be saved first.
+    if (slug === "telegram" && credentials.botToken) {
+      const publicBase = process.env["PUBLIC_URL"] ?? "https://omnitech-core.com";
+      void autoSetupTelegramWebhooks(publicBase).catch((e) =>
+        console.error("[Integrations] Telegram webhook auto-setup failed:", e),
+      );
+    }
 
     res.json({ success: true, status: "active" });
   } catch (err) {
