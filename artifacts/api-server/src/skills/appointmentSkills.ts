@@ -246,6 +246,15 @@ async function rescheduleAppointment(
     .set({ status: "rescheduled" })
     .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
 
+  // CRM-003: DB read-back validation — confirm old appointment was updated
+  const [oldVerified] = await db.select().from(appointmentsTable)
+    .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+  if (!oldVerified || oldVerified.status !== "rescheduled") {
+    return JSON.stringify({
+      error: `Error al marcar la cita original #${existing.id} como reprogramada. Estado actual: ${oldVerified?.status ?? "desconocido"}. No se creó la nueva cita.`,
+    });
+  }
+
   // Step 2: create new appointment
   const [newAppt] = await db.insert(appointmentsTable).values({
     orgId,
