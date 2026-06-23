@@ -12,6 +12,12 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, gt, isNotNull, inArray } from "drizzle-orm";
 import OpenAI from "openai";
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Ava V2 imports
+// ═══════════════════════════════════════════════════════════════════════════
+import { getProviderSingleton } from "../ai/types";
+
 import {
   getWhatsAppCreds,
   resolveWhatsAppVerifyTokens,
@@ -143,17 +149,16 @@ REGLAS OBLIGATORIAS:
     : `Un usuario desde el número +${fromPhone.slice(-9)} escribe: "${text}"`;
 
   try {
-    const openai = new OpenAI({ apiKey });
-    const completion = await openai.chat.completions.create({
+    const aiProvider = getProviderSingleton();
+    const result = await aiProvider.generate([
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: userMessage },
+    ], {
       model:       "gpt-4o-mini",
       temperature: 0.7,
-      max_tokens:  200,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user",   content: userMessage },
-      ],
+      maxTokens:   200,
     });
-    return (completion.choices[0]?.message?.content ?? "").trim() || null;
+    return result.text.trim() || null;
   } catch (err) {
     console.error("[WhatsApp AI] Generación fallida:", err);
     return null;
@@ -703,18 +708,17 @@ whatsappRouter.post("/generate", async (req, res) => {
     .limit(1);
   const nextAppointment = upcomingAppointments[0] ?? null;
 
-  const openai = new OpenAI({ apiKey });
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+  const aiProvider = getProviderSingleton();
+  const result = await aiProvider.generate([
+    { role: "system", content: buildSystemPrompt(messageType) },
+    { role: "user",   content: buildUserPrompt(messageType, client, activity, nextAppointment ? { title: nextAppointment.title, startTime: nextAppointment.startTime, location: nextAppointment.location } : null) },
+  ], {
+    model:       "gpt-4o-mini",
     temperature: 0.7,
-    max_tokens: 200,
-    messages: [
-      { role: "system", content: buildSystemPrompt(messageType) },
-      { role: "user",   content: buildUserPrompt(messageType, client, activity, nextAppointment ? { title: nextAppointment.title, startTime: nextAppointment.startTime, location: nextAppointment.location } : null) },
-    ],
+    maxTokens:   200,
   });
 
-  const message = (completion.choices[0]?.message?.content ?? "").trim();
+  const message = result.text.trim();
 
   const phone = (client.phone ?? "").replace(/\D/g, "");
   const openWhatsAppUrl = phone

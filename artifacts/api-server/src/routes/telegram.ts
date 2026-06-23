@@ -9,6 +9,13 @@ import {
 import { eq, and, desc, asc, isNotNull, ne, ilike, gte, inArray } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Ava V2 imports
+// ═══════════════════════════════════════════════════════════════════════════
+import { executeSkill, getOpenAIFunctions } from "../skills";
+import { classifyIntent, intentToSkill, Intent, validateIntentParams } from "../intents/intentEngine";
+import { getProviderSingleton } from "../ai/types";
+
 // ── Two routers: one public (webhook), one authenticated ─────────────────────
 export const telegramWebhookRouter = Router(); // mounted before requireAuth
 export const telegramRouter        = Router(); // mounted after requireAuth
@@ -103,9 +110,6 @@ async function generateTelegramAIReply(params: {
   excludeMsgId?: number;  // ID of the just-saved inbound message — exclude from history
   client:        { id: number; name: string; status: string; leadScore?: string | null; company?: string | null; tags?: string | null; notes?: string | null } | null;
 }): Promise<string | null> {
-  const apiKey = process.env["OPENAI_API_KEY"];
-  if (!apiKey) return null;
-
   const { orgId, orgName, text, senderName, excludeMsgId, client } = params;
 
   // ── 1. Fetch concurrently: KB, memory, and conversation history ──────────────
@@ -228,95 +232,8 @@ REGLA DE VALIDACIÓN (CRM-003): Después de create_appointment/reschedule_appoin
 REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres cancelled/rescheduled/completed.
 - IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
 
-  // ── 4. Tool definitions ───────────────────────────────────────────────────────
-  const tgTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
-    {
-      type: "function",
-      function: {
-        name: "create_appointment",
-        description:
-          "Crea una cita nueva en el calendario del CRM vinculada al cliente actual. " +
-          "Úsala SOLO cuando el usuario proponga una fecha/hora para una cita que NO existe todavía. " +
-          "Si el usuario quiere cambiar o mover una cita existente, usa reschedule_appointment en su lugar. " +
-          "Interpreta fechas relativas usando la fecha actual del sistema.",
-        parameters: {
-          type: "object" as const,
-          properties: {
-            title:            { type: "string", description: "Título de la cita. Ej: 'Llamada de presentación', 'Demo OmniTech'." },
-            date:             { type: "string", description: "Fecha en formato YYYY-MM-DD." },
-            start_time:       { type: "string", description: "Hora de inicio en formato HH:MM (24h). Ejemplo: '13:00'." },
-            duration_minutes: { type: "number", description: "Duración en minutos. Por defecto 60." },
-            description:      { type: "string", description: "Notas o motivo. Opcional." },
-            location:         { type: "string", description: "Lugar o enlace. Opcional." },
-            type:             { type: "string", enum: ["meeting", "call", "demo", "follow_up", "other"], description: "Tipo. Por defecto 'call'." },
-          },
-          required: ["title", "date", "start_time"],
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "get_client_appointments",
-        description:
-          "Consulta las citas ACTIVAS del cliente (estado pending o confirmed). " +
-          "Úsala ANTES de reprogramar o cancelar para obtener el ID exacto de la cita a modificar, " +
-          "y para responder a '¿cuándo tengo cita?'. " +
-          "Las citas reprogramadas, canceladas y completadas NO aparecen en el resultado por defecto.",
-        parameters: {
-          type: "object" as const,
-          properties: {
-            status: {
-              type: "string",
-              enum: ["active", "confirmed", "pending", "all"],
-              description: "Filtra por estado. 'active' (por defecto) = pending + confirmed. 'all' incluye rescheduled/cancelled/completed.",
-            },
-          },
-          required: [],
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "reschedule_appointment",
-        description:
-          "Reprograma la próxima cita activa del cliente (cambia la fecha y/u hora). " +
-          "Si el usuario dice 'cambia mi cita', 'mueve mi cita', 'pásala al...', 'cambia la hora', llama este tool DIRECTAMENTE. " +
-          "NO es necesario llamar get_client_appointments antes — el tool encuentra la cita activa automáticamente. " +
-          "Marca la cita antigua como 'rescheduled' y crea una nueva. Verifica en DB antes de confirmar.",
-        parameters: {
-          type: "object" as const,
-          properties: {
-            appointment_id:   { type: "number", description: "ID de la cita (opcional). Si no se proporciona, se usa la próxima cita activa del cliente." },
-            new_date:         { type: "string", description: "Nueva fecha en formato YYYY-MM-DD." },
-            new_start_time:   { type: "string", description: "Nueva hora de inicio en formato HH:MM (24h)." },
-            duration_minutes: { type: "number", description: "Nueva duración en minutos. Si no se indica, mantiene la duración original." },
-          },
-          required: ["new_date", "new_start_time"],
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "cancel_appointment",
-        description:
-          "Cancela la próxima cita activa del cliente. " +
-          "Si el usuario dice 'cancela mi cita', 'anula mi cita', 'no puedo asistir', 'cancela la llamada', llama este tool DIRECTAMENTE. " +
-          "NO es necesario llamar get_client_appointments antes — el tool encuentra la cita activa automáticamente. " +
-          "Verifica en DB antes de confirmar. Respuesta tras éxito: 'Tu cita ha sido cancelada correctamente.'",
-        parameters: {
-          type: "object" as const,
-          properties: {
-            appointment_id: { type: "number", description: "ID de la cita (opcional). Si no se proporciona, se usa la próxima cita activa del cliente." },
-            reason:         { type: "string", description: "Motivo de la cancelación. Opcional." },
-          },
-          required: [],
-        },
-      },
-    },
-  ];
+  // ── 4. Tool definitions (Ava V2: auto-generated from Skill Engine) ───────────
+  const tgTools = getOpenAIFunctions();
 
   // ── 5. Build messages array ───────────────────────────────────────────────────
   const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -331,10 +248,14 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
   );
 
   try {
-    const openai = new OpenAI({ apiKey });
+    const aiProvider = getProviderSingleton();
 
     // ── Multi-round tool calling loop (max 4 rounds) ──────────────────────────
     // Supports sequential patterns like: get_client_appointments → reschedule_appointment
+    // NOTE: For complex multi-round tool loops, we still use the native OpenAI SDK
+    // because the AIProvider interface is designed for simple chat completions.
+    // The key Ava V2 win is that tool calls are routed through executeSkill().
+    const openai = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
     const loopMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [...openaiMessages];
     let totalTokens = 0;
     const MAX_ROUNDS = 4;
@@ -367,18 +288,18 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
 
       console.log(`[TG Tool] round=${round} calling=${toolName} | args=${toolCall.function.arguments.slice(0, 200)}`);
 
+      // ══ Ava V2: Route tool calls through the Skill Engine ══
       let toolResult = "";
-      if (toolName === "create_appointment") {
-        toolResult = await executeTelegramCreateAppointment(args, orgId, client);
-      } else if (toolName === "get_client_appointments") {
-        toolResult = await executeTelegramGetClientAppointments(args, orgId, client);
-      } else if (toolName === "reschedule_appointment") {
-        toolResult = await executeTelegramRescheduleAppointment(args, orgId, client);
-      } else if (toolName === "cancel_appointment") {
-        toolResult = await executeTelegramCancelAppointment(args, orgId, client);
-      } else {
-        toolResult = JSON.stringify({ error: `Tool '${toolName}' no disponible en Telegram` });
-      }
+      const skillResult = await executeSkill(
+        toolName,
+        args,
+        orgId,
+        {
+          client: client ? { id: client.id, name: client.name } : null,
+          channel: "telegram",
+        },
+      );
+      toolResult = skillResult.result;
 
       console.log(`[TG Tool] ${toolName} → ${toolResult.slice(0, 250)}`);
 

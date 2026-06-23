@@ -2,6 +2,13 @@ import { Router } from "express";
 import OpenAI from "openai";
 import { logAiCall, checkBudgetBlocked } from "../utils/aiUsageLogger";
 import { isModuleEnabled } from "../middlewares/requireModule";
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Ava V2 imports
+// ═══════════════════════════════════════════════════════════════════════════
+import { executeSkill, getOpenAIFunctions, getSkill } from "../skills";
+import { getProviderSingleton } from "../ai/types";
+
 import {
   db,
   agentMemoryTable,
@@ -35,7 +42,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 async function getRelevantMemories(
-  openai: OpenAI,
+  aiProvider: ReturnType<typeof getProviderSingleton>,
   orgId: number,
   userMessage: string,
   limit = 20,
@@ -53,11 +60,8 @@ async function getRelevantMemories(
   if (withEmb.length === 0) return all.slice(0, limit);
 
   try {
-    const qRes = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: userMessage.slice(0, 500),
-    });
-    const qVec = qRes.data[0]!.embedding;
+    const qRes = await aiProvider.embed(userMessage.slice(0, 500));
+    const qVec = qRes.embedding;
     return all
       .map(r => ({
         mem: r,
@@ -248,9 +252,14 @@ function getMadridMonthStart(): Date {
   return new Date(Date.UTC(y!, m! - 1, 1, 0, 0, 0));
 }
 
-// ── CRM Tools ─────────────────────────────────────────────────────────────────
+// ── CRM Tools (Ava V2: auto-generated from Skill Engine) ─────────────────────
+const CRM_TOOLS = getOpenAIFunctions();
+const CRM_TOOL_NAMES = new Set(CRM_TOOLS.map(t => t.function.name));
 
-const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
+// ── LEGACY CRM_TOOLS (preserved for reference until full migration) ────────────
+// These will be removed once all skills are migrated to the Skill Engine.
+// The Skill Engine versions are now the canonical source of truth.
+const _LEGACY_CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
@@ -689,8 +698,7 @@ const CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   },
 ];
 
-const CRM_TOOL_NAMES = new Set(CRM_TOOLS.map(t => t.function.name));
-
+// NOTE: CRM_TOOL_NAMES ya está definido arriba (línea 260)
 const STATUS_LABEL: Record<string, string> = {
   lead:     "Prospecto",
   active:   "Activo",
@@ -705,11 +713,24 @@ const APPT_STATUS_LABEL: Record<string, string> = {
   cancelled: "❌ Cancelada",
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Ava V2: executeCrmTool
+// ═══════════════════════════════════════════════════════════════════════════
+// Primero intenta el Skill Engine; si el skill no existe, fallback a legacy.
 export async function executeCrmTool(
   toolName: string,
   args: Record<string, unknown>,
   orgId: number,
 ): Promise<string> {
+  // Ava V2: intenta el Skill Engine primero
+  const skill = getSkill(toolName);
+  if (skill) {
+    console.log(`[executeCrmTool] Ava V2: delegando a Skill Engine — ${toolName}`);
+    const result = await executeSkill(toolName, args, orgId, {});
+    return result.result;
+  }
+
+  // Fallback: legacy logic for non-skills (e.g., get_recent_activity, get_strategic_brief)
   try {
     // ── list_clients ────────────────────────────────────────────────────────
     if (toolName === "list_clients") {
@@ -1900,12 +1921,15 @@ const SAVE_MEMORY_TOOL: OpenAI.Chat.ChatCompletionTool = {
 };
 
 async function extractAndSaveMemories(
-  openai: OpenAI,
+  _aiProvider: ReturnType<typeof getProviderSingleton>,
   orgId: number,
   lastUserMessage: string,
   aiResponse: string,
   existingMemories: AgentMemoryRow[],
 ): Promise<AgentMemoryRow[]> {
+  // NOTE: extractAndSaveMemories usa tool calls nativos de OpenAI
+  // que el AIProvider interface no soporta todavía. Usamos el SDK directamente aquí.
+  const openai = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] });
   const existingList =
     existingMemories.length > 0
       ? existingMemories
@@ -2086,13 +2110,13 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  const openai = new OpenAI({ apiKey });
+  const aiProvider = getProviderSingleton();
 
   // Load relevant memories via semantic search (isolated by orgId)
   let memories: AgentMemoryRow[] = [];
   const lastUserMessage = messages.filter(m => m.role === "user").at(-1)?.content ?? "";
   try {
-    memories = await getRelevantMemories(openai, orgId, lastUserMessage);
+    memories = await getRelevantMemories(aiProvider, orgId, lastUserMessage);
     console.log(
       `[Chat] org=${orgId} memories_loaded=${memories.length}` +
       (memories.length > 0
@@ -2295,7 +2319,7 @@ router.post("/", async (req, res) => {
         .find(m => m.role === "user")?.content ?? "";
 
       const newMemories = await extractAndSaveMemories(
-        openai,
+        aiProvider,
         orgId,
         lastUserMsg,
         accumulatedResponse,
