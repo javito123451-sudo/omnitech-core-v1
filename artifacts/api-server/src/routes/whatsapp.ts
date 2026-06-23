@@ -9,13 +9,16 @@ import {
   agentMemoryTable,
   integrationEventsTable,
   organizationsTable,
+  knowledgeBaseTable,
 } from "@workspace/db";
-import { eq, and, desc, gt, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, gt, isNotNull, ne, inArray } from "drizzle-orm";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Ava V2 imports
 // ═══════════════════════════════════════════════════════════════════════════
 import { getProviderSingleton } from "../ai/types";
+import { executeSkill, getOpenAIFunctions } from "../skills";
+import { classifyIntent, intentToSkill, Intent } from "../intents/intentEngine";
 
 import {
   getWhatsAppCreds,
@@ -55,6 +58,10 @@ const ACCEPTANCE_RE =
 
 const REJECTION_RE =
   /\b(rechazo|rechazado?|no acepto|no (lo )?quiero|cancelar?|cancelo|no me interesa|no por ahora|declin[oa]r?|denegado?|no procede|no gracias|lo descarto|no vamos a seguir|no seguimos)\b/i;
+
+// ── Lead Intelligence keywords (same as Telegram) ─────────────────────────────
+const LEAD_HOT_RE  = /\b(presupuesto|precio|coste|costo|cu\u00e1nto cuesta|cuanto vale|contratar|contratar\u00e9|demo|quiero contratar|quiero empezar|c\u00f3mo contrato|propuesta|oferta comercial|me interesa contratar)\b/i;
+const LEAD_WARM_RE = /\b(informaci\u00f3n|m\u00e1s info|m\u00e1s informaci\u00f3n|me interesa|interesado|interesada|saber m\u00e1s|c\u00f3mo funciona|qu\u00e9 ofrec\u00e9is|qu\u00e9 servicios|qu\u00e9 hac\u00e9is|qu\u00e9 incluye|cu\u00e9ntame m\u00e1s|qu\u00e9 es|pod\u00e9is ayudarme)\b/i;
 
 // ── Phone normalization — compare last 9 digits ───────────────────────────────
 function normalizePhone(phone: string): string {
@@ -98,68 +105,210 @@ export async function sendAutoReply(orgId: number, toPhone: string, message: str
   }
 }
 
-// ── AI reply generation for WhatsApp messages ─────────────────────────────────
+// ── AI reply generation for WhatsApp messages — Ava V2 pipeline (same as Telegram)
+// Uses: KB + Memory + Conversation History + Tool Loop + Skill Engine
 async function generateWhatsAppAIReply(params: {
-  orgId:     number;
-  orgName:   string;
-  text:      string;
-  fromPhone: string;
-  client:    { name: string; status: string; company?: string | null; tags?: string | null; notes?: string | null } | null;
+  orgId:      number;
+  orgName:    string;
+  text:       string;
+  fromPhone:  string;
+  client:     { id: number; name: string; status: string; company?: string | null; tags?: string | null; notes?: string | null; leadScore?: string | null } | null;
+  excludeMsgId?: number;
 }): Promise<string | null> {
   const apiKey = process.env["OPENAI_API_KEY"];
   if (!apiKey) return null;
 
-  const { orgName, text, fromPhone, client } = params;
+  const { orgId, orgName, text, fromPhone, client, excludeMsgId } = params;
 
-  const memories = await db
-    .select()
-    .from(agentMemoryTable)
-    .where(and(
-      eq(agentMemoryTable.orgId, params.orgId),
-      eq(agentMemoryTable.agentSlug, "operator"),
-    ))
-    .orderBy(desc(agentMemoryTable.updatedAt))
-    .limit(10);
+  // ── 1. Fetch concurrently: KB, memory, and conversation history ─────────────
+  const [kbEntries, memories, rawHistoryRows] = await Promise.all([
+    db.select()
+      .from(knowledgeBaseTable)
+      .where(and(eq(knowledgeBaseTable.orgId, orgId), eq(knowledgeBaseTable.isActive, true)))
+      .orderBy(asc(knowledgeBaseTable.sortOrder))
+      .limit(25),
+
+    db.select()
+      .from(agentMemoryTable)
+      .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, "operator")))
+      .orderBy(desc(agentMemoryTable.updatedAt))
+      .limit(8),
+
+    client
+      ? db.select()
+          .from(messagesTable)
+          .where(
+            excludeMsgId
+              ? and(eq(messagesTable.orgId, orgId), eq(messagesTable.clientId, client.id), ne(messagesTable.id, excludeMsgId))
+              : and(eq(messagesTable.orgId, orgId), eq(messagesTable.clientId, client.id)),
+          )
+          .orderBy(desc(messagesTable.createdAt))
+          .limit(20)
+      : Promise.resolve([]),
+  ]);
+
+  const convHistory: { role: "user" | "assistant"; content: string }[] = (rawHistoryRows as typeof rawHistoryRows)
+    .reverse()
+    .map((m) => ({
+      role:    m.direction === "outbound" ? ("assistant" as const) : ("user" as const),
+      content: m.content,
+    }));
+
+  console.log(
+    `[WA Memoria] clientId=${client?.id ?? "null"} | excludeMsgId=${excludeMsgId ?? "none"} | ` +
+    `historyRows=${rawHistoryRows.length} | kbEntries=${kbEntries.length} | memories=${memories.length}`,
+  );
+
+  // ── 2. Build context blocks ───────────────────────────────────────────────
+  const kbBlock = kbEntries.length > 0
+    ? "\n\nBASE DE CONOCIMIENTO DE LA EMPRESA:\n" +
+      kbEntries.map((e) => `[${e.category.toUpperCase()}] **${e.title}**\n${e.content.slice(0, 400)}`).join("\n\n")
+    : "";
 
   const memoryBlock = memories.length > 0
-    ? "\n\nCONOCIMIENTO DEL NEGOCIO:\n" +
+    ? "\n\nCONTEXTO DEL NEGOCIO:\n" +
       memories.map((m) => `- ${m.memoryKey}: ${String(m.memoryVal ?? "").slice(0, 120)}`).join("\n")
     : "";
 
   const clientBlock = client
-    ? `\n\nCLIENTE IDENTIFICADO:\n- Nombre: ${client.name}\n- Estado: ${client.status}${client.company ? `\n- Empresa: ${client.company}` : ""}${client.tags ? `\n- Etiquetas: ${client.tags}` : ""}${client.notes ? `\n- Notas: ${String(client.notes).slice(0, 200)}` : ""}`
+    ? `\n\nCLIENTE IDENTIFICADO:
+- Nombre: ${client.name}
+- Estado CRM: ${client.status}
+- Lead Score: ${client.leadScore ?? "cold"}${client.company ? `\n- Empresa: ${client.company}` : ""}${client.tags ? `\n- Etiquetas: ${client.tags}` : ""}${client.notes ? `\n- Historial: ${String(client.notes).slice(0, 300)}` : ""}`
     : "";
 
-  const systemPrompt =
-    `Eres el asistente virtual de ${orgName} en WhatsApp Business. Respondes en nombre del negocio de forma profesional, cálida y concisa.
+  // Madrid date/time block
+  const now    = new Date();
+  const dateStr = now.toLocaleDateString("es-ES", { timeZone: "Europe/Madrid", weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const timeStr = now.toLocaleTimeString("es-ES", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit" });
+  const dateBlock = `\n\n🗓️ FECHA Y HORA ACTUAL (Madrid): ${dateStr}, ${timeStr}. Usa esta fecha para interpretar "hoy", "mañana", "este jueves" etc. al agendar citas.`;
+
+  // ── 3. System prompt (same rules as Telegram, adapted for WhatsApp) ───────
+  const systemPrompt = `Eres el asistente comercial inteligente de *${orgName}* en WhatsApp Business. Actúas como comercial consultivo senior.
+
+MISIÓN: Convertir cada conversación en una oportunidad de negocio real.
+
+FLUJO COMERCIAL ADAPTATIVO:
+1. Captación → Saluda con energía y crea interés genuino
+2. Descubrimiento → Pregunta abierta: ¿en qué puedo ayudarte?
+3. Calificación → Entiende su situación: empresa, tamaño, necesidad urgente
+4. Recogida de datos → Solicita nombre completo, empresa, email y teléfono de forma natural
+5. Presentación → Presenta el servicio o módulo más adecuado a su necesidad
+6. Presupuesto/Demo → Ofrece demo, llamada o envío de propuesta personalizada
+7. Conversión → Cierra o escala: "Te pongo en contacto con uno de nuestros asesores ahora"
 
 REGLAS OBLIGATORIAS:
 - Responde SIEMPRE en español
 - Máximo 3-4 frases por respuesta (WhatsApp = mensajes cortos)
-- Tono cercano pero profesional. Tutea al cliente (tú/te)
-- Usa emojis con moderación (1-2 máximo)
-- Si preguntan por servicios o precios que no conoces, ofrece ponerte en contacto
-- Termina siempre con una pregunta o invitación a continuar
-- NO menciones que eres IA ni GPT — eres el asistente del negocio
-- NO inventes precios ni datos concretos que no te han dado${memoryBlock}${clientBlock}`;
+- Tono cálido, cercano y profesional. Tutea siempre (tú/te)
+- 1-2 emojis por respuesta máximo
+- SIEMPRE termina con una pregunta que avance la conversación
+- NO menciones que eres IA ni GPT — eres el asistente del equipo
+- NO inventes precios, datos o servicios no documentados
+- Si detectas interés comercial → recoge datos de contacto
+- Si no puedes resolver → escala: "Te pongo en contacto con un asesor"
 
-  const userMessage = client
-    ? `El cliente ${client.name} escribe: "${text}"`
-    : `Un usuario desde el número +${fromPhone.slice(-9)} escribe: "${text}"`;
+REGLAS DE CITAS — DETECCIÓN DE INTENCIÓN (NO interpretar libremente, seguir estas reglas exactas):
+
+INTENCIÓN CONSULTAR ("¿Cuándo tengo cita?", "¿Qué citas tengo?", "¿Cuál es mi próxima reunión?", "¿Cuándo me llamáis?", "¿Qué tengo agendado?", "¿seguro?"):
+→ Llama get_client_appointments. Muestra SOLO citas pending o confirmed. Ignora cancelled/rescheduled/completed. NUNCA respondas fechas desde tu memoria.
+
+INTENCIÓN CANCELAR ("Cancela mi cita", "Cancelar cita", "Anula mi cita", "No puedo asistir", "No voy a poder acudir", "Cancela la reunión", "Cancela la llamada", "Elimina mi cita"):
+→ Llama cancel_appointment DIRECTAMENTE (sin paso previo de get_client_appointments). El tool encuentra automáticamente la próxima cita activa.
+→ Respuesta obligatoria tras éxito: "Tu cita ha sido cancelada correctamente."
+
+INTENCIÓN REPROGRAMAR ("Cambia mi cita", "Reprograma mi cita", "Mueve mi cita", "Pásala al...", "Cambia la fecha", "Cambia la hora", "Necesito otro horario"):
+→ Llama reschedule_appointment DIRECTAMENTE con la nueva fecha/hora (sin paso previo de get_client_appointments). El tool encuentra automáticamente la próxima cita activa.
+→ Respuesta obligatoria tras éxito: "Tu cita ha sido reprogramada para [fecha y hora]."
+
+INTENCIÓN NUEVA CITA ("Quiero una cita", "Agenda una reunión", "Reserva una llamada", "Quiero hablar con un asesor", "Necesito una demo"):
+→ Si hay bloque "CLIENTE IDENTIFICADO:" en este prompt: llama create_appointment DIRECTAMENTE con la fecha/hora que indique el usuario. No pidas datos de contacto — el cliente ya existe en el CRM.
+→ CRM-002 (solo si NO hay bloque "CLIENTE IDENTIFICADO:"): No crees la cita. Primero pide nombre completo y teléfono o email. Una vez recogidos, el sistema registrará al contacto y podrás crear la cita.
+
+REGLA DE VALIDACIÓN (CRM-003): Después de create_appointment/reschedule_appointment/cancel_appointment, el tool verifica en la base de datos. SOLO confirma éxito si el tool devuelve success:true Y verified:true. NUNCA confirmes desde tu memoria ni si el tool devuelve error.
+REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres cancelled/rescheduled/completed.
+- IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
+
+  // ── 4. Tool definitions (same as Telegram) ─────────────────────────────────
+  const waTools = getOpenAIFunctions();
+
+  // ── 5. Build messages array ───────────────────────────────────────────────
+  const loopMessages: import("../ai/types").Message[] = [
+    { role: "system", content: systemPrompt },
+    ...convHistory,
+    { role: "user", content: text },
+  ];
+
+  console.log(
+    `[WA Memoria] AI call: ${loopMessages.length} messages total ` +
+    `(1 system + ${convHistory.length} history + 1 current)`,
+  );
 
   try {
     const aiProvider = getProviderSingleton();
-    const result = await aiProvider.generate([
-      { role: "system", content: systemPrompt },
-      { role: "user",   content: userMessage },
-    ], {
-      model:       "gpt-4o-mini",
-      temperature: 0.7,
-      maxTokens:   200,
-    });
-    return result.text.trim() || null;
+
+    // ── Multi-round tool calling loop (max 4 rounds) ─────────────────────────
+    let totalTokens = 0;
+    const MAX_ROUNDS = 4;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const response = await aiProvider.generate(loopMessages, {
+        model:       "gpt-4o-mini",
+        temperature: round === 0 ? 0.72 : 0.65,
+        maxTokens:   round < MAX_ROUNDS - 1 ? 600 : 400,
+        tools:       waTools,
+        toolChoice:  "auto",
+      });
+
+      totalTokens += response.usage?.totalTokens ?? 0;
+      const textReply = response.text;
+      const toolCalls = response.toolCalls;
+
+      // ── No tool call → this is the final text reply ─────────────────────
+      if (!toolCalls || toolCalls.length === 0) {
+        console.log(`[WA Memoria] Respuesta generada | round=${round} | tokens=${totalTokens} | len=${textReply.length}`);
+        return textReply || null;
+      }
+
+      // ── Execute the tool call ──────────────────────────────────────────
+      const toolCall = toolCalls[0]!;
+      const toolName = toolCall.function.name;
+      const args     = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+
+      console.log(`[WA Tool] round=${round} calling=${toolName} | args=${toolCall.function.arguments.slice(0, 200)}`);
+
+      // ══ Ava V2: Route tool calls through the Skill Engine ══
+      const skillResult = await executeSkill(
+        toolName,
+        args,
+        orgId,
+        {
+          client: client ? { id: client.id, name: client.name } : null,
+          channel: "whatsapp",
+        },
+      );
+      const toolResult = skillResult.result;
+
+      console.log(`[WA Tool] ${toolName} → ${toolResult.slice(0, 250)}`);
+
+      // Append assistant message + tool result for next round
+      loopMessages.push({
+        role:        "assistant",
+        content:     textReply,
+        tool_calls:  toolCalls,
+      });
+      loopMessages.push({
+        role:         "tool",
+        tool_call_id: toolCall.id,
+        content:      toolResult,
+      });
+    }
+
+    console.warn("[WA Memoria] Tool loop exhausted without text reply");
+    return null;
+
   } catch (err) {
-    console.error("[WhatsApp AI] Generación fallida:", err);
+    console.error("[WhatsApp AI] AI error:", err);
     return null;
   }
 }
@@ -244,15 +393,40 @@ async function processIncomingMessage(payload: {
     if (org?.name) orgName = org.name;
   } catch { /* non-critical */ }
 
-  // 2. Store the inbound message
-  await db.insert(messagesTable).values({
+  // 2. Store the inbound message — use .returning() to get ID for history exclusion
+  let savedInboundId: number | undefined;
+  const [savedInbound] = await db.insert(messagesTable).values({
     orgId,
     clientId:  client.id,
     content:   text,
     direction: "inbound",
+    channel:   "whatsapp",
     isAi:      false,
     status:    "received",
-  }).catch((err) => console.error("[WhatsApp Webhook] Message save failed:", err));
+  }).returning({ id: messagesTable.id });
+  savedInboundId = savedInbound?.id;
+  console.log(`[WA Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client.id}`);
+
+  // ── Phase 3: Lead Intelligence detection (same as Telegram) ───────────────
+  const trimmedLower = text.toLowerCase();
+  let newLeadScore: string | null = null;
+  if (LEAD_HOT_RE.test(trimmedLower)) {
+    newLeadScore = "caliente";
+  } else if (LEAD_WARM_RE.test(trimmedLower) && client.leadScore !== "caliente") {
+    newLeadScore = "tibio";
+  }
+  if (newLeadScore && newLeadScore !== client.leadScore) {
+    db.update(clientsTable)
+      .set({ leadScore: newLeadScore, leadIntent: text.slice(0, 500), updatedAt: new Date() })
+      .where(eq(clientsTable.id, client.id))
+      .catch((e) => console.error("[Lead Intelligence] update error:", e));
+    logIntegrationEvent({
+      orgId, integrationSlug: "whatsapp", direction: "inbound",
+      eventType: "lead_detected", status: "processed",
+      summary:   `Lead ${newLeadScore} detectado · ${client.name}: "${text.slice(0, 80)}"`,
+      payloadJson: { phone: fromPhone, leadScore: newLeadScore, clientId: client.id },
+    });
+  }
 
   // 3. Log activity
   await db.insert(activityTable).values({
@@ -449,6 +623,7 @@ async function processIncomingMessage(payload: {
     text,
     fromPhone,
     client,
+    excludeMsgId: savedInboundId,
   });
 
   if (!aiReply) {
@@ -462,6 +637,7 @@ async function processIncomingMessage(payload: {
     clientId:  client.id,
     content:   aiReply,
     direction: "outbound",
+    channel:   "whatsapp",
     isAi:      true,
     status:    "sent",
   }).catch((err) => console.error("[WhatsApp Webhook] AI message save failed:", err));
