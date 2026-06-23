@@ -211,28 +211,26 @@ export async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS recurring_invoices_next_run_at_idx ON recurring_invoices(next_run_at) WHERE is_active = TRUE`);
     logger.info("[Migration] ✅ FIX-H: recurring_invoices table ensured");
 
-    // ── FIX I: Seed WhatsApp integration row from env vars ───────────────────
-    // If WHATSAPP_BUSINESS_PHONE_ID + WHATSAPP_ACCESS_TOKEN are set but the
-    // org has no row in org_integrations, create it so the UI shows "conectado".
+    // ── FIX I: Seed WhatsApp integration row from env vars (bootstrap only) ──
+    // Only inserts if no row exists yet — NEVER overwrites credentials set via UI.
+    // To update credentials use the Integrations page inside the app.
     const waPhoneId = process.env["WHATSAPP_BUSINESS_PHONE_ID"];
     const waToken   = process.env["WHATSAPP_ACCESS_TOKEN"];
     const waVerify  = process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] ?? "omnitech-webhook";
 
     if (waPhoneId && waToken) {
-      // Encode same as encryptCredentials() when no INTEGRATION_ENCRYPTION_KEY (base64 JSON)
       const credsJson = JSON.stringify({ phoneNumberId: waPhoneId, accessToken: waToken, verifyToken: waVerify });
       const credsEnc  = Buffer.from(credsJson).toString("base64");
 
       const orgsResult = await db.execute(sql`SELECT id FROM organizations`);
       for (const org of (orgsResult as { rows: Array<{ id: number }> }).rows) {
-        // UPSERT — always sync env-var credentials so phone ID / token changes take effect immediately
+        // INSERT only — skip if a row already exists (UI-configured credentials take priority)
         await db.execute(sql`
           INSERT INTO org_integrations (org_id, integration_slug, status, credentials_enc, display_name)
           VALUES (${org.id}, 'whatsapp', 'active', ${credsEnc}, 'WhatsApp Business API')
-          ON CONFLICT (org_id, integration_slug)
-          DO UPDATE SET credentials_enc = ${credsEnc}, status = 'active', updated_at = NOW()
+          ON CONFLICT (org_id, integration_slug) DO NOTHING
         `);
-        logger.info(`[Migration] ✅ FIX-I: WhatsApp credentials synced from env vars → org ${org.id}`);
+        logger.info(`[Migration] ✅ FIX-I: WhatsApp bootstrap check → org ${org.id}`);
       }
     }
 
