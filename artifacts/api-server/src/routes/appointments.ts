@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, appointmentsTable, clientsTable, activityTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte, lte } from "drizzle-orm";
 import {
   ListAppointmentsQueryParams,
   CreateAppointmentBody,
@@ -15,23 +15,23 @@ appointmentsRouter.get("/", async (req, res) => {
   try {
     const orgId = req.orgId!;
     const query = ListAppointmentsQueryParams.parse(req.query);
-    let rows = await db
-      .select()
-      .from(appointmentsTable)
-      .where(eq(appointmentsTable.orgId, orgId))
-      .orderBy(appointmentsTable.startTime);
 
+    const filters: any[] = [eq(appointmentsTable.orgId, orgId)];
     if (query.from) {
-      const from = new Date(query.from);
-      rows = rows.filter((r) => r.startTime >= from);
+      filters.push(gte(appointmentsTable.startTime, new Date(query.from)));
     }
     if (query.to) {
-      const to = new Date(query.to);
-      rows = rows.filter((r) => r.endTime <= to);
+      filters.push(lte(appointmentsTable.endTime, new Date(query.to)));
     }
     if (query.clientId) {
-      rows = rows.filter((r) => r.clientId === Number(query.clientId));
+      filters.push(eq(appointmentsTable.clientId, Number(query.clientId)));
     }
+
+    const rows = await db
+      .select()
+      .from(appointmentsTable)
+      .where(and(...filters))
+      .orderBy(appointmentsTable.startTime);
 
     const clients = await db
       .select({ id: clientsTable.id, name: clientsTable.name, company: clientsTable.company })
