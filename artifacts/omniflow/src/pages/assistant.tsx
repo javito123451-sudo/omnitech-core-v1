@@ -938,7 +938,7 @@ export default function Assistant() {
               s.id === targetId ? { ...s, dbSessionId: dbSid } : s,
             ));
           }
-          if (parsed.event === "appointment_created") {
+          if (parsed.event === "appointment_created" || parsed.event === "appointment_rescheduled" || parsed.event === "appointment_cancelled") {
             // Invalidate appointments cache so the calendar page refreshes automatically
             void queryClient.invalidateQueries({ queryKey: ["appointments"] });
           }

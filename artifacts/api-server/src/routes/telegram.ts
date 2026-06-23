@@ -253,6 +253,7 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
     // Supports sequential patterns like: get_client_appointments → reschedule_appointment
     // All tool calls are routed through executeSkill() for deterministic DB-backed results.
     let totalTokens = 0;
+    let lastAppointmentId: number | undefined;
     const MAX_ROUNDS = 4;
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -290,9 +291,13 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
         {
           client: client ? { id: client.id, name: client.name } : null,
           channel: "telegram",
+          lastAppointmentId,
         },
       );
       toolResult = skillResult.result;
+      if (skillResult.lastAppointmentId) {
+        lastAppointmentId = skillResult.lastAppointmentId;
+      }
 
       console.log(`[TG Tool] ${toolName} → ${toolResult.slice(0, 250)}`);
 

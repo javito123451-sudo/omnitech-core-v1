@@ -159,20 +159,28 @@ async function createAppointment(
     clientName:  resolvedClient.name,
   }).catch(() => {/* non-critical */});
 
+  // CRM-003: POST-OPERATION VERIFICATION — re-query the appointment to confirm
+  const [reverified] = await db.select()
+    .from(appointmentsTable)
+    .where(and(eq(appointmentsTable.id, saved.id), eq(appointmentsTable.orgId, orgId)));
+
+  const verifiedDate = reverified ? apptDateDisplay(reverified.startTime) : localDate;
+  const verifiedTime = reverified ? apptTimeDisplay(reverified.startTime) : localTime;
+
   return JSON.stringify({
     success:       true,
     dbVerified:    true,
     appointmentId: saved.id,
     clientName:    resolvedClient.name,
     title,
-    date:          localDate,
-    time:          localTime,
+    date:          verifiedDate,
+    time:          verifiedTime,
     duration:      durationMinutes,
-    status:        "pending",
+    status:        reverified?.status ?? "pending",
     type:          apptType,
     description,
     location,
-    message:       `Cita #${saved.id} creada correctamente para ${resolvedClient.name} el ${localDate} a las ${localTime}.`,
+    message:       `Cita #${saved.id} creada correctamente para ${resolvedClient.name} el ${verifiedDate} a las ${verifiedTime}.`,
   });
 }
 
@@ -194,7 +202,7 @@ async function rescheduleAppointment(
     return JSON.stringify({ error: "Se necesitan new_date y new_start_time." });
   }
 
-  // Resolve appointment
+  // Resolve appointment: explicit ID -> client context -> conversational lastAppointmentId
   let existing: typeof appointmentsTable.$inferSelect | undefined;
   if (appointmentIdArg) {
     [existing] = await db.select().from(appointmentsTable)
@@ -221,6 +229,14 @@ async function rescheduleAppointment(
         .orderBy(asc(appointmentsTable.startTime))
         .limit(1);
       existing = all[0];
+    }
+  }
+  // Fallback: conversational reference to last queried appointment
+  if (!existing && context.lastAppointmentId) {
+    [existing] = await db.select().from(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, context.lastAppointmentId), eq(appointmentsTable.orgId, orgId)));
+    if (existing && existing.status !== "pending" && existing.status !== "confirmed") {
+      existing = undefined; // Don't reuse cancelled/rescheduled appointments
     }
   }
 
@@ -294,17 +310,28 @@ async function rescheduleAppointment(
     clientName:  null,
   }).catch(() => {/* non-critical */});
 
+  // CRM-003: POST-OPERATION VERIFICATION — re-query both appointments
+  const [oldReverified] = await db.select().from(appointmentsTable)
+    .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+  const [newReverified] = await db.select().from(appointmentsTable)
+    .where(and(eq(appointmentsTable.id, newAppt.id), eq(appointmentsTable.orgId, orgId)));
+
+  const verifiedNewDate = newReverified ? apptDateDisplay(newReverified.startTime) : localDate;
+  const verifiedNewTime = newReverified ? apptTimeDisplay(newReverified.startTime) : localTime;
+
   return JSON.stringify({
     success:          true,
     dbVerified:       true,
     oldAppointmentId: existing.id,
+    oldStatus:        oldReverified?.status ?? "rescheduled",
     newAppointmentId: newAppt.id,
+    newStatus:        newReverified?.status ?? "pending",
     title:            existing.title,
-    newDate:          localDate,
-    newTime:          localTime,
+    newDate:          verifiedNewDate,
+    newTime:          verifiedNewTime,
     duration:         effectiveDur,
-    status:           "pending",
-    message:          `Tu cita ha sido reprogramada para ${localDate} a las ${localTime}.`,
+    status:           newReverified?.status ?? "pending",
+    message:          `Tu cita ha sido reprogramada para ${verifiedNewDate} a las ${verifiedNewTime}.`,
   });
 }
 
@@ -320,6 +347,7 @@ async function cancelAppointment(
   const appointmentIdArg = params["appointment_id"] ? Number(params["appointment_id"]) : null;
   const reason           = params["reason"] ? String(params["reason"]) : null;
 
+  // Resolve appointment: explicit ID -> client context -> conversational lastAppointmentId
   let existing: typeof appointmentsTable.$inferSelect | undefined;
   if (appointmentIdArg) {
     [existing] = await db.select().from(appointmentsTable)
@@ -346,6 +374,14 @@ async function cancelAppointment(
         .orderBy(asc(appointmentsTable.startTime))
         .limit(1);
       existing = all[0];
+    }
+  }
+  // Fallback: conversational reference to last queried appointment
+  if (!existing && context.lastAppointmentId) {
+    [existing] = await db.select().from(appointmentsTable)
+      .where(and(eq(appointmentsTable.id, context.lastAppointmentId), eq(appointmentsTable.orgId, orgId)));
+    if (existing && existing.status !== "pending" && existing.status !== "confirmed") {
+      existing = undefined;
     }
   }
 
@@ -376,6 +412,12 @@ async function cancelAppointment(
     clientName:  context.client?.name ?? null,
   }).catch(() => {/* non-critical */});
 
+  // CRM-003: POST-OPERATION VERIFICATION — re-query to confirm cancellation
+  const [reverified] = await db.select().from(appointmentsTable)
+    .where(and(eq(appointmentsTable.id, existing.id), eq(appointmentsTable.orgId, orgId)));
+
+  const verifiedStatus = reverified?.status ?? "cancelled";
+
   return JSON.stringify({
     success:       true,
     dbVerified:    true,
@@ -383,9 +425,11 @@ async function cancelAppointment(
     title:         existing.title,
     cancelledDate,
     cancelledTime,
-    status:        "cancelled",
+    status:        verifiedStatus,
     reason,
-    message:       "Tu cita ha sido cancelada correctamente.",
+    message:       verifiedStatus === "cancelled"
+      ? "Tu cita ha sido cancelada correctamente."
+      : `Tu cita ha sido actualizada a estado "${verifiedStatus}".`,
   });
 }
 
@@ -458,7 +502,7 @@ async function getAppointments(
     ? rows.filter(r => r.clientId === context.client!.id)
     : rows;
 
-  return JSON.stringify({
+  const result: Record<string, unknown> = {
     total: filtered.length,
     date_filter: dateFilter,
     queried_at: now.toISOString(),
@@ -475,7 +519,14 @@ async function getAppointments(
       clientName:    r.clientName ?? null,
       clientCompany: r.clientCompany ?? null,
     })),
-  });
+  };
+
+  // ── Conversational context: track last appointment for follow-up questions ──
+  if (filtered.length === 1) {
+    result["lastAppointmentId"] = filtered[0]!.id;
+  }
+
+  return JSON.stringify(result);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

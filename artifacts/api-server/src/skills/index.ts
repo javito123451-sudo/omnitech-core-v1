@@ -106,11 +106,29 @@ export async function executeSkill(
   try {
     const result = await skill.execute(merged, orgId, context);
     trackSkillEngineCall();
+
+    // Extract conversational context from skill result
+    let lastAppointmentId: number | undefined;
+    try {
+      const parsed = JSON.parse(result);
+      if (typeof parsed.lastAppointmentId === "number") {
+        lastAppointmentId = parsed.lastAppointmentId;
+      }
+      // Also capture from create/reschedule/cancel operations
+      if (typeof parsed.appointmentId === "number") {
+        lastAppointmentId = parsed.appointmentId;
+      }
+      if (typeof parsed.newAppointmentId === "number") {
+        lastAppointmentId = parsed.newAppointmentId;
+      }
+    } catch { /* not JSON or no ID */ }
+
     return {
       success: true,
       skillId,
       result,
       dbVerified: true,
+      lastAppointmentId,
     };
   } catch (err) {
     const errorMsg = String(err);

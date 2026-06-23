@@ -31,6 +31,8 @@ export interface SkillContext {
   channel?: string;
   // Extra metadata (for logging, etc.)
   meta?: Record<string, unknown>;
+  // Last appointment referenced in this conversation (for resolving "that appointment", "tomorrow's", etc.)
+  lastAppointmentId?: number;
 }
 
 export interface SkillResult {
@@ -40,4 +42,6 @@ export interface SkillResult {
   error?:     string;
   // DB read-back verification flag
   dbVerified?: boolean;
+  // Conversational context: last appointment referenced in this result
+  lastAppointmentId?: number;
 }

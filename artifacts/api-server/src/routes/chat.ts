@@ -2259,6 +2259,22 @@ router.post("/", async (req, res) => {
               }
             } catch { /* non-critical */ }
           }
+          if (tc?.function.name === "reschedule_appointment") {
+            try {
+              const apptResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
+              if (apptResult["success"]) {
+                res.write(`data: ${JSON.stringify({ event: "appointment_rescheduled", appointment: apptResult })}\n\n`);
+              }
+            } catch { /* non-critical */ }
+          }
+          if (tc?.function.name === "cancel_appointment") {
+            try {
+              const apptResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
+              if (apptResult["success"]) {
+                res.write(`data: ${JSON.stringify({ event: "appointment_cancelled", appointment: apptResult })}\n\n`);
+              }
+            } catch { /* non-critical */ }
+          }
           if (tc?.function.name === "create_quote") {
             try {
               const qResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;

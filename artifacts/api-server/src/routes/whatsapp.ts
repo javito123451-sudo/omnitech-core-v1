@@ -249,6 +249,7 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
 
     // ── Multi-round tool calling loop (max 4 rounds) ─────────────────────────
     let totalTokens = 0;
+    let lastAppointmentId: number | undefined;
     const MAX_ROUNDS = 4;
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -285,8 +286,13 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
         {
           client: client ? { id: client.id, name: client.name } : null,
           channel: "whatsapp",
+          lastAppointmentId,
         },
       );
+      // Update conversational context for next round
+      if (skillResult.lastAppointmentId) {
+        lastAppointmentId = skillResult.lastAppointmentId;
+      }
       const toolResult = skillResult.result;
 
       console.log(`[WA Tool] ${toolName} → ${toolResult.slice(0, 250)}`);

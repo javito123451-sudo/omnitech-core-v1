@@ -33,6 +33,52 @@ async function createClient(
     return JSON.stringify({ error: "Se requiere el nombre del cliente." });
   }
 
+  // ── Deduplication: search by email or phone before creating ───────────────
+  let existing: typeof clientsTable.$inferSelect | undefined;
+  if (email) {
+    const [byEmail] = await db.select().from(clientsTable)
+      .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.email, email)))
+      .limit(1);
+    if (byEmail) existing = byEmail;
+  }
+  if (!existing && phone) {
+    const [byPhone] = await db.select().from(clientsTable)
+      .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.phone, phone)))
+      .limit(1);
+    if (byPhone) existing = byPhone;
+  }
+
+  if (existing) {
+    // Update existing client with new data
+    await db.update(clientsTable)
+      .set({
+        name:   existing.name !== name ? name : existing.name,
+        status: status !== existing.status ? status : existing.status,
+        company: company ?? existing.company,
+        tags:    tags    ?? existing.tags,
+        notes:   notes   ? `${existing.notes ?? ""}\n${notes}`.trim() : existing.notes,
+        updatedAt: new Date(),
+      })
+      .where(eq(clientsTable.id, existing.id));
+
+    const [updated] = await db.select().from(clientsTable)
+      .where(eq(clientsTable.id, existing.id));
+
+    return JSON.stringify({
+      success:    true,
+      dbVerified: true,
+      clientId:   existing.id,
+      updated:    true,
+      name:       updated?.name ?? name,
+      status:     updated?.status ?? status,
+      statusLabel: STATUS_LABEL[updated?.status ?? status] ?? status,
+      email:      updated?.email ?? email,
+      phone:      updated?.phone ?? phone,
+      company:    updated?.company ?? company,
+      message:    `Cliente existente actualizado: "${updated?.name ?? name}" (ID #${existing.id}).`,
+    });
+  }
+
   const [client] = await db.insert(clientsTable).values({
     orgId,
     name,
