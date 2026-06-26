@@ -4,7 +4,7 @@ import {
   MessageCircle, CreditCard, Globe, Mail, CalendarDays, Hash,
   CheckCircle2, AlertCircle, Loader2, Plug, Unplug, FlaskConical,
   ChevronRight, Clock, ArrowDownLeft, ArrowUpRight, Puzzle,
-  Send, RefreshCw, ClipboardList, Bot,
+  Send, RefreshCw, ClipboardList, Bot, Wand2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -454,16 +454,24 @@ export default function IntegrationsPage() {
     <div className="max-w-5xl mx-auto space-y-6">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-          <Puzzle className="w-5 h-5 text-primary" />
+      <div className="flex items-start gap-3 justify-between">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+            <Puzzle className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Integraciones</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Conecta herramientas externas con OmniTech Core
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Integraciones</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Conecta herramientas externas con OmniTech Core
-          </p>
-        </div>
+        <button
+          onClick={() => setLocation("/integrations/wizard/whatsapp")}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors shrink-0"
+        >
+          <Wand2 className="w-4 h-4" /> Asistente WhatsApp
+        </button>
       </div>
 
       {/* ── Category filter ─────────────────────────────────────────────── */}
@@ -497,7 +505,7 @@ export default function IntegrationsPage() {
             return (
               <Card
                 key={item.slug}
-                onClick={() => openModal(item.slug)}
+                onClick={() => item.slug === "whatsapp" && !item.connected ? setLocation(`/integrations/wizard/${item.slug}`) : openModal(item.slug)}
                 className={cn(
                   "cursor-pointer transition-all hover:border-primary/30 hover:bg-card/80 group",
                   item.status === "active" && "border-green-500/20",
@@ -535,7 +543,7 @@ export default function IntegrationsPage() {
                       {CATEGORY_LABELS[item.category] ?? item.category}
                     </Badge>
                     <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-0.5">
-                      {item.connected ? "Configurar" : isOAuth(item.slug) ? "Ver info" : "Conectar"}
+                      {item.connected ? "Configurar" : isOAuth(item.slug) ? "Ver info" : item.slug === "whatsapp" ? "Asistente" : "Conectar"}
                       <ChevronRight className="w-3 h-3" />
                     </span>
                   </div>

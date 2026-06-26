@@ -26,6 +26,7 @@ import Quotes from "@/pages/quotes";
 import ExecutivePage from "@/pages/executive";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 import IntegrationsPage from "@/pages/integrations";
+import OmniIntegrationWizard from "@/pages/omni-integration-wizard";
 import WhatsAppLogsPage from "@/pages/whatsapp-logs";
 import TelegramInboxPage from "@/pages/telegram-inbox";
 import TelegramSettingsPage from "@/pages/telegram-settings";
@@ -336,6 +337,11 @@ function AppRoutes() {
               <IntegrationsPage />
             </ModuleGuard>
           </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/integrations/wizard/:slug">
+        <ProtectedRoute>
+          <OmniIntegrationWizard />
         </ProtectedRoute>
       </Route>
       <Route path="/integrations/whatsapp/logs">

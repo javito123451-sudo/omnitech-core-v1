@@ -3,9 +3,10 @@ import { authFetch } from "@/lib/authFetch";
 import {
   Plug, MessageSquare, Bot, Mail, CreditCard, Lock, Shield,
   CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw,
-  ExternalLink, Copy, Check,
+  ExternalLink, Copy, Check, Wand2,
 } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -125,6 +126,8 @@ export default function IntegrationsPage() {
     : 0;
   const totalCount = platform ? Object.keys(platform).length : 0;
 
+  const [, setLocation] = useLocation();
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
@@ -136,13 +139,21 @@ export default function IntegrationsPage() {
             {configuredCount}/{totalCount} servicios configurados
           </p>
         </div>
-        <button
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-xl text-sm transition-all"
-        >
-          <RefreshCw size={14} className={isFetching ? "animate-spin" : ""} /> Actualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLocation("/integrations/wizard/whatsapp")}
+            className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-xl text-sm transition-all"
+          >
+            <Wand2 size={14} /> Asistente WhatsApp
+          </button>
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-xl text-sm transition-all"
+          >
+            <RefreshCw size={14} className={isFetching ? "animate-spin" : ""} /> Actualizar
+          </button>
+        </div>
       </div>
 
       {/* Warnings banner */}
