@@ -1,0 +1,215 @@
+IMPLEMENTAR “OMNI DIAGNOSTICS”
+
+OBJETIVO
+
+Crear un módulo nativo de OmniTech capaz de realizar un diagnóstico completo del sistema, detectar errores automáticamente y proponer acciones correctivas.
+
+Debe funcionar para cualquier Workspace.
+
+⸻
+
+UBICACIÓN
+
+Nuevo módulo:
+
+Platform
+└── Diagnostics
+
+Acceso:
+
+Super Admin
+
+Administradores de Workspace (solo su Workspace)
+
+⸻
+
+DASHBOARD
+
+Mostrar:
+
+Estado General
+
+🟢 Sistema operativo
+
+🟡 Advertencias
+
+🔴 Errores críticos
+
+Puntuación de salud del Workspace (0-100).
+
+⸻
+
+MÓDULOS A ANALIZAR
+
+Infraestructura
+
+* Base de datos
+* Variables de entorno
+* Secrets
+* Storage
+* Logs
+* CPU
+* Memoria
+
+⸻
+
+Integraciones
+
+Para cada integración:
+
+* Estado
+* Última sincronización
+* Último error
+* Token válido
+* Credenciales
+* Health Check
+
+Inicialmente:
+
+* WhatsApp
+* Telegram
+* Web Chat
+
+Arquitectura preparada para futuras integraciones.
+
+⸻
+
+Ava Core
+
+Comprobar:
+
+✓ AI Provider
+
+✓ Prompt
+
+✓ Memory
+
+✓ Knowledge Base
+
+✓ Context Engine
+
+✓ Intent Engine
+
+✓ Skill Engine
+
+✓ Conversation State
+
+⸻
+
+CRM
+
+Verificar:
+
+* Clientes
+* Citas
+* Presupuestos
+* Tareas
+
+Detectar:
+
+* Datos corruptos
+* Duplicados
+* Registros huérfanos
+
+⸻
+
+IA
+
+Verificar:
+
+* OpenAI
+* Claude
+* Gemini
+
+Comprobar:
+
+* API Key
+* Tiempo de respuesta
+* Disponibilidad
+
+⸻
+
+Seguridad
+
+Comprobar:
+
+* Roles
+* Permisos
+* Variables críticas
+* Tokens
+* Accesos
+
+⸻
+
+BOTÓN
+
+“Ejecutar diagnóstico”
+
+Al pulsarlo:
+
+Analizar todos los módulos.
+
+⸻
+
+INFORME
+
+Generar automáticamente:
+
+Puntuación:
+
+98/100
+
+Resumen ejecutivo.
+
+Problemas encontrados.
+
+Problemas críticos.
+
+Advertencias.
+
+Recomendaciones.
+
+⸻
+
+AUTOCORRECCIÓN
+
+Cuando sea posible:
+
+Mostrar botón:
+
+“Reparar automáticamente”
+
+Ejemplos:
+
+* Limpiar caché
+* Regenerar token interno
+* Reconectar integración
+* Reindexar Knowledge Base
+* Sincronizar CRM
+
+Nunca modificar datos del cliente sin confirmación.
+
+⸻
+
+HISTÓRICO
+
+Guardar:
+
+* Fecha
+* Usuario
+* Resultado
+* Cambios realizados
+
+Permitir comparar diagnósticos anteriores.
+
+⸻
+
+ARQUITECTURA
+
+El módulo debe ser completamente independiente.
+
+Todo nuevo módulo deberá registrar automáticamente su propio Diagnostic Adapter para que Omni Diagnostics pueda comprobar su estado sin modificar el Core.
+
+No crear lógica específica para WhatsApp ni para ningún módulo concreto.
+
+Diseñar una arquitectura extensible basada en adaptadores.

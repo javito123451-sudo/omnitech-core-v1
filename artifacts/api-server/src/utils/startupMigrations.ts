@@ -234,6 +234,28 @@ export async function runStartupMigrations(): Promise<void> {
       }
     }
 
+    // ── FIX J: Diagnostic reports table ──────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS diagnostic_reports (
+        id               SERIAL PRIMARY KEY,
+        org_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        run_by           TEXT,
+        scope            VARCHAR(20) NOT NULL DEFAULT 'workspace',
+        score            INTEGER NOT NULL DEFAULT 0,
+        status           VARCHAR(20) NOT NULL DEFAULT 'healthy',
+        summary          TEXT,
+        modules          JSONB NOT NULL DEFAULT '[]',
+        issues           JSONB NOT NULL DEFAULT '[]',
+        recommendations  JSONB NOT NULL DEFAULT '[]',
+        actions_taken    JSONB NOT NULL DEFAULT '[]',
+        created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS diagnostic_reports_org_id_idx ON diagnostic_reports(org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS diagnostic_reports_created_at_idx ON diagnostic_reports(created_at DESC)`);
+    logger.info("[Migration] ✅ FIX-J: diagnostic_reports table ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

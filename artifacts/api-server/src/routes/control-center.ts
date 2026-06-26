@@ -280,6 +280,7 @@ controlCenterRouter.get("/modules", async (_req, res) => {
     { slug: "omni_marketing", name: "Omni Marketing Hub",     description: "Campañas y automatización marketing",    alwaysOn: false },
     { slug: "automations",    name: "Automations",            description: "Flujos de trabajo automatizados",        alwaysOn: false },
     { slug: "omni_accounting",name: "Omni Accounting",         description: "Facturación, pagos y contabilidad",      alwaysOn: false },
+    { slug: "omni_diagnostics",name: "Omni Diagnostics",      description: "Diagnóstico y salud del sistema",        alwaysOn: false },
   ];
   const configs = await db.select().from(moduleConfigsTable);
   const orgs    = await db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable);
@@ -647,6 +648,7 @@ controlCenterRouter.get("/module-matrix", async (_req, res) => {
     { slug: "omni_security",  name: "Security Core",      alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "omni_security" },
     { slug: "omni_marketing", name: "Marketing Hub",      alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "omni_marketing"},
     { slug: "automations",    name: "Automations",        alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "automations"   },
+    { slug: "omni_diagnostics", name: "Omni Diagnostics", alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_diagnostics"},
   ];
 
   const [allConfigs, orgs] = await Promise.all([
