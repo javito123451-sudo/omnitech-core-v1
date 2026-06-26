@@ -1,0 +1,244 @@
+# IMPLEMENTAR AVA V2.1 - BUSINESS ONLY MODE
+
+## OBJETIVO
+
+Convertir Ava en un asistente empresarial especializado exclusivamente en OmniTech Core.
+
+A partir de ahora Ava NO debe comportarse como un chatbot generalista.
+
+Debe responder únicamente sobre información relacionada con la empresa utilizando el CRM, Skill Engine, Knowledge Base y Memory Engine.
+
+OpenAI será únicamente un apoyo para redactar respuestas y nunca la fuente principal de información.
+
+------------------------------------------------------------
+
+## NUEVO PIPELINE OFICIAL
+
+Todo mensaje deberá seguir exactamente este flujo:
+
+Canal (WhatsApp / Telegram / Web Chat)
+
+↓
+
+Channel Adapter
+
+↓
+
+Intent Engine
+
+↓
+
+Skill Engine
+
+↓
+
+CRM
+
+↓
+
+Knowledge Base
+
+↓
+
+Memory Engine
+
+↓
+
+OpenAI (solo como último recurso)
+
+↓
+
+Respuesta
+
+------------------------------------------------------------
+
+## REGLA 1
+
+Si existe una Skill compatible con la intención detectada:
+
+NO llamar nunca a OpenAI.
+
+Ejemplos:
+
+- Crear cliente
+- Buscar cliente
+- Crear cita
+- Consultar citas
+- Cancelar cita
+- Reprogramar cita
+- Crear presupuesto
+- Consultar presupuesto
+- Crear tarea
+- Consultar tareas
+- CRM
+- Calendario
+
+La respuesta deberá generarse utilizando exclusivamente executeSkill().
+
+------------------------------------------------------------
+
+## REGLA 2
+
+OpenAI nunca podrá inventar información.
+
+Solo podrá redactar datos obtenidos previamente desde:
+
+- CRM
+- Skill Engine
+- Knowledge Base
+- Memory
+
+Ejemplo:
+
+Skill devuelve:
+
+"Tienes 3 citas."
+
+OpenAI únicamente podrá convertirlo en:
+
+"Tienes tres citas programadas. ¿Quieres que te muestre los detalles?"
+
+Nunca podrá inventar citas ni datos del CRM.
+
+------------------------------------------------------------
+
+## REGLA 3
+
+BUSINESS ONLY MODE
+
+Limitar completamente el dominio conversacional.
+
+Ava únicamente podrá responder sobre:
+
+- OmniTech Core
+- Productos de la empresa
+- Servicios
+- Clientes
+- CRM
+- Citas
+- Agenda
+- Presupuestos
+- Facturación
+- Conversaciones
+- Automatizaciones
+- Integraciones
+- Workspace
+- Estado de la cuenta
+- Configuración
+- Knowledge Base
+- Documentación del negocio
+
+------------------------------------------------------------
+
+## REGLA 4
+
+Temas prohibidos.
+
+No responder sobre:
+
+- Política
+- Religión
+- Deportes
+- Noticias
+- Historia
+- Cultura general
+- Matemáticas generales
+- Medicina
+- Asesoría legal
+- Programación ajena a OmniTech
+- Viajes
+- Cocina
+- Chistes
+- Opiniones personales
+- Preguntas fuera del ámbito empresarial
+
+------------------------------------------------------------
+
+## REGLA 5
+
+Si el usuario realiza una consulta fuera del dominio:
+
+Responder siempre:
+
+"Soy Ava, la asistente virtual de OmniTech Core.
+
+Estoy especializada exclusivamente en ayudarte con los servicios, clientes, citas, presupuestos, CRM, automatizaciones y demás funciones disponibles dentro de esta plataforma.
+
+Si necesitas ayuda relacionada con OmniTech Core estaré encantada de ayudarte."
+
+Nunca responder utilizando conocimientos generales.
+
+------------------------------------------------------------
+
+## REGLA 6
+
+Eliminar respuestas genéricas.
+
+Eliminar frases como:
+
+- ¿En qué más puedo ayudarte?
+- ¿Quieres hablar con un representante?
+- ¿Necesitas más información?
+- ¿Hay algo más?
+
+Solo utilizarlas cuando tengan sentido dentro del flujo de negocio.
+
+------------------------------------------------------------
+
+## REGLA 7
+
+Modificar el System Prompt principal.
+
+Añadir instrucciones de máxima prioridad:
+
+- CRM es la única fuente de verdad.
+- Las Skills tienen prioridad absoluta.
+- La Knowledge Base tiene prioridad sobre OpenAI.
+- Nunca inventar información.
+- Nunca responder preguntas fuera del ámbito empresarial.
+- OpenAI únicamente redacta respuestas.
+- Mantener contexto utilizando Memory Engine.
+- Mantener compatibilidad con todos los canales.
+
+------------------------------------------------------------
+
+## REGLA 8
+
+Crear una configuración global.
+
+BUSINESS_ONLY_MODE = true
+
+Cuando esté activada:
+
+- Bloquear conocimiento general.
+- Bloquear respuestas fuera del dominio.
+- Bloquear alucinaciones.
+- Obligar al uso de Skills antes del LLM.
+
+------------------------------------------------------------
+
+## REGLA 9
+
+Añadir métricas.
+
+Registrar:
+
+- Número de Skills ejecutadas.
+- Número de consultas CRM.
+- Número de consultas a Knowledge Base.
+- Número de llamadas a OpenAI.
+- Número de consultas rechazadas por estar fuera del dominio.
+
+Mostrar estas estadísticas en el módulo Intelligence.
+
+------------------------------------------------------------
+
+## IMPORTANTE
+
+No romper la arquitectura actual.
+
+No duplicar lógica.
+
+Integrar este comportamiento en Ava Core para que WhatsApp, Telegram y Web Chat compartan exactamente el mismo comportamiento.
+
+Toda la lógica debe residir en Ava Core y aplicarse automáticamente a cualquier canal conectado mediante Integration Hub.

@@ -1,0 +1,265 @@
+AUDITORÍA E IMPLEMENTACIÓN DEL OMNI INTEGRATION WIZARD
+
+OBJETIVO
+
+Verificar si el Omni Integration Wizard existe realmente y, si no está completamente implementado, construirlo siguiendo la arquitectura oficial de OmniTech Core.
+
+IMPORTANTE:
+
+NO modificar la arquitectura existente.
+
+NO romper ninguna funcionalidad.
+
+NO crear lógica duplicada.
+
+Reutilizar siempre los módulos existentes.
+
+⸻
+
+FASE 1 – AUDITORÍA
+
+Analizar el proyecto completo.
+
+Responder:
+
+1. ¿Existe un Omni Integration Wizard?
+2. ¿Existe un WhatsApp Setup Wizard?
+3. ¿Qué archivos lo implementan?
+4. ¿Desde qué botón se accede?
+5. ¿Está registrado en el router?
+6. ¿Está completamente operativo?
+7. ¿Qué funcionalidades faltan?
+8. ¿Qué componentes pueden reutilizarse?
+
+No realizar cambios todavía.
+
+⸻
+
+FASE 2 – IMPLEMENTACIÓN
+
+Si el Wizard no existe o está incompleto:
+
+Implementarlo.
+
+Debe ser un asistente paso a paso.
+
+Nunca un formulario técnico.
+
+⸻
+
+PASO 1
+
+Bienvenida.
+
+Explicar el proceso.
+
+Mostrar duración aproximada.
+
+⸻
+
+PASO 2
+
+Detectar situación.
+
+Preguntar:
+
+¿Ya tienes un número de WhatsApp Business?
+
+Opciones:
+
+* Sí
+* No
+
+⸻
+
+PASO 3
+
+Si responde Sí.
+
+Preguntar:
+
+¿Dónde está ese número?
+
+* WhatsApp Business App
+* WhatsApp Cloud API
+* No lo sé
+
+Adaptar automáticamente el flujo.
+
+⸻
+
+PASO 4
+
+Asistente de migración.
+
+Explicar:
+
+* copia de seguridad
+* migración
+* cambios
+
+Mostrar checklist.
+
+⸻
+
+PASO 5
+
+Conexión con Meta.
+
+Guiar al usuario.
+
+No pedir conocimientos técnicos.
+
+⸻
+
+PASO 6
+
+Captura automática.
+
+Guardar en el Workspace:
+
+* Phone Number ID
+* Business Account ID
+* App ID
+* Access Token
+* Verify Token
+
+Nunca utilizar variables globales.
+
+Nunca escribir en configuración global.
+
+⸻
+
+PASO 7
+
+Health Check.
+
+Ejecutar automáticamente:
+
+✓ Token
+
+✓ Phone Number
+
+✓ Meta API
+
+✓ Webhook
+
+✓ Mensajes entrantes
+
+✓ Mensajes salientes
+
+✓ Ava Core
+
+✓ Intent Engine
+
+✓ Skill Engine
+
+✓ CRM
+
+✓ Memory
+
+✓ Knowledge Base
+
+Mostrar resultados.
+
+⸻
+
+PASO 8
+
+Prueba automática.
+
+Enviar mensaje de prueba.
+
+Validar recorrido:
+
+Cliente
+
+↓
+
+Canal
+
+↓
+
+Integration Hub
+
+↓
+
+Intent Engine
+
+↓
+
+Skill Engine
+
+↓
+
+CRM
+
+↓
+
+Respuesta
+
+⸻
+
+PASO 9
+
+Informe Final.
+
+Mostrar:
+
+Estado.
+
+Problemas.
+
+Advertencias.
+
+Acciones pendientes.
+
+Botón:
+
+Marcar integración como PRODUCCIÓN.
+
+⸻
+
+RESTRICCIONES
+
+MUY IMPORTANTE
+
+El instalador NUNCA podrá requerir:
+
+* acceso a Replit
+* acceso a Super Admin
+* modificación de Secrets globales
+* modificación del código
+* acceso a la configuración de otros Workspaces
+
+Toda la configuración deberá almacenarse exclusivamente dentro del Workspace activo.
+
+El cliente debe poder completar la integración desde su propio panel.
+
+⸻
+
+ARQUITECTURA
+
+Toda integración deberá utilizar:
+
+Integration Hub
+
+↓
+
+Integration Manager
+
+↓
+
+Channel Adapter
+
+No crear lógica específica para WhatsApp.
+
+Todo canal futuro (Telegram, Instagram, Messenger, Email, etc.) deberá reutilizar exactamente el mismo flujo cambiando únicamente el adaptador.
+
+⸻
+
+RESULTADO ESPERADO
+
+El cliente podrá conectar su WhatsApp Business sin conocimientos técnicos, sin acceder a Replit, sin utilizar el modo Super Admin y sin depender del administrador de la plataforma.
+
+El Omni Integration Wizard quedará preparado para futuras integraciones reutilizando la misma arquitectura modular.
