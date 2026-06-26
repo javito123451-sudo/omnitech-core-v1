@@ -151,11 +151,12 @@ export default function IntegrationsPage() {
   const [category,      setCategory]      = useState("all");
   const [selected,      setSelected]      = useState<IntegrationDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [modalTab,      setModalTab]      = useState<"config" | "events">("config");
+  const [modalTab,      setModalTab]      = useState<"config" | "events" | "health" | "test" | "report">("config");
   const [form,          setForm]          = useState<Record<string, string>>({});
   const [displayName,   setDisplayName]   = useState("");
   const [saving,        setSaving]        = useState(false);
   const [testing,       setTesting]       = useState(false);
+  const [testResult,     setTestResult]     = useState<unknown>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   // WhatsApp test panel
   const [testPhone,     setTestPhone]     = useState("");
@@ -168,6 +169,12 @@ export default function IntegrationsPage() {
   const [tgSettingWebhook, setTgSettingWebhook] = useState(false);
   const [tgWebhookUrl,     setTgWebhookUrl]     = useState<string | null>(null);
   const [tgWebhookError,   setTgWebhookError]   = useState<string | null>(null);
+  // Integration Hub
+  const [healthData,      setHealthData]      = useState<unknown>(null);
+  const [healthLoading,   setHealthLoading]   = useState(false);
+  const [reportData,      setReportData]      = useState<unknown>(null);
+  const [reportLoading,   setReportLoading]   = useState(false);
+  const [productionToggling, setProductionToggling] = useState(false);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -261,19 +268,80 @@ export default function IntegrationsPage() {
   const handleTest = async () => {
     if (!selected) return;
     setTesting(true);
+    setTestResult(null);
+    setModalTab("test");
     try {
-      const res  = await authFetch(`${BASE_URL}/api/integrations/${selected.slug}/test`, { method: "POST" });
-      const data = await res.json() as { success: boolean; message: string; duration_ms: number };
+      const res  = await authFetch(`${BASE_URL}/api/integrations/${selected.slug}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ testNumber: selected.slug === "whatsapp" ? testPhone : undefined }),
+      });
+      const data = await res.json() as Record<string, unknown>;
+      setTestResult(data);
       toast({
         title:       data.success ? "✅ Test exitoso" : "⚠️ Test fallido",
-        description: `${data.message}${data.duration_ms ? ` (${data.duration_ms}ms)` : ""}`,
+        description: (data.message as string) ?? (data.stage as string) ?? "",
         variant:     data.success ? "default" : "destructive",
       });
-      void openDetail(selected.slug);
     } catch {
       toast({ title: "Error en el test", variant: "destructive" });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleHealth = async () => {
+    if (!selected) return;
+    setHealthLoading(true);
+    setHealthData(null);
+    setModalTab("health");
+    try {
+      const res = await authFetch(`${BASE_URL}/api/integrations/${selected.slug}/health`);
+      const data = await res.json() as Record<string, unknown>;
+      setHealthData(data);
+    } catch {
+      toast({ title: "Error al cargar health check", variant: "destructive" });
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  const handleReport = async () => {
+    if (!selected) return;
+    setReportLoading(true);
+    setReportData(null);
+    setModalTab("report");
+    try {
+      const res = await authFetch(`${BASE_URL}/api/integrations/${selected.slug}/report`);
+      const data = await res.json() as Record<string, unknown>;
+      setReportData(data);
+    } catch {
+      toast({ title: "Error al cargar informe", variant: "destructive" });
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const handleProduction = async () => {
+    if (!selected) return;
+    setProductionToggling(true);
+    try {
+      const res = await authFetch(`${BASE_URL}/api/integrations/${selected.slug}/production`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "production" }),
+      });
+      const data = await res.json() as Record<string, unknown>;
+      toast({
+        title: data.success ? "✅ Modo Producción activado" : "⚠️ Error",
+        description: data.success ? "La integración ahora está en PRODUCCIÓN" : "No se pudo cambiar el modo",
+      });
+      void openDetail(selected.slug);
+      void handleReport();
+    } catch {
+      toast({ title: "Error al cambiar modo", variant: "destructive" });
+    } finally {
+      setProductionToggling(false);
     }
   };
 
@@ -501,22 +569,27 @@ export default function IntegrationsPage() {
               </DialogHeader>
 
               {/* Tabs */}
-              <div className="flex gap-1 border-b border-border -mx-1">
-                {(["config", "events"] as const).map((tab) => (
+              <div className="flex gap-1 border-b border-border -mx-1 overflow-x-auto">
+                {(["config", "health", "test", "report", "events"] as const).map((tab) => (
                   <button
                     key={tab}
-                    onClick={() => setModalTab(tab)}
+                    onClick={() => {
+                      setModalTab(tab);
+                      if (tab === "health" && !healthData) void handleHealth();
+                      if (tab === "report" && !reportData) void handleReport();
+                    }}
                     className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors border-b-2",
+                      "px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors border-b-2 shrink-0",
                       modalTab === tab
                         ? "text-primary border-primary"
                         : "text-muted-foreground border-transparent hover:text-foreground",
                     )}
                   >
-                    {tab === "config"
-                      ? "Configuración"
-                      : `Eventos${selected.events.length > 0 ? ` (${selected.events.length})` : ""}`
-                    }
+                    {tab === "config" && "Configuración"}
+                    {tab === "health" && "Health"}
+                    {tab === "test" && "Test"}
+                    {tab === "report" && "Informe"}
+                    {tab === "events" && `Eventos${selected.events.length > 0 ? ` (${selected.events.length})` : ""}`}
                   </button>
                 ))}
               </div>
@@ -799,6 +872,177 @@ export default function IntegrationsPage() {
                         </div>
                       )}
                     </>
+                  )}
+                </div>
+              )}
+
+              {/* ── Health tab ──────────────────────────────────────────── */}
+              {modalTab === "health" && (
+                <div className="space-y-3 pt-1">
+                  {healthLoading ? (
+                    <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+                  ) : healthData ? (
+                    <div className="space-y-3">
+                      {(() => {
+                        const h = healthData as { health?: { overall: string; checkedAt: string; results: Array<{ name: string; status: string; message: string; durationMs: number }> } };
+                        const overall = h.health?.overall ?? "unknown";
+                        return (
+                          <>
+                            <div className={cn("flex items-center gap-2 p-3 rounded-lg border text-xs",
+                              overall === "healthy" && "bg-green-500/10 border-green-500/20 text-green-400",
+                              overall === "degraded" && "bg-amber-500/10 border-amber-500/20 text-amber-400",
+                              overall === "unhealthy" && "bg-red-500/10 border-red-500/20 text-red-400",
+                            )}>
+                              {overall === "healthy" ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                              <span className="font-medium">Health: {overall.toUpperCase()}</span>
+                              <span className="ml-auto text-muted-foreground">{h.health?.checkedAt ? new Date(h.health.checkedAt).toLocaleString("es-ES") : ""}</span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {(h.health?.results ?? []).map((r, i) => (
+                                <div key={i} className={cn("flex items-center gap-2 p-2 rounded-md border text-xs",
+                                  r.status === "pass" && "bg-green-500/5 border-green-500/10 text-green-300",
+                                  r.status === "fail" && "bg-red-500/5 border-red-500/10 text-red-300",
+                                  r.status === "skip" && "bg-muted/20 border-border/50 text-muted-foreground",
+                                )}>
+                                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 border">
+                                    {r.status === "pass" ? "✓" : r.status === "fail" ? "✗" : "—"}
+                                  </span>
+                                  <div className="flex-1">
+                                    <div className="font-medium">{r.name}</div>
+                                    <div className="text-[10px] opacity-80">{r.message}</div>
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground">{r.durationMs}ms</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm">Haz clic en "Health" para ejecutar el diagnóstico.</div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Test tab ───────────────────────────────────────────── */}
+              {modalTab === "test" && (
+                <div className="space-y-3 pt-1">
+                  {testing ? (
+                    <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+                  ) : testResult ? (
+                    <div className="space-y-3">
+                      {(() => {
+                        const t = testResult as { success: boolean; stage: string; validation?: { valid: boolean }; health?: { overall: string; results: Array<{ name: string; status: string; message: string }> }; sendTest?: { success: boolean; error?: string }; duration_ms: number };
+                        return (
+                          <>
+                            <div className={cn("flex items-center gap-2 p-3 rounded-lg border text-xs",
+                              t.success ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-red-500/10 border-red-500/20 text-red-400",
+                            )}>
+                              {t.success ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                              <span className="font-medium">{t.success ? "Test COMPLETADO" : "Test FALLIDO"} — {t.stage}</span>
+                              <span className="ml-auto text-muted-foreground">{t.duration_ms}ms</span>
+                            </div>
+                            {t.health && (
+                              <div className="space-y-1.5">
+                                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Health Check</div>
+                                {t.health.results.map((r, i) => (
+                                  <div key={i} className={cn("flex items-center gap-2 p-2 rounded-md border text-xs",
+                                    r.status === "pass" && "bg-green-500/5 border-green-500/10 text-green-300",
+                                    r.status === "fail" && "bg-red-500/5 border-red-500/10 text-red-300",
+                                  )}>
+                                    <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">{r.status === "pass" ? "✓" : "✗"}</span>
+                                    <span>{r.name}: {r.message}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {t.sendTest && (
+                              <div className={cn("flex items-center gap-2 p-2 rounded-md border text-xs",
+                                t.sendTest.success ? "bg-green-500/5 border-green-500/10 text-green-300" : "bg-red-500/5 border-red-500/10 text-red-300",
+                              )}>
+                                <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">{t.sendTest.success ? "✓" : "✗"}</span>
+                                <span>Envío de prueba: {t.sendTest.success ? "OK" : t.sendTest.error}</span>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm">Pulsa el botón 🧪 en Configuración para ejecutar el test.</div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Report tab ─────────────────────────────────────────── */}
+              {modalTab === "report" && (
+                <div className="space-y-3 pt-1">
+                  {reportLoading ? (
+                    <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+                  ) : reportData ? (
+                    <div className="space-y-3">
+                      {(() => {
+                        const r = reportData as { status: string; mode: string; errorCount: number; issues: string[]; pendingActions: string[]; lastEvents: Array<{ eventType: string; status: string; summary: string; createdAt: string }> };
+                        return (
+                          <>
+                            <div className="flex items-center gap-2 p-3 rounded-lg border text-xs bg-muted/20 border-border">
+                              <span className="font-medium">Estado:</span>
+                              <Badge className={cn("text-[10px]",
+                                r.status === "active" && "bg-green-500/15 text-green-400 border-green-500/20",
+                                r.status === "error" && "bg-red-500/15 text-red-400 border-red-500/20",
+                                r.status === "inactive" && "bg-muted/30 text-muted-foreground border-border",
+                              )}>{r.status}</Badge>
+                              <span className="ml-auto font-medium">Modo: {r.mode}</span>
+                              {r.mode === "production" ? (
+                                <Badge className="bg-green-500/15 text-green-400 border-green-500/20 text-[10px]"><CheckCircle2 className="w-2.5 h-2.5 mr-1" />PRODUCCIÓN</Badge>
+                              ) : (
+                                <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20 text-[10px]">STAGING</Badge>
+                              )}
+                            </div>
+                            {r.issues.length > 0 && (
+                              <div className="space-y-1.5">
+                                <div className="text-xs font-semibold text-red-400 uppercase tracking-wider">Problemas</div>
+                                {r.issues.map((issue, i) => (
+                                  <div key={i} className="flex items-center gap-2 p-2 rounded-md bg-red-500/5 border border-red-500/10 text-xs text-red-300">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" /><span>{issue}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {r.pendingActions.length > 0 && (
+                              <div className="space-y-1.5">
+                                <div className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Acciones pendientes</div>
+                                {r.pendingActions.map((action, i) => (
+                                  <div key={i} className="flex items-center gap-2 p-2 rounded-md bg-amber-500/5 border border-amber-500/10 text-xs text-amber-300">
+                                    <Clock className="w-3.5 h-3.5 shrink-0" /><span>{action}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {r.pendingActions.includes("Marcar como PRODUCCIÓN") && (
+                              <button onClick={() => void handleProduction()} disabled={productionToggling}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-green-600/80 hover:bg-green-600 text-white text-sm font-medium disabled:opacity-50 transition-colors">
+                                {productionToggling ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                Marcar como PRODUCCIÓN
+                              </button>
+                            )}
+                            <div className="space-y-1.5">
+                              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Últimos eventos</div>
+                              {r.lastEvents.map((ev, i) => (
+                                <div key={i} className="flex items-center gap-2 p-2 rounded-md bg-muted/20 border border-border/50 text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground">{ev.eventType}</span>
+                                  <span className="text-[10px]">{ev.summary}</span>
+                                  <span className="ml-auto text-[10px]">{new Date(ev.createdAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm">Haz clic en "Informe" para generar el reporte.</div>
                   )}
                 </div>
               )}

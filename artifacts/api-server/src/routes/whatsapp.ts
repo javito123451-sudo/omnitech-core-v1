@@ -26,6 +26,7 @@ import {
   logIntegrationEvent,
 } from "../utils/integrationCreds";
 import { logAuditSystem } from "../utils/auditLogger";
+import { IntegrationManager } from "../hub";
 
 export const whatsappRouter = Router();
 export const whatsappWebhookRouter = Router();
@@ -69,40 +70,25 @@ function normalizePhone(phone: string): string {
 }
 
 // ── Send WhatsApp message with full logging ───────────────────────────────────
+/**
+ * sendAutoReply — now routes through IntegrationManager.
+ * Ava never talks directly to WhatsApp; always goes through the Hub.
+ */
 export async function sendAutoReply(orgId: number, toPhone: string, message: string): Promise<boolean> {
   const toClean = toPhone.replace(/\D/g, "");
-  try {
-    const creds = await getWhatsAppCreds(orgId);
-    if (!creds) {
-      console.warn(`[waSend] ❌ Sin credenciales WhatsApp para org ${orgId} — mensaje no enviado`);
-      return false;
-    }
-    console.log(`[waSend] → to=+${toClean.slice(-9)} | org=${orgId} | text="${message.slice(0, 60)}..."`);
+  console.log(`[waSend] → to=+${toClean.slice(-9)} | org=${orgId} | text="${message.slice(0, 60)}..."`);
 
-    const r = await fetch(
-      "https://graph.facebook.com/v19.0/" + creds.phoneNumberId + "/messages",
-      {
-        method:  "POST",
-        headers: { "Authorization": "Bearer " + creds.accessToken, "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          messaging_product: "whatsapp",
-          to:   toClean,
-          type: "text",
-          text: { body: message },
-        }),
-      },
-    );
-    const body = await r.json() as { messages?: { id: string }[]; error?: { message: string; code?: number } };
-    if (r.ok) {
-      console.log(`[waSend] ✅ enviado a +${toClean.slice(-9)} | msgId=${body.messages?.[0]?.id ?? "?"}`);
-      return true;
-    }
-    console.error(`[waSend] ❌ Meta error ${r.status}: ${body.error?.message ?? JSON.stringify(body)} | to=+${toClean.slice(-9)}`);
-    return false;
-  } catch (err) {
-    console.error(`[waSend] ❌ excepción de red a +${toClean.slice(-9)}:`, err);
-    return false;
+  const result = await IntegrationManager.send(orgId, "whatsapp", {
+    to:      toClean,
+    message,
+  });
+
+  if (result.success) {
+    console.log(`[waSend] ✅ enviado a +${toClean.slice(-9)} | msgId=${result.providerId ?? "?"}`);
+    return true;
   }
+  console.error(`[waSend] ❌ ${result.error}`);
+  return false;
 }
 
 // ── AI reply generation for WhatsApp messages — Ava V2 pipeline (same as Telegram)
@@ -732,6 +718,19 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
   void (async () => {
     const auditOrgId = await resolveAuditOrgId();
 
+    // Route through IntegrationManager first (Hub architecture)
+    const received = await IntegrationManager.receive("whatsapp", body);
+    if (received) {
+      await processIncomingMessage({
+        fromPhone:    received.from,
+        text:         received.message,
+        waMessageId:  received.providerId ?? undefined,
+        contactName:  (received.metadata?.profileName as string) ?? undefined,
+      }).catch((err) => console.error("[WhatsApp Webhook] Processing error:", err));
+      return;
+    }
+
+    // Fallback: raw processing for non-text / status updates (backward compat)
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
         const value = change.value;

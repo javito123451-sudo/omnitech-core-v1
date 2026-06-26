@@ -1,0 +1,256 @@
+IMPLEMENTAR “OMNI INTEGRATION HUB”
+
+OBJETIVO
+
+Crear el Centro de Integraciones oficial de OmniTech.
+
+WhatsApp será la primera integración implementada, pero la arquitectura debe permitir añadir nuevos conectores sin modificar el Core.
+
+⸻
+
+ARQUITECTURA
+
+OmniTech Core
+
+↓
+
+Integration Hub
+
+↓
+
+Integration Manager
+
+↓
+
+Channel Adapters
+
+* WhatsApp
+* Telegram
+* Web Chat
+* Instagram
+* Facebook Messenger
+* Email
+* Google Calendar
+* Google Drive
+* Stripe
+* Shopify
+* API Personalizadas
+
+Cada integración implementará la misma interfaz.
+
+⸻
+
+PASO 1
+
+Pantalla:
+
+Centro de Integraciones
+
+Mostrar todas las integraciones disponibles.
+
+Estado:
+
+🟢 Conectado
+
+🟡 Pendiente
+
+🔴 Error
+
+⚪ No configurado
+
+⸻
+
+PASO 2
+
+Seleccionar integración.
+
+Primera implementación:
+
+WhatsApp Business.
+
+⸻
+
+PASO 3
+
+Ejecutar Omni WhatsApp Setup Wizard.
+
+Asistente guiado.
+
+Detectar automáticamente:
+
+* Número existente.
+* WhatsApp Business App.
+* Cloud API.
+* Estado de Meta.
+
+⸻
+
+PASO 4
+
+Guiar al usuario durante toda la migración.
+
+No utilizar documentación técnica.
+
+Todo debe ser visual.
+
+Checklist.
+
+Progreso.
+
+Validaciones.
+
+⸻
+
+PASO 5
+
+Guardar configuración únicamente en el Workspace activo.
+
+Nunca utilizar variables globales.
+
+Crear entidad:
+
+Integration
+
+Campos:
+
+workspaceId
+
+provider
+
+status
+
+credentials
+
+health
+
+lastSync
+
+lastError
+
+configuration
+
+⸻
+
+PASO 6
+
+Integration Manager
+
+Crear un servicio central encargado de:
+
+connect()
+
+disconnect()
+
+validate()
+
+healthCheck()
+
+send()
+
+receive()
+
+refreshCredentials()
+
+Todas las integraciones deberán utilizar esta interfaz.
+
+⸻
+
+PASO 7
+
+Health Check
+
+Validaciones automáticas:
+
+✓ Token
+
+✓ Phone ID
+
+✓ Webhook
+
+✓ Permisos
+
+✓ Mensajes entrantes
+
+✓ Mensajes salientes
+
+✓ Estado API
+
+⸻
+
+PASO 8
+
+Pruebas automáticas
+
+Enviar mensaje.
+
+Validar:
+
+Canal
+
+↓
+
+Integration Manager
+
+↓
+
+Intent Engine
+
+↓
+
+Skill Engine
+
+↓
+
+CRM
+
+↓
+
+Memory
+
+↓
+
+Knowledge Base
+
+↓
+
+Respuesta
+
+⸻
+
+PASO 9
+
+Informe Final
+
+Estado.
+
+Problemas.
+
+Acciones pendientes.
+
+Botón:
+
+Marcar integración como PRODUCCIÓN.
+
+⸻
+
+REQUISITOS
+
+No crear lógica específica para WhatsApp.
+
+Toda la comunicación deberá pasar por Integration Manager.
+
+Ava nunca hablará directamente con un proveedor.
+
+Siempre utilizará Integration Hub.
+
+Compatibilidad:
+
+* Ava V2
+* Skill Engine
+* Intent Engine
+* CRM
+* Memory Engine
+* Knowledge Base
+* AI Provider Layer
+
+Arquitectura preparada para añadir nuevos conectores sin modificar OmniTech Core.

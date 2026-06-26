@@ -12,6 +12,7 @@ import {
 } from "../utils/integrationCreds";
 import { logAudit } from "../utils/auditLogger";
 import { autoSetupTelegramWebhooks } from "./telegram";
+import { IntegrationManager } from "../hub";
 
 export const integrationsRouter = Router();
 
@@ -440,6 +441,188 @@ integrationsRouter.post("/:slug/test", async (req, res) => {
     }).catch(() => {/**/});
 
     res.json({ success: true, message: `Credenciales de ${catalogItem.name} verificadas.`, duration_ms: Date.now() - t0 });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /:slug/test — real test via IntegrationManager ───────────────────────
+integrationsRouter.post("/:slug/test", async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const { slug } = req.params;
+
+    const catalogItem = CATALOG.find((c) => c.slug === slug);
+    if (!catalogItem) {
+      res.status(404).json({ error: "Integración no encontrada" });
+      return;
+    }
+
+    const t0 = Date.now();
+
+    const validation = await IntegrationManager.validate(orgId, slug);
+    if (!validation.valid) {
+      res.json({
+        success: false, stage: "validation",
+        message: validation.errors?.join("; ") ?? "Credenciales inválidas",
+        missing: validation.missing,
+        duration_ms: Date.now() - t0,
+      });
+      return;
+    }
+
+    const health = await IntegrationManager.healthCheck(orgId, slug);
+
+    let sendTest: { success: boolean; error?: string } | null = null;
+    if (catalogItem.category === "communication" && req.body?.testNumber) {
+      sendTest = await IntegrationManager.send(orgId, slug, {
+        to:      req.body.testNumber as string,
+        message: "🤖 Prueba Omni Integration Hub — mensaje de validación enviado correctamente.",
+      });
+    }
+
+    res.json({
+      success: true, stage: "complete", validation: { valid: true },
+      health: {
+        overall: health.overall, checkedAt: health.checkedAt,
+        results: health.results.map((r) => ({
+          name: r.name, status: r.status, message: r.message, durationMs: r.durationMs,
+        })),
+      },
+      sendTest, duration_ms: Date.now() - t0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── GET /:slug/health — run health check via IntegrationManager ───────────────
+integrationsRouter.get("/:slug/health", async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const { slug } = req.params;
+    const t0 = Date.now();
+    const health = await IntegrationManager.healthCheck(orgId, slug);
+    res.json({
+      success: true,
+      health: { overall: health.overall, checkedAt: health.checkedAt, results: health.results },
+      duration_ms: Date.now() - t0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /:slug/production — mark integration as production ───────────────────
+integrationsRouter.post("/:slug/production", async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const { slug } = req.params;
+    const { mode } = req.body as { mode?: string };
+    const targetMode = mode === "staging" ? "staging" : "production";
+
+    const [row] = await db
+      .select()
+      .from(orgIntegrationsTable)
+      .where(
+        and(
+          eq(orgIntegrationsTable.orgId, orgId),
+          eq(orgIntegrationsTable.integrationSlug, slug),
+        ),
+      );
+    if (!row) {
+      res.status(404).json({ error: "Integración no configurada" });
+      return;
+    }
+
+    const cfg = row.config ? JSON.parse(row.config) : {};
+    cfg._mode = targetMode;
+    cfg._modeChangedAt = new Date().toISOString();
+
+    await db
+      .update(orgIntegrationsTable)
+      .set({ config: JSON.stringify(cfg), updatedAt: new Date() })
+      .where(
+        and(
+          eq(orgIntegrationsTable.orgId, orgId),
+          eq(orgIntegrationsTable.integrationSlug, slug),
+        ),
+      );
+
+    await db.insert(integrationEventsTable).values({
+      orgId, integrationSlug: slug, direction: "outbound",
+      eventType: "mode_changed", status: "processed",
+      summary: `Integración "${slug}" marcada como ${targetMode.toUpperCase()}`,
+    }).catch(() => {/**/});
+
+    logAudit({
+      actorClerkId: req.clerkUserId!, action: "integration_mode_changed",
+      resource: "integration", resourceId: slug, orgId,
+      details: { slug, mode: targetMode }, severity: "info", result: "success", req,
+    });
+
+    res.json({ success: true, mode: targetMode });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── GET /:slug/report — final report: status, issues, pending actions ─────────
+integrationsRouter.get("/:slug/report", async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const { slug } = req.params;
+
+    const [conn] = await db
+      .select()
+      .from(orgIntegrationsTable)
+      .where(
+        and(
+          eq(orgIntegrationsTable.orgId, orgId),
+          eq(orgIntegrationsTable.integrationSlug, slug),
+        ),
+      );
+
+    const events = await db
+      .select()
+      .from(integrationEventsTable)
+      .where(
+        and(
+          eq(integrationEventsTable.orgId, orgId),
+          eq(integrationEventsTable.integrationSlug, slug),
+        ),
+      )
+      .orderBy(desc(integrationEventsTable.createdAt))
+      .limit(20);
+
+    const errors = events.filter((e) => e.status === "error");
+    const health = conn?.config ? (JSON.parse(conn.config)._health as Record<string, unknown> | undefined) : undefined;
+    const mode = conn?.config ? (JSON.parse(conn.config)._mode as string | undefined) : "staging";
+
+    const issues: string[] = [];
+    if (errors.length > 0) issues.push(`${errors.length} errores recientes`);
+    if (conn?.status === "error") issues.push("Estado actual: ERROR");
+    if (conn?.status === "inactive") issues.push("No conectada");
+    if (health?.overall === "unhealthy") issues.push("Health check: NO SALUDABLE");
+    if (health?.overall === "degraded") issues.push("Health check: DEGRADADO");
+    if (!conn?.credentialsEnc) issues.push("Sin credenciales");
+
+    const pending: string[] = [];
+    if (mode !== "production") pending.push("Marcar como PRODUCCIÓN");
+    if (health?.overall !== "healthy") pending.push("Resolver problemas de health check");
+    if (errors.length > 3) pending.push("Revisar errores recurrentes");
+
+    res.json({
+      slug, status: conn?.status ?? "inactive", mode: mode ?? "staging",
+      connectedAt: conn?.createdAt?.toISOString() ?? null,
+      lastSyncedAt: conn?.lastSyncedAt?.toISOString() ?? null,
+      errorCount: errors.length, totalEvents: events.length,
+      health, issues, pendingActions: pending,
+      lastEvents: events.slice(0, 5).map((e) => ({
+        eventType: e.eventType, status: e.status, summary: e.summary,
+        createdAt: e.createdAt.toISOString(),
+      })),
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
