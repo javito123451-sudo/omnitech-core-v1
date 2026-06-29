@@ -187,6 +187,138 @@ controlCenterRouter.post("/workspaces/:id/activate", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── POST /workspaces/:id/assign-user ──────────────────────────────────────────
+controlCenterRouter.post("/workspaces/:id/assign-user", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede asignar usuarios" }); return; }
+  const orgId = Number(req.params["id"]);
+  const { email, role = "member" } = req.body as { email: string; role?: string };
+  if (!email?.trim()) { res.status(400).json({ error: "Email requerido" }); return; }
+
+  const [user] = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable)
+    .where(eq(usersTable.email, email.trim().toLowerCase()));
+  if (!user) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
+
+  const VALID = ["owner", "admin", "member", "read_only", "vendedor"];
+  if (!VALID.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
+
+  if (role === "owner") {
+    const [currentOwner] = await db.select({ userId: orgMembersTable.userId }).from(orgMembersTable)
+      .where(and(eq(orgMembersTable.orgId, orgId), eq(orgMembersTable.role, "owner")));
+    if (currentOwner) {
+      await db.update(orgMembersTable).set({ role: "admin" })
+        .where(and(eq(orgMembersTable.userId, currentOwner.userId), eq(orgMembersTable.orgId, orgId)));
+    }
+  }
+
+  await db.insert(orgMembersTable)
+    .values({ orgId, userId: user.id, role })
+    .onConflictDoUpdate({
+      target: [orgMembersTable.orgId, orgMembersTable.userId],
+      set: { role, isSuspended: false, updatedAt: new Date() },
+    });
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_user_assigned", resource: "workspace", resourceId: String(orgId), details: { userId: user.id, email: user.email, role }, severity: "info", req });
+  res.json({ ok: true, userId: user.id, email: user.email, role });
+});
+
+// ── POST /workspaces/:id/remove-user/:clerkId ─────────────────────────────────
+controlCenterRouter.post("/workspaces/:id/remove-user/:clerkId", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede eliminar asignaciones" }); return; }
+  const orgId = Number(req.params["id"]);
+  const clerkId = req.params["clerkId"];
+
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.clerkId, clerkId));
+  if (!user) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
+
+  await db.delete(orgMembersTable).where(and(eq(orgMembersTable.orgId, orgId), eq(orgMembersTable.userId, user.id)));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_user_removed", resource: "workspace", resourceId: String(orgId), details: { userId: user.id, clerkId }, severity: "warning", req });
+  res.json({ ok: true });
+});
+
+// ── POST /workspaces/:id/transfer-owner ─────────────────────────────────────────
+controlCenterRouter.post("/workspaces/:id/transfer-owner", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede transferir propiedad" }); return; }
+  const orgId = Number(req.params["id"]);
+  const { newOwnerEmail } = req.body as { newOwnerEmail: string };
+  if (!newOwnerEmail?.trim()) { res.status(400).json({ error: "Email del nuevo owner requerido" }); return; }
+
+  const [newOwner] = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable)
+    .where(eq(usersTable.email, newOwnerEmail.trim().toLowerCase()));
+  if (!newOwner) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
+
+  const [currentOwner] = await db.select({ userId: orgMembersTable.userId }).from(orgMembersTable)
+    .where(and(eq(orgMembersTable.orgId, orgId), eq(orgMembersTable.role, "owner")));
+  if (currentOwner) {
+    await db.update(orgMembersTable).set({ role: "admin" })
+      .where(and(eq(orgMembersTable.userId, currentOwner.userId), eq(orgMembersTable.orgId, orgId)));
+  }
+
+  await db.insert(orgMembersTable)
+    .values({ orgId, userId: newOwner.id, role: "owner" })
+    .onConflictDoUpdate({
+      target: [orgMembersTable.orgId, orgMembersTable.userId],
+      set: { role: "owner", isSuspended: false, updatedAt: new Date() },
+    });
+
+  await db.update(organizationsTable).set({ ownerId: newOwner.id }).where(eq(organizationsTable.id, orgId));
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_owner_transferred", resource: "workspace", resourceId: String(orgId), details: { newOwnerId: newOwner.id, email: newOwner.email }, severity: "warning", req });
+  res.json({ ok: true, newOwnerId: newOwner.id, email: newOwner.email });
+});
+
+// ── GET /workspaces/:id/consumption ─────────────────────────────────────────────
+controlCenterRouter.get("/workspaces/:id/consumption", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede ver consumo" }); return; }
+  const orgId = Number(req.params["id"]);
+
+  const [userCount] = await db.select({ count: count() }).from(orgMembersTable).where(eq(orgMembersTable.orgId, orgId));
+  const [clientCount] = await db.select({ count: count() }).from(clientsTable).where(eq(clientsTable.orgId, orgId));
+  const [msgCount] = await db.select({ count: count() }).from(messagesTable).where(eq(messagesTable.orgId, orgId));
+  const [invoiceCount] = await db.select({ count: count() }).from(invoicesTable).where(eq(invoicesTable.orgId, orgId));
+  const [expenseCount] = await db.select({ count: count() }).from(expensesTable).where(eq(expensesTable.orgId, orgId));
+  const [quoteCount] = await db.select({ count: count() }).from(quotesTable).where(eq(quotesTable.orgId, orgId));
+
+  let aiCalls = 0; let aiTokens = 0;
+  try {
+    const aiResult = await db.execute(sql`
+      SELECT COUNT(*) as calls, COALESCE(SUM(tokens_used), 0) as tokens
+      FROM ai_center_logs WHERE org_id = ${orgId}
+    `);
+    const rows = (aiResult as { rows: Array<{ calls: string; tokens: string }> }).rows;
+    aiCalls = Number(rows?.[0]?.calls ?? 0);
+    aiTokens = Number(rows?.[0]?.tokens ?? 0);
+  } catch {}
+
+  const storageMb = Math.round(
+    Number(msgCount?.count ?? 0) * 0.5 +
+    Number(clientCount?.count ?? 0) * 0.2 +
+    Number(invoiceCount?.count ?? 0) * 0.3 +
+    Number(expenseCount?.count ?? 0) * 0.1
+  );
+
+  res.json({
+    users: Number(userCount?.count ?? 0),
+    clients: Number(clientCount?.count ?? 0),
+    messages: Number(msgCount?.count ?? 0),
+    invoices: Number(invoiceCount?.count ?? 0),
+    expenses: Number(expenseCount?.count ?? 0),
+    quotes: Number(quoteCount?.count ?? 0),
+    ai: { calls: aiCalls, tokens: aiTokens },
+    storage: { mb: storageMb, description: "Estimación basada en registros" },
+  });
+});
+
+// ── POST /workspaces/:id/impersonate ───────────────────────────────────────────
+controlCenterRouter.post("/workspaces/:id/impersonate", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede impersonar" }); return; }
+  const orgId = Number(req.params["id"]);
+  const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId));
+  if (!org) { res.status(404).json({ error: "Workspace no encontrado" }); return; }
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_impersonated", resource: "workspace", resourceId: String(orgId), details: { orgName: org.name }, severity: "warning", req });
+  res.json({ ok: true, orgId, orgName: org.name, warning: "Esta acción ha sido registrada en auditoría" });
+});
+
 // ── DELETE /workspaces/:id ────────────────────────────────────────────────────
 controlCenterRouter.delete("/workspaces/:id", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede eliminar workspaces" }); return; }
@@ -650,6 +782,7 @@ controlCenterRouter.get("/module-matrix", async (_req, res) => {
     { slug: "omni_marketing", name: "Marketing Hub",      alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "omni_marketing"},
     { slug: "automations",    name: "Automations",        alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "automations"   },
     { slug: "omni_diagnostics", name: "Omni Diagnostics", alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_diagnostics"},
+    { slug: "omni_tax",         name: "OmniTax",          alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_tax"        },
   ];
 
   const [allConfigs, orgs] = await Promise.all([

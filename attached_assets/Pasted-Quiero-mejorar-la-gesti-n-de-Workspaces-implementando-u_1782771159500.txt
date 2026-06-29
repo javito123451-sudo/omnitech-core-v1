@@ -1,0 +1,216 @@
+Quiero mejorar la gestión de Workspaces implementando un **Wizard de Creación de Empresa (Onboarding Wizard)** en lugar de un simple formulario.
+
+## Objetivo
+
+Que cualquier empresa pueda quedar completamente configurada en menos de 5 minutos.
+
+Este asistente debe estar disponible para SUPER_ADMIN y, cuando corresponda, para distribuidores o partners autorizados.
+
+---
+
+# Paso 1 - Datos de la empresa
+
+* Nombre comercial.
+* Razón social.
+* CIF/NIF.
+* País.
+* Dirección.
+* Teléfono.
+* Email.
+* Web.
+* Logotipo.
+* Zona horaria.
+* Idioma.
+* Moneda.
+
+---
+
+# Paso 2 - Crear Workspace
+
+Crear automáticamente:
+
+* Workspace.
+* Base de configuración.
+* Preferencias.
+* Calendario.
+* Organización.
+
+---
+
+# Paso 3 - Plan contratado
+
+Seleccionar:
+
+* Free.
+* Starter.
+* Growth.
+* Scale.
+* Enterprise.
+
+Mostrar los módulos incluidos.
+
+Permitir activar módulos adicionales.
+
+---
+
+# Paso 4 - Módulos
+
+Activar o desactivar:
+
+* CRM.
+* Agenda.
+* Facturación.
+* Presupuestos.
+* Contabilidad.
+* OmniTax.
+* Gestoría.
+* IA Ava.
+* Marketing.
+* WhatsApp.
+* Telegram.
+* Email.
+* Documentos.
+* Firma electrónica.
+* Automatizaciones.
+* Portal Cliente.
+
+La activación debe realizarse mediante Feature Flags, sin modificar código.
+
+---
+
+# Paso 5 - Administrador principal
+
+Crear el usuario administrador:
+
+* Nombre.
+* Apellidos.
+* Email.
+* Teléfono.
+* Contraseña (o invitación por correo).
+
+Asignar automáticamente el rol ADMIN del Workspace.
+
+---
+
+# Paso 6 - Equipo
+
+Permitir crear varios usuarios de una vez.
+
+Roles disponibles:
+
+* Manager.
+* Comercial.
+* Vendedor.
+* Contabilidad.
+* Gestor.
+* Marketing.
+* Atención al Cliente.
+* Soporte.
+* Usuario estándar.
+
+También permitir omitir este paso para hacerlo más adelante.
+
+---
+
+# Paso 7 - Clientes
+
+Asistente para:
+
+* Crear clientes manualmente.
+* Importar desde Excel.
+* Importar desde CSV.
+* Importar desde otro CRM.
+* Crear cliente de prueba.
+
+---
+
+# Paso 8 - Configuración Fiscal
+
+Seleccionar:
+
+* Tipo de empresa.
+* Régimen fiscal.
+* IVA.
+* IRPF.
+* Calendario fiscal.
+* País.
+
+Dejar preparada la arquitectura para soportar múltiples países en el futuro.
+
+---
+
+# Paso 9 - Integraciones
+
+Conectar:
+
+* WhatsApp Business.
+* Telegram.
+* Correo electrónico.
+* Calendario.
+* Stripe.
+* Pasarela de pago.
+* Firma electrónica.
+
+Permitir saltar este paso.
+
+---
+
+# Paso 10 - IA Ava
+
+Configurar:
+
+* Nombre del asistente.
+* Idioma.
+* Personalidad.
+* Nivel de automatización.
+* Permisos.
+
+---
+
+# Paso 11 - Resumen
+
+Mostrar:
+
+* Workspace creado.
+* Usuarios creados.
+* Clientes importados.
+* Módulos activados.
+* Integraciones configuradas.
+* Plan contratado.
+
+Botón:
+
+**Finalizar y acceder al Dashboard.**
+
+---
+
+## Funcionalidades adicionales
+
+* Guardar borradores para continuar más tarde.
+* Barra de progreso.
+* Validaciones en tiempo real.
+* Posibilidad de volver a pasos anteriores.
+* Diseño responsive.
+* Ayudas contextuales y tooltips.
+* Registro completo en auditoría.
+
+## Plantillas
+
+Añadir la posibilidad de crear Workspaces a partir de plantillas preconfiguradas:
+
+* Autónomo.
+* Pyme.
+* Agencia.
+* Inmobiliaria.
+* Clínica.
+* Restaurante.
+* Comercio.
+* Asesoría.
+* Empresa de servicios.
+* Plantilla personalizada.
+
+Cada plantilla activará automáticamente los módulos recomendados, permisos y configuración inicial.
+
+## Objetivo
+
+Quiero que este Wizard se convierta en la forma estándar de crear un nuevo Workspace en OmniTech Core y que toda la configuración inicial quede automatizada, minimizando el tiempo de puesta en marcha y los errores.
