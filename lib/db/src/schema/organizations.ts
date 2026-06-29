@@ -3,13 +3,17 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const organizationsTable = pgTable("organizations", {
-  id:        serial("id").primaryKey(),
-  name:      text("name").notNull(),
-  slug:      text("slug").notNull().unique(),
-  plan:      text("plan").notNull().default("free"),
-  logoUrl:   text("logo_url"),
-  status:    text("status").notNull().default("active"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  id:                serial("id").primaryKey(),
+  name:              text("name").notNull(),
+  slug:              text("slug").notNull().unique(),
+  plan:              text("plan").notNull().default("free"),
+  logoUrl:           text("logo_url"),
+  status:            text("status").notNull().default("active"),
+  // ── Onboarding state (nullable for backward compat) ───────────────────────
+  onboardingStatus:  text("onboarding_status").default("pending"),
+  onboardingStep:    integer("onboarding_step").default(0),
+  onboardingCompletedAt: timestamp("onboarding_completed_at"),
+  createdAt:         timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertOrganizationSchema = createInsertSchema(organizationsTable).omit({

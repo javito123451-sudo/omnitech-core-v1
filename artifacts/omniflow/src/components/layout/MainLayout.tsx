@@ -5,6 +5,7 @@ import {
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot, BookOpen,
   Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
+  Ticket, Rocket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -60,6 +61,7 @@ const sidebarGroups: NavGroup[] = [
     items: [
       { icon: Zap,       label: "Intelligence", href: "/executive",  moduleKey: "analytics" },
       { icon: BarChart3, label: "Estadísticas", href: "/statistics", moduleKey: "analytics" },
+      { icon: Target,    label: "Pipeline",     href: "/pipeline",   moduleKey: "crm" },
     ],
   },
   {
@@ -77,6 +79,8 @@ const sidebarGroups: NavGroup[] = [
       { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base", moduleKey: "ai_agents" },
       { icon: Library,  label: "Manual",         href: "/manual" },
       { icon: Puzzle,   label: "Integraciones",  href: "/integrations",  moduleKey: "integrations" },
+      { icon: Ticket,   label: "Soporte",        href: "/support" },
+      { icon: Rocket,   label: "Onboarding",     href: "/onboarding" },
     ],
   },
   {
@@ -111,9 +115,12 @@ const moreItems: MoreItem[] = [
   { icon: Brain,           label: "Memoria",         href: "/memory",         group: "Sistema",    moduleKey: "ai_agents" },
   { icon: Library,         label: "Manual",          href: "/manual",         group: "Sistema" },
   { icon: Puzzle,          label: "Integraciones",   href: "/integrations",   group: "Sistema",    moduleKey: "integrations" },
+  { icon: Ticket,          label: "Soporte",         href: "/support",        group: "Sistema" },
+  { icon: Rocket,          label: "Onboarding",      href: "/onboarding",     group: "Sistema" },
   { icon: Settings,        label: "Configuración",   href: "/settings",       group: "Sistema" },
   { icon: Zap,             label: "Ava Autopilot",   href: "/automations",    group: "Sistema",    moduleKey: "automations" },
   { icon: Receipt,         label: "Contabilidad",    href: "/accounting",     group: "Finanzas",   moduleKey: "omni_accounting" },
+  { icon: Target,          label: "Pipeline",        href: "/pipeline",       group: "Análisis",   moduleKey: "crm" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

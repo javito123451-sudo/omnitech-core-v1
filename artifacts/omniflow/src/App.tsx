@@ -14,11 +14,15 @@ import NotFound from "@/pages/not-found";
 import MainLayout from "@/components/layout/MainLayout";
 import ControlCenterLayout from "@/components/layout/ControlCenterLayout";
 import Dashboard from "@/pages/dashboard";
+import RoleDashboard from "@/pages/role-dashboard";
 import Clients from "@/pages/clients";
 import MyClientsPage from "@/pages/my-clients";
 import MyProspectsPage from "@/pages/my-prospects";
 import MyCustomersPage from "@/pages/my-customers";
 import MyCommissionsPage from "@/pages/my-commissions";
+import PipelinePage from "@/pages/pipeline";
+import OnboardingPage from "@/pages/onboarding";
+import SupportPage from "@/pages/support";
 import Assistant from "@/pages/assistant";
 import Calendar from "@/pages/calendar";
 import Statistics from "@/pages/statistics";
@@ -54,6 +58,7 @@ import ImportAiPage from "@/pages/import-ai";
 import AutomationsPage from "@/pages/automations";
 import AccountingPage from "@/pages/accounting/index";
 import PortalPage from "@/pages/portal";
+import PlansPage from "@/pages/plans";
 import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import ManualHome from "@/pages/manual/index";
@@ -166,7 +171,7 @@ function HomeRedirect() {
   useEffect(() => {
     if (isSignedIn === false) { setLocation("/sign-in"); return; }
     if (isSignedIn === true && !loading) {
-      setLocation(isSuperAdmin ? "/control-center" : "/executive-dashboard");
+      setLocation(isSuperAdmin ? "/control-center" : "/dashboard");
     }
   }, [isSignedIn, loading, isSuperAdmin, setLocation]);
 
@@ -208,7 +213,7 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading && !isSuperAdmin) {
-      setLocation("/executive-dashboard");
+      setLocation("/dashboard");
     }
   }, [loading, isSuperAdmin, setLocation]);
 
@@ -258,7 +263,7 @@ function AppRoutes() {
       <Route path="/dashboard">
         <ProtectedRoute>
           <MainLayout>
-            <Dashboard />
+            <RoleDashboard />
           </MainLayout>
         </ProtectedRoute>
       </Route>
@@ -294,6 +299,29 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <MyCommissionsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/pipeline">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="crm">
+              <PipelinePage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/onboarding">
+        <ProtectedRoute>
+          <MainLayout>
+            <OnboardingPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/support">
+        <ProtectedRoute>
+          <MainLayout>
+            <SupportPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>
@@ -445,6 +473,13 @@ function AppRoutes() {
             <ModuleGuard moduleKey="omni_accounting">
               <AccountingPage />
             </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/plans">
+        <ProtectedRoute>
+          <MainLayout>
+            <PlansPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>

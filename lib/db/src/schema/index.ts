@@ -13,3 +13,5 @@ export * from "./docs";
 export * from "./autopilot";
 export * from "./tasks";
 export * from "./accounting";
+export * from "./support-tickets";
+export * from "./pipeline";

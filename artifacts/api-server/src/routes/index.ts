@@ -29,6 +29,10 @@ import { autopilotRouter } from "./autopilot";
 import { accountingRouter } from "./accounting";
 import { portalRouter } from "./portal";
 import { diagnosticsRouter } from "./diagnostics";
+import { dashboardRouter } from "./dashboard";
+import { pipelineRouter } from "./pipeline";
+import { onboardingRouter } from "./onboarding";
+import { supportRouter } from "./support";
 
 const router: IRouter = Router();
 
@@ -91,5 +95,9 @@ router.use("/docs",          requireModule("omni_docs"),       docsRouter);
 router.use("/autopilot",     requireModule("automations"),     autopilotRouter);
 router.use("/accounting",    requireModule("omni_accounting"), accountingRouter);
 router.use("/diagnostics",    requireModule("omni_diagnostics"), diagnosticsRouter);
+router.use("/dashboard",      dashboardRouter);
+router.use("/pipeline",       requireModule("crm"), pipelineRouter);
+router.use("/onboarding",     onboardingRouter);
+router.use("/support",        supportRouter);
 
 export default router;
