@@ -1,0 +1,77 @@
+Perfecto. Procede con la implementación completa del plan, pero siguiendo una estrategia por fases dentro del mismo desarrollo para no romper ninguna funcionalidad existente.
+
+## Fase 1 (Implementar ahora)
+
+Quiero que desarrolles completamente la base de OmniTax:
+
+* Dashboard Fiscal.
+* Motor Fiscal (cálculos internos).
+* Calendario Fiscal Inteligente.
+* Simulador de IVA.
+* Simulador de IRPF.
+* Simulador de Declaración de la Renta (solo borrador orientativo).
+* Fiscal Health Score.
+* Gestión documental fiscal.
+* Recordatorios automáticos.
+* Integración con CRM.
+* Integración con Facturación.
+* Integración con Contabilidad.
+* Integración con IA Ava.
+* Integración con Workspaces.
+* Integración con Roles y Permisos.
+* Auditoría completa.
+
+## Fase 2 (Dejar preparada)
+
+No implementar todavía la presentación oficial.
+
+Pero deja preparada la arquitectura para:
+
+* Portal de Gestoría.
+* Gestión de expedientes.
+* Flujo de revisión.
+* Asignación de gestor.
+* Integración con Stripe para cobrar el servicio.
+* Integración futura con organismos oficiales.
+
+## Planes SaaS
+
+Quiero que OmniTax sea un módulo premium.
+
+Configurarlo desde el Super Admin para que pueda:
+
+* Activarse o desactivarse por Workspace.
+* Formar parte de los planes Growth, Scale o Enterprise.
+* También poder venderse como módulo adicional independiente.
+* Gestionarse mediante Feature Flags sin modificar código.
+
+## Arquitectura
+
+Todo debe seguir la arquitectura actual de OmniTech Core.
+
+No crear aplicaciones independientes.
+
+Todo debe reutilizar:
+
+* Sistema de autenticación.
+* Multiempresa (Workspace Isolation).
+* Sistema de permisos.
+* Auditoría.
+* IA Ava.
+* Dashboard.
+* Diseño visual.
+* APIs existentes.
+
+## Rendimiento
+
+Toda la lógica fiscal debe desarrollarse como servicios independientes para facilitar futuras ampliaciones.
+
+El código debe quedar preparado para añadir nuevos países además de España, utilizando una arquitectura basada en adaptadores o proveedores fiscales por país (España como primer proveedor).
+
+## IMPORTANTE
+
+No quiero un MVP temporal.
+
+Quiero una base sólida, escalable y preparada para convertirse en un ERP SaaS profesional durante los próximos años.
+
+Antes de cerrar cada fase, verifica que no se ha roto ninguna funcionalidad existente y realiza pruebas de integración completas.
