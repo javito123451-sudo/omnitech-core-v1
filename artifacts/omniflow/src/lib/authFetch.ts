@@ -25,6 +25,12 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
     : null;
   if (wsOverride) headers.set("x-ws-override", wsOverride);
 
+  // Multi-workspace: active workspace selection
+  const activeWorkspace = typeof localStorage !== "undefined"
+    ? localStorage.getItem("activeWorkspace")
+    : null;
+  if (activeWorkspace) headers.set("x-active-workspace", activeWorkspace);
+
   return fetch(url, {
     credentials: "include",
     ...init,

@@ -229,7 +229,7 @@ controlCenterRouter.get("/users", async (_req, res) => {
 controlCenterRouter.patch("/users/:clerkId", async (req, res) => {
   const { clerkId } = req.params;
   const { orgId, role } = req.body as { orgId: number; role: string };
-  const VALID_ROLES = ["owner", "admin", "member", "read_only"];
+  const VALID_ROLES = ["owner", "admin", "member", "read_only", "vendedor"];
   if (!VALID_ROLES.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
 
   const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.clerkId, clerkId));

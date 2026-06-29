@@ -8,10 +8,11 @@ import {
   UpdateAppointmentParams,
   DeleteAppointmentParams,
 } from "@workspace/api-zod";
+import { requirePermission } from "../middlewares/permissions";
 
 export const appointmentsRouter = Router();
 
-appointmentsRouter.get("/", async (req, res) => {
+appointmentsRouter.get("/", requirePermission("calendar.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const query = ListAppointmentsQueryParams.parse(req.query);
@@ -54,7 +55,7 @@ appointmentsRouter.get("/", async (req, res) => {
   }
 });
 
-appointmentsRouter.post("/", async (req, res) => {
+appointmentsRouter.post("/", requirePermission("calendar.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const body = CreateAppointmentBody.parse(req.body);

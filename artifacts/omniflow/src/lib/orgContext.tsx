@@ -80,6 +80,12 @@ interface OrgContextValue {
   needsSetup: boolean;
   modules: Record<string, boolean>;
   canAccessModule: (key: string) => boolean;
+  /** Granular permissions from the backend (e.g. ["crm.read", "quotes.write"]) */
+  permissions: string[];
+  /** Check if the current user has a specific permission */
+  hasPermission: (perm: string) => boolean;
+  /** All organizations this user belongs to (multi-workspace) */
+  organizations: OrgInfo[];
   refetch: () => void;
 }
 
@@ -90,6 +96,9 @@ const OrgContext = createContext<OrgContextValue>({
   needsSetup: false,
   modules: {},
   canAccessModule: () => true,
+  permissions: [],
+  hasPermission: () => false,
+  organizations: [],
   refetch: () => {},
 });
 
@@ -104,6 +113,14 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [organizations, setOrganizations] = useState<OrgInfo[]>([]);
+
+  const hasPermission = useCallback(
+    (perm: string): boolean => permissions.includes(perm),
+    [permissions],
+  );
+
   const [modules, setModules] = useState<Record<string, boolean>>(() => {
     // Eagerly seed from cache if the Clerk user ID is already known at init time.
     // This covers the common case where the page is refreshed while still logged in.
@@ -152,6 +169,8 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setNeedsSetup(false);
       setModules({});
+      setPermissions([]);
+      setOrganizations([]);
       setLoading(false);
       return;
     }
@@ -171,15 +190,19 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         return res.json() as Promise<{
           user: UserInfo;
           organization: OrgInfo | null;
+          organizations: OrgInfo[];
           modules: Record<string, boolean>;
+          permissions: string[];
         }>;
       })
-      .then(({ user: u, organization, modules: mods }) => {
+      .then(({ user: u, organization, organizations: orgs, modules: mods, permissions: perms }) => {
         const freshModules = { ...mods, crm: true };
         setUser(u);
         setOrg(organization);
+        setOrganizations(orgs ?? []);
         setNeedsSetup(!organization);
         setModules(freshModules);
+        setPermissions(perms ?? []);
         // Persist to cache so the next render (e.g. page refresh) has data immediately
         if (u?.clerkId) {
           writeModulesCache(u.clerkId, freshModules);
@@ -194,7 +217,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   }, [isSignedIn, isLoaded, tick]);
 
   return (
-    <OrgContext.Provider value={{ org, user, loading, needsSetup, modules, canAccessModule, refetch }}>
+    <OrgContext.Provider value={{ org, user, loading, needsSetup, modules, canAccessModule, permissions, hasPermission, organizations, refetch }}>
       {children}
     </OrgContext.Provider>
   );

@@ -21,6 +21,7 @@ import { requireAuth, resolveOrg } from "../middlewares/auth";
 import { controlCenterRouter } from "./control-center";
 import { importAiRouter } from "./import-ai";
 import { requireModule } from "../middlewares/requireModule";
+import { resolvePermissions } from "../middlewares/permissions";
 import { backupRouter } from "./backup";
 import { knowledgeBaseRouter } from "./knowledge-base";
 import { docsRouter } from "./docs";
@@ -49,7 +50,7 @@ router.use("/whatsapp", whatsappWebhookRouter);
 // ── Telegram webhook — public (Telegram calls this without auth) ──────────────
 router.use("/telegram", telegramWebhookRouter);
 
-router.use(requireAuth, resolveOrg);
+router.use(requireAuth, resolveOrg, resolvePermissions);
 
 router.use("/organizations", organizationsRouter);
 router.use("/clients",       clientsRouter);

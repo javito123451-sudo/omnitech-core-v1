@@ -1,0 +1,220 @@
+Auditoría y refactorización progresiva de OmniTech Core (sin reconstruir el sistema)
+
+Actúa como Arquitecto Senior de Software especializado en SaaS multiempresa (Multi-Tenant), seguridad, RBAC (Role Based Access Control), PostgreSQL, React, TypeScript y sistemas empresariales con IA.
+
+IMPORTANTE
+
+NO quiero reconstruir OmniTech Core.
+
+NO quiero cambiar la arquitectura principal.
+
+NO quiero eliminar funcionalidades existentes.
+
+Quiero mejorar progresivamente el sistema actual manteniendo compatibilidad con todo lo que ya funciona.
+
+Antes de modificar cualquier archivo:
+
+1. Analiza la estructura actual del proyecto.
+2. Identifica qué ya existe.
+3. Reutiliza todo lo posible.
+4. Modifica únicamente lo necesario.
+5. Si una funcionalidad ya existe, refuérzala en lugar de reemplazarla.
+
+⸻
+
+OBJETIVO DE ESTA FASE
+
+Corregir la arquitectura de seguridad y permisos.
+
+Esta fase tiene prioridad absoluta sobre cualquier otra funcionalidad.
+
+Deben solucionarse los siguientes problemas:
+
+* Los usuarios no pueden acceder a información que no les corresponde.
+* Cada empresa debe estar completamente aislada.
+* Los roles deben tener permisos claramente definidos.
+* El BackOffice de OmniTech debe quedar separado del portal del cliente.
+* Toda consulta debe validar permisos desde el backend.
+
+⸻
+
+ROLES
+
+Implementar correctamente:
+
+* SUPERADMIN
+* ADMINISTRADOR
+* VENDEDOR
+* CLIENTE
+
+No utilizar únicamente un campo “role”.
+
+Implementar también el concepto de ámbito (scope) para limitar el acceso según empresa, workspace y asignaciones.
+
+⸻
+
+AISLAMIENTO MULTIEMPRESA
+
+Todo debe estar aislado mediante workspace_id y company_id.
+
+Cada empresa debe tener:
+
+* Usuarios propios
+* CRM propio
+* Clientes propios
+* Memoria IA propia
+* Automatizaciones propias
+* Archivos propios
+* Configuración propia
+* Integraciones propias
+
+Ningún dato puede cruzarse entre empresas.
+
+Revisar todas las consultas existentes para comprobar que siempre filtran por workspace_id y company_id.
+
+⸻
+
+RBAC
+
+Implementar un middleware centralizado para comprobar:
+
+* Usuario autenticado
+* Rol
+* Permisos
+* Workspace
+* Empresa
+
+Nunca confiar únicamente en el frontend.
+
+Todas las validaciones deben realizarse también en el backend.
+
+⸻
+
+PERMISOS
+
+Crear permisos granulares.
+
+Ejemplos:
+
+workspace.view
+
+workspace.support
+
+workspace.manage
+
+crm.read
+
+crm.write
+
+users.read
+
+users.write
+
+automation.read
+
+automation.write
+
+memory.read
+
+memory.write
+
+analytics.read
+
+billing.read
+
+billing.write
+
+settings.manage
+
+Cada endpoint debe comprobar los permisos antes de ejecutarse.
+
+⸻
+
+BACKOFFICE
+
+Separar completamente el BackOffice de OmniTech del portal del cliente.
+
+El cliente nunca debe ver:
+
+* ventas globales
+* facturación global
+* administradores
+* vendedores
+* empresas
+* configuración global
+* estadísticas internas
+
+⸻
+
+SOPORTE
+
+Preparar la arquitectura para que:
+
+Superadmin y Administradores puedan entrar al workspace del cliente únicamente en “Modo Soporte”.
+
+No iniciar sesión como cliente.
+
+Crear un sistema de sesión de soporte auditada.
+
+Registrar:
+
+* administrador
+* cliente
+* fecha
+* motivo
+* duración
+
+⸻
+
+BASE DE DATOS
+
+Revisar los modelos existentes.
+
+Si faltan campos, añadir únicamente los necesarios.
+
+Ejemplo:
+
+Users
+
+* role
+* workspace_id
+* company_id
+* assigned_admin
+* assigned_seller
+* status
+
+Companies
+
+* workspace_id
+* plan_id
+* owner_user_id
+* assigned_admin
+* assigned_seller
+
+Workspaces
+
+* company_id
+* status
+* settings
+* timezone
+
+No eliminar columnas existentes.
+
+⸻
+
+AUDITORÍA
+
+Al finalizar:
+
+Genera un informe indicando:
+
+1. Qué problemas encontraste.
+2. Qué archivos modificaste.
+3. Qué permisos añadiste.
+4. Qué consultas corregiste.
+5. Qué riesgos siguen pendientes.
+6. Qué funcionalidades no tocaste para evitar romper el sistema.
+
+No implementes nuevas funcionalidades comerciales todavía.
+
+Concéntrate únicamente en reforzar la seguridad, los roles y el aislamiento multiempresa.

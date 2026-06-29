@@ -28,6 +28,11 @@ export const usersTable = pgTable("users", {
   status:          text("status").notNull().default("active"),
   suspendedReason: text("suspended_reason"),
   suspendedAt:     timestamp("suspended_at"),
+  // ── Security / RBAC fields (nullable for backward compat) ──────────────
+  assignedOrgId:   integer("assigned_org_id"),           // default workspace
+  assignedCompanyId: integer("assigned_company_id"),     // company grouping
+  sellerId:        integer("seller_id"),                   // if user is a seller, their own ID
+  sellerCode:      text("seller_code"),                    // internal seller reference
   createdAt:       timestamp("created_at").defaultNow().notNull(),
 });
 

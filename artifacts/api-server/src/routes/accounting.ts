@@ -7,6 +7,7 @@ import {
 import { eq, and, desc, count, sum, sql, gte, or, ilike } from "drizzle-orm";
 import { logAudit } from "../utils/auditLogger";
 import { generateInvoicePdf } from "../utils/pdf-invoice";
+import { requirePermission } from "../middlewares/permissions";
 
 export const accountingRouter = Router();
 
@@ -102,7 +103,7 @@ async function enrichInvoice(inv: typeof invoicesTable.$inferSelect) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/accounting/invoices
-accountingRouter.get("/invoices", async (req, res) => {
+accountingRouter.get("/invoices", requirePermission("accounting.read"), async (req, res) => {
   const orgId   = req.orgId!;
   const limit   = Math.min(Number(req.query["limit"]  ?? 50), 200);
   const offset  = Number(req.query["offset"] ?? 0);
@@ -186,7 +187,7 @@ accountingRouter.get("/invoices/:id", async (req, res) => {
 });
 
 // POST /api/accounting/invoices
-accountingRouter.post("/invoices", async (req, res) => {
+accountingRouter.post("/invoices", requirePermission("accounting.write"), async (req, res) => {
   const orgId = req.orgId!;
   const { clientId, quoteId, currency = "EUR", taxRate = 21, notes, dueDate, items = [] } = req.body as {
     clientId?: number; quoteId?: number; currency?: string; taxRate?: number;

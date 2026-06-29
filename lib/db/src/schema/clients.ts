@@ -20,6 +20,10 @@ export const clientsTable = pgTable("clients", {
   telegramChatId: text("telegram_chat_id"),
   leadScore: text("lead_score").default("cold"),
   leadIntent: text("lead_intent"),
+  // ── Security / assignment fields (nullable for backward compat) ───────────
+  assignedAdminId:   integer("assigned_admin_id"),     // admin responsible
+  assignedSellerId:  integer("assigned_seller_id"),    // vendedor assigned
+  assignedBy:        integer("assigned_by"),           // who assigned this client
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

@@ -3,6 +3,8 @@ import { getAuth } from "@clerk/express";
 import { db, usersTable, orgMembersTable, organizationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hasPlatformRole } from "./superAdmin";
+import { enterSupportMode, resolvePermissions } from "./permissions";
+import { logAudit } from "../utils/auditLogger";
 
 declare global {
   namespace Express {
@@ -63,36 +65,79 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // ── SUPER_ADMIN workspace supervision override ─────────────────────────────
+    // ── SUPER_ADMIN workspace supervision override (Support Mode) ─────────────
     const wsOverrideHeader = req.headers["x-ws-override"];
     if (wsOverrideHeader && typeof wsOverrideHeader === "string") {
       const overrideOrgId = parseInt(wsOverrideHeader, 10);
       if (!isNaN(overrideOrgId) && overrideOrgId > 0) {
         const platformRole = await hasPlatformRole(clerkUserId);
-        if (platformRole === "SUPER_ADMIN") {
+        if (platformRole === "SUPER_ADMIN" || platformRole === "STAFF_OMNITECH") {
+          const [targetOrg] = await db
+            .select({ status: organizationsTable.status, name: organizationsTable.name })
+            .from(organizationsTable)
+            .where(eq(organizationsTable.id, overrideOrgId));
+          if (!targetOrg) {
+            res.status(404).json({ error: "workspace_not_found", message: "Workspace no encontrado." });
+            return;
+          }
+          if (targetOrg.status === "suspended") {
+            res.status(403).json({
+              error:   "workspace_suspended",
+              message: `El workspace "${targetOrg.name}" está suspendido.`,
+            });
+            return;
+          }
+          // Activate support mode: admin enters client workspace with audit trail
+          enterSupportMode(req, clerkUserId, overrideOrgId, "admin");
           req.userId  = user.id;
           req.orgId   = overrideOrgId;
           req.orgRole = "admin";
+          logAudit({
+            actorClerkId: clerkUserId,
+            action: "support_mode_entered",
+            resource: "workspace",
+            resourceId: String(overrideOrgId),
+            orgId: overrideOrgId,
+            details: { platformRole, targetOrgName: targetOrg.name },
+            severity: "warning",
+            result: "success",
+          });
           next();
           return;
         }
       }
     }
 
-    const [membership] = await db
-      .select({ orgId: orgMembersTable.orgId, role: orgMembersTable.role })
+    // ── Multi-workspace support: pick active org from header or first membership ─
+    const activeWsHeader = req.headers["x-active-workspace"];
+    let memberships = await db
+      .select({ orgId: orgMembersTable.orgId, role: orgMembersTable.role, isSuspended: orgMembersTable.isSuspended })
       .from(orgMembersTable)
       .where(eq(orgMembersTable.userId, user.id));
 
-    if (!membership) {
+    if (memberships.length === 0) {
       res.status(403).json({ error: "no_org", message: "User has no organization." });
       return;
+    }
+
+    // Filter out suspended memberships
+    memberships = memberships.filter(m => !m.isSuspended);
+    if (memberships.length === 0) {
+      res.status(403).json({ error: "all_orgs_suspended", message: "Tus organizaciones están suspendidas." });
+      return;
+    }
+
+    let selectedMembership = memberships[0];
+    if (activeWsHeader && typeof activeWsHeader === "string") {
+      const requestedOrgId = parseInt(activeWsHeader, 10);
+      const found = memberships.find(m => m.orgId === requestedOrgId);
+      if (found) selectedMembership = found;
     }
 
     const [org] = await db
       .select({ status: organizationsTable.status, name: organizationsTable.name })
       .from(organizationsTable)
-      .where(eq(organizationsTable.id, membership.orgId));
+      .where(eq(organizationsTable.id, selectedMembership.orgId));
 
     if (org?.status === "suspended") {
       res.status(403).json({
@@ -103,8 +148,8 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
     }
 
     req.userId  = user.id;
-    req.orgId   = membership.orgId;
-    req.orgRole = membership.role;
+    req.orgId   = selectedMembership.orgId;
+    req.orgRole = selectedMembership.role;
     next();
   } catch (err) {
     console.error(`[resolveOrg] 500 — ${String(err)} | method=${req.method} url=${req.url}`);

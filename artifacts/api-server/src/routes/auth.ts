@@ -97,32 +97,43 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       }
     }
 
-    const [membership] = await db
+    // ── Fetch ALL memberships (multi-workspace support) ────────────────────
+    const memberships = await db
       .select({
-        orgId:      orgMembersTable.orgId,
-        role:       orgMembersTable.role,
-        orgName:    organizationsTable.name,
-        orgSlug:    organizationsTable.slug,
-        orgPlan:    organizationsTable.plan,
-        orgLogoUrl: organizationsTable.logoUrl,
+        orgId:       orgMembersTable.orgId,
+        role:        orgMembersTable.role,
+        isSuspended: orgMembersTable.isSuspended,
+        orgName:     organizationsTable.name,
+        orgSlug:     organizationsTable.slug,
+        orgPlan:     organizationsTable.plan,
+        orgLogoUrl:  organizationsTable.logoUrl,
+        orgStatus:   organizationsTable.status,
       })
       .from(orgMembersTable)
       .innerJoin(organizationsTable, eq(orgMembersTable.orgId, organizationsTable.id))
       .where(eq(orgMembersTable.userId, user.id));
 
-    // ── Module config for this org ─────────────────────────────────────────
+    const primaryMembership = memberships.find(m => !m.isSuspended) ?? memberships[0] ?? null;
+
+    // ── Module config for primary org ──────────────────────────────────────
     let modules: Record<string, boolean> = {};
-    if (membership) {
+    if (primaryMembership) {
       const configs = await db
         .select({ moduleSlug: moduleConfigsTable.moduleSlug, isEnabled: moduleConfigsTable.isEnabled })
         .from(moduleConfigsTable)
-        .where(eq(moduleConfigsTable.orgId, membership.orgId));
+        .where(eq(moduleConfigsTable.orgId, primaryMembership.orgId));
       for (const cfg of configs) {
         modules[cfg.moduleSlug] = cfg.isEnabled ?? true;
       }
     }
     // crm is the core module — always enabled, cannot be disabled
     modules.crm = true;
+
+    // ── Permission set for primary role ───────────────────────────────────
+    const { getPermissionsForRole } = await import("../middlewares/permissions");
+    const permissions = primaryMembership
+      ? getPermissionsForRole(primaryMembership.role)
+      : new Set<string>();
 
     const responsePayload = {
       user: {
@@ -132,17 +143,28 @@ authRouter.get("/me", requireAuth, async (req, res) => {
         name:      user.name,
         avatarUrl: user.avatarUrl,
       },
-      organization: membership
+      organization: primaryMembership
         ? {
-            id:      membership.orgId,
-            name:    membership.orgName,
-            slug:    membership.orgSlug,
-            plan:    membership.orgPlan,
-            logoUrl: membership.orgLogoUrl,
-            role:    membership.role,
+            id:      primaryMembership.orgId,
+            name:    primaryMembership.orgName,
+            slug:    primaryMembership.orgSlug,
+            plan:    primaryMembership.orgPlan,
+            logoUrl: primaryMembership.orgLogoUrl,
+            role:    primaryMembership.role,
           }
         : null,
+      organizations: memberships.map(m => ({
+        id:          m.orgId,
+        name:        m.orgName,
+        slug:        m.orgSlug,
+        plan:        m.orgPlan,
+        logoUrl:     m.orgLogoUrl,
+        role:        m.role,
+        status:      m.orgStatus,
+        isSuspended: m.isSuspended,
+      })),
       modules,
+      permissions: Array.from(permissions),
     };
 
     shouldLogLogin(clerkUserId).then((should) => {
@@ -152,11 +174,11 @@ authRouter.get("/me", requireAuth, async (req, res) => {
           actorEmail:   user.email ?? undefined,
           action:       "user_login",
           resource:     "session",
-          orgId:        membership?.orgId ?? undefined,
+          orgId:        primaryMembership?.orgId ?? undefined,
           details: {
             userName:   user.name,
-            orgName:    membership?.orgName ?? null,
-            orgRole:    membership?.role    ?? null,
+            orgName:    primaryMembership?.orgName ?? null,
+            orgRole:    primaryMembership?.role    ?? null,
             result:     "success",
           },
           severity: "info",

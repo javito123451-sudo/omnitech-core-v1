@@ -10,10 +10,11 @@ import {
   DeleteClientParams,
 } from "@workspace/api-zod";
 import { logAudit } from "../utils/auditLogger";
+import { requirePermission } from "../middlewares/permissions";
 
 export const clientsRouter = Router();
 
-clientsRouter.get("/", async (req, res) => {
+clientsRouter.get("/", requirePermission("crm.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const query = ListClientsQueryParams.parse(req.query);
@@ -42,7 +43,7 @@ clientsRouter.get("/", async (req, res) => {
   }
 });
 
-clientsRouter.post("/", async (req, res) => {
+clientsRouter.post("/", requirePermission("crm.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const body = CreateClientBody.parse(req.body);
@@ -87,7 +88,7 @@ clientsRouter.post("/", async (req, res) => {
   }
 });
 
-clientsRouter.get("/:id", async (req, res) => {
+clientsRouter.get("/:id", requirePermission("crm.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const { id } = GetClientParams.parse({ id: Number(req.params.id) });
@@ -102,7 +103,7 @@ clientsRouter.get("/:id", async (req, res) => {
   }
 });
 
-clientsRouter.patch("/:id", async (req, res) => {
+clientsRouter.patch("/:id", requirePermission("crm.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const { id } = UpdateClientParams.parse({ id: Number(req.params.id) });
@@ -150,7 +151,7 @@ clientsRouter.patch("/:id", async (req, res) => {
   }
 });
 
-clientsRouter.delete("/:id", async (req, res) => {
+clientsRouter.delete("/:id", requirePermission("crm.delete"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const { id } = DeleteClientParams.parse({ id: Number(req.params.id) });

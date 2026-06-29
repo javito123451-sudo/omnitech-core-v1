@@ -4,11 +4,12 @@ import { db, quotesTable, quoteItemsTable, clientsTable, activityTable } from "@
 import { eq, and, desc } from "drizzle-orm";
 import { generateQuotePdf } from "../utils/pdf-quote";
 import { getProviderSingleton } from "../ai/types";
+import { requirePermission } from "../middlewares/permissions";
 
 export const quotesRouter = Router();
 
 // ── List quotes (with client info) ────────────────────────────────────────────
-quotesRouter.get("/", async (req, res) => {
+quotesRouter.get("/", requirePermission("quotes.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const rows = await db
@@ -78,7 +79,7 @@ quotesRouter.get("/:id", async (req, res) => {
 });
 
 // ── Create quote with items ────────────────────────────────────────────────────
-quotesRouter.post("/", async (req, res) => {
+quotesRouter.post("/", requirePermission("quotes.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const {
