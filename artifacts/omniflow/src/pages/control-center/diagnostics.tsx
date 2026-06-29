@@ -478,7 +478,7 @@ export default function DiagnosticsPage() {
             <div className="flex items-center justify-center py-24">
               <Loader2 size={36} className="animate-spin text-violet-400" />
             </div>
-          ) : history && history.reports.length > 0 ? (
+          ) : history?.reports && history.reports.length > 0 ? (
             <div className="space-y-3">
               {history.reports.map((entry, idx) => {
                 const prev = history.reports[idx + 1];
