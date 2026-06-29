@@ -107,6 +107,8 @@ function IntegrationCard({ slug, info }: { slug: string; info: IntegrationInfo }
 }
 
 export default function IntegrationsPage() {
+  const [, setLocation] = useLocation();
+
   const { data, isLoading, refetch, isFetching } = useQuery<IntegrationsData>({
     queryKey: ["cc-integrations"],
     queryFn:  () => authFetch(`${BASE}/api/control-center/integrations`).then(r => r.json()),
@@ -125,8 +127,6 @@ export default function IntegrationsPage() {
     ? Object.values(platform).filter(i => i.configured).length
     : 0;
   const totalCount = platform ? Object.keys(platform).length : 0;
-
-  const [, setLocation] = useLocation();
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
