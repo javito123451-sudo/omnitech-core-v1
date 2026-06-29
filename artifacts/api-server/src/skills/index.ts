@@ -20,6 +20,16 @@ import {
   createQuoteSkill, getQuotesSkill,
 } from "./quoteSkills";
 
+import {
+  createInvoiceSkill,
+  getInvoiceSkill,
+  listPendingInvoicesSkill,
+  registerPaymentSkill,
+  getClientDebtSkill,
+  getMonthlyIncomeSkill,
+  accountingSummarySkill,
+} from "./accountingSkills";
+
 import { createTaskSkill, getTasksSkill } from "./taskSkills";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -36,6 +46,13 @@ const SKILLS: SkillDefinition[] = [
   getClientDetailSkill,
   createQuoteSkill,
   getQuotesSkill,
+  createInvoiceSkill,
+  getInvoiceSkill,
+  listPendingInvoicesSkill,
+  registerPaymentSkill,
+  getClientDebtSkill,
+  getMonthlyIncomeSkill,
+  accountingSummarySkill,
   createTaskSkill,
   getTasksSkill,
 ];
@@ -48,6 +65,9 @@ SKILL_MAP.set("get_client", getClientDetailSkill);
 SKILL_MAP.set("list_clients", getClientsSkill);
 SKILL_MAP.set("list_quotes", getQuotesSkill);
 SKILL_MAP.set("list_tasks", getTasksSkill);
+// Accounting aliases
+SKILL_MAP.set("list_invoices", listPendingInvoicesSkill);
+SKILL_MAP.set("get_pending_invoices", listPendingInvoicesSkill);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Public API

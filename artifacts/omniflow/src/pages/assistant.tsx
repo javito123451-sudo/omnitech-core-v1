@@ -942,6 +942,12 @@ export default function Assistant() {
             // Invalidate appointments cache so the calendar page refreshes automatically
             void queryClient.invalidateQueries({ queryKey: ["appointments"] });
           }
+          if (parsed.event === "invoice_created" || parsed.event === "payment_registered") {
+            // Invalidate accounting caches so invoices/payments reflect new data
+            void queryClient.invalidateQueries({ queryKey: ["invoices"] });
+            void queryClient.invalidateQueries({ queryKey: ["payments"] });
+            void queryClient.invalidateQueries({ queryKey: ["accounting"] });
+          }
           if (parsed.event === "memory_saved" && parsed.memory) {
             const mem = parsed.memory;
             setMemories(prev => {

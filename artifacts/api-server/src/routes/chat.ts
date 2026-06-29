@@ -697,6 +697,20 @@ const _LEGACY_CRM_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "accounting_summary",
+      description:
+        "Devuelve un resumen financiero completo: total pendiente de cobro, facturas vencidas, ingresos del mes, acumulado anual y facturas pagadas. " +
+        "Úsala para '¿cómo van las cuentas?', 'resumen contable', 'balance financiero', '¿cuánto tenemos pendiente?'.",
+      parameters: {
+        type: "object" as const,
+        properties: {},
+        required: [],
+      },
+    },
+  },
 ];
 
 // NOTE: CRM_TOOL_NAMES ya está definido arriba (línea 260)
@@ -1595,6 +1609,54 @@ export async function executeCrmTool(
       });
     }
 
+    // ── accounting_summary ────────────────────────────────────────────────
+    if (toolName === "accounting_summary") {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+
+      const pendingRows = await db
+        .select({ total: invoicesTable.total })
+        .from(invoicesTable)
+        .where(and(eq(invoicesTable.orgId, orgId), inArray(invoicesTable.status, ["draft", "sent", "partial"])));
+      const pendingTotal = pendingRows.reduce((s, r) => s + parseFloat(String(r.total)), 0);
+
+      const [{ overdueCount }] = await db
+        .select({ overdueCount: count() })
+        .from(invoicesTable)
+        .where(and(
+          eq(invoicesTable.orgId, orgId),
+          inArray(invoicesTable.status, ["sent", "partial"]),
+          sql`${invoicesTable.dueDate} < NOW()`,
+        ));
+
+      const [{ monthRevenue }] = await db
+        .select({ monthRevenue: sum(paymentsTable.amount) })
+        .from(paymentsTable)
+        .where(and(eq(paymentsTable.orgId, orgId), gte(paymentsTable.paidAt, monthStart)));
+
+      const [{ yearRevenue }] = await db
+        .select({ yearRevenue: sum(paymentsTable.amount) })
+        .from(paymentsTable)
+        .where(and(eq(paymentsTable.orgId, orgId), gte(paymentsTable.paidAt, yearStart)));
+
+      const [{ paidCount }] = await db
+        .select({ paidCount: count() })
+        .from(invoicesTable)
+        .where(and(eq(invoicesTable.orgId, orgId), eq(invoicesTable.status, "paid")));
+
+      const fmt = (n: number) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
+
+      return JSON.stringify({
+        pendingTotal: Math.round(pendingTotal * 100) / 100,
+        overdueCount: Number(overdueCount ?? 0),
+        thisMonthRevenue: parseFloat(String(monthRevenue ?? 0)),
+        thisYearRevenue: parseFloat(String(yearRevenue ?? 0)),
+        paidInvoicesCount: Number(paidCount ?? 0),
+        message: `Resumen contable: ${fmt(pendingTotal)} pendientes · ${overdueCount ?? 0} vencidas · ${fmt(parseFloat(String(monthRevenue ?? 0)))} cobrado este mes · ${fmt(parseFloat(String(yearRevenue ?? 0)))} acumulado anual.`,
+      });
+    }
+
     // ── reschedule_appointment ──────────────────────────────────────────────
     if (toolName === "reschedule_appointment") {
       const appointmentIdArg = args["appointment_id"] ? Number(args["appointment_id"]) : null;
@@ -2282,6 +2344,22 @@ router.post("/", requirePermission("ai.write"), async (req, res) => {
               const qResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
               if (qResult["success"]) {
                 res.write(`data: ${JSON.stringify({ event: "quote_created", quote: qResult })}\n\n`);
+              }
+            } catch { /* non-critical */ }
+          }
+          if (tc?.function.name === "create_invoice") {
+            try {
+              const invResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
+              if (invResult["success"]) {
+                res.write(`data: ${JSON.stringify({ event: "invoice_created", invoice: invResult })}\n\n`);
+              }
+            } catch { /* non-critical */ }
+          }
+          if (tc?.function.name === "register_payment") {
+            try {
+              const payResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
+              if (payResult["success"]) {
+                res.write(`data: ${JSON.stringify({ event: "payment_registered", payment: payResult })}\n\n`);
               }
             } catch { /* non-critical */ }
           }
