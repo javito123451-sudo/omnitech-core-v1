@@ -5,7 +5,7 @@ import {
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, ShieldCheck, Sparkles, Bot, BookOpen,
   Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
-  Ticket, Rocket,
+  Ticket, Rocket, LogOut as LogOutIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -243,6 +243,18 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     signOut({ redirectUrl: `${basePath}/` });
   };
 
+  // ── Exit support mode ──────────────────────────────────────────────────
+  const handleExitSupportMode = async () => {
+    try {
+      await authFetch(`${basePath}/api/control-center/support-session/exit`, { method: "POST" });
+    } catch { /* non-critical */ }
+    localStorage.removeItem("wsOverride");
+    localStorage.removeItem("wsOverrideName");
+    localStorage.removeItem("wsSupportReason");
+    setWsOverrideName(null);
+    window.location.href = `${basePath}/control-center`;
+  };
+
   // ── Filter nav items by module access ────────────────────────────────────
   const visiblePrimaryNav = primaryNav.filter(
     (item) => !item.moduleKey || canAccessModule(item.moduleKey),
@@ -414,19 +426,14 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             <div className="flex items-center gap-2 min-w-0">
               <Shield size={14} className="text-amber-400 shrink-0" />
               <span className="text-amber-300 text-xs font-medium truncate">
-                <strong className="text-white">MODO SOPORTE</strong> — {wsOverrideName} — {new Date().toLocaleString("es-ES")}
+                <strong className="text-white">MODO SOPORTE</strong> — {wsOverrideName}
               </span>
             </div>
             <button
-              onClick={() => {
-                localStorage.removeItem("wsOverride");
-                localStorage.removeItem("wsOverrideName");
-                setWsOverrideName(null);
-                navigate(`${basePath}/control-center/workspaces`);
-              }}
+              onClick={handleExitSupportMode}
               className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-white bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/30 px-3 py-1 rounded-lg transition-all shrink-0"
             >
-              <ArrowLeft size={12} /> Salir
+              <ArrowLeft size={12} /> Salir del modo soporte
             </button>
           </div>
         )}

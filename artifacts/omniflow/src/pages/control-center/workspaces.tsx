@@ -388,7 +388,15 @@ export default function WorkspacesPage() {
 
   const impersonateMut = useMutation({
     mutationFn: (id: number) => authFetch(`${BASE}/api/control-center/workspaces/${id}/impersonate`, { method: "POST" }).then(r => r.json()),
-    onSuccess: () => { setImpersonateConfirm(null); },
+    onSuccess: (data) => {
+      setImpersonateConfirm(null);
+      if (data?.orgId) {
+        localStorage.setItem("wsOverride", String(data.orgId));
+        localStorage.setItem("wsOverrideName", data.orgName ?? "Workspace");
+        localStorage.setItem("wsSupportReason", "Impersonación desde Workspace Management");
+        window.location.href = `${BASE}/dashboard`;
+      }
+    },
   });
 
   const active = workspaces.filter(w => w.status !== "suspended").length;

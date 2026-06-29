@@ -316,8 +316,73 @@ controlCenterRouter.post("/workspaces/:id/impersonate", async (req, res) => {
   const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId));
   if (!org) { res.status(404).json({ error: "Workspace no encontrado" }); return; }
 
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_impersonated", resource: "workspace", resourceId: String(orgId), details: { orgName: org.name }, severity: "warning", req });
-  res.json({ ok: true, orgId, orgName: org.name, warning: "Esta acción ha sido registrada en auditoría" });
+  // Close any previous active support session for this admin
+  await db.execute(sql`
+    UPDATE support_sessions
+    SET status = 'closed', ended_at = NOW()
+    WHERE admin_clerk_id = ${req.clerkUserId!} AND status = 'active'
+  `);
+
+  // Create new support session
+  const [session] = await db.execute(sql`
+    INSERT INTO support_sessions (admin_clerk_id, org_id, org_name, reason, status, started_at)
+    VALUES (${req.clerkUserId!}, ${orgId}, ${org.name}, 'Impersonación desde Workspace Management', 'active', NOW())
+    RETURNING id
+  `) as unknown as [{ id: number }[]];
+
+  const sessionId = session?.[0]?.id ?? null;
+
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_impersonated", resource: "workspace", resourceId: String(orgId), details: { orgName: org.name, sessionId }, severity: "warning", req });
+  res.json({ ok: true, orgId, orgName: org.name, sessionId, warning: "Esta acción ha sido registrada en auditoría" });
+});
+
+// ── GET /support-session/active ────────────────────────────────────────────────
+controlCenterRouter.get("/support-session/active", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const [row] = await db.execute(sql`
+    SELECT id, admin_clerk_id, org_id, org_name, reason, status, started_at
+    FROM support_sessions
+    WHERE admin_clerk_id = ${req.clerkUserId!} AND status = 'active'
+    ORDER BY started_at DESC
+    LIMIT 1
+  `) as unknown as [Array<{
+    id: number; admin_clerk_id: string; org_id: number; org_name: string | null;
+    reason: string | null; status: string; started_at: Date;
+  }>];
+  if (!row || row.length === 0) { res.json({ active: false }); return; }
+  res.json({ active: true, session: row[0]! });
+});
+
+// ── POST /support-session/exit ─────────────────────────────────────────────────
+controlCenterRouter.post("/support-session/exit", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const [row] = await db.execute(sql`
+    SELECT id, org_id, org_name
+    FROM support_sessions
+    WHERE admin_clerk_id = ${req.clerkUserId!} AND status = 'active'
+    ORDER BY started_at DESC
+    LIMIT 1
+  `) as unknown as [Array<{ id: number; org_id: number; org_name: string | null }>];
+  if (!row || row.length === 0) { res.json({ ok: true, message: "No había sesión activa" }); return; }
+
+  const s = row[0]!;
+  await db.execute(sql`
+    UPDATE support_sessions
+    SET status = 'closed', ended_at = NOW()
+    WHERE id = ${s.id}
+  `);
+
+  await logAudit({
+    actorClerkId: req.clerkUserId!,
+    action: "support_session_ended",
+    resource: "workspace",
+    resourceId: String(s.org_id),
+    orgId: s.org_id,
+    details: { orgName: s.org_name, sessionId: s.id, duration: "calculated on client" },
+    severity: "info",
+    req,
+  });
+  res.json({ ok: true, orgId: s.org_id, orgName: s.org_name });
 });
 
 // ── DELETE /workspaces/:id ────────────────────────────────────────────────────
