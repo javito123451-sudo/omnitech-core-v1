@@ -1195,7 +1195,9 @@ telegramWebhookRouter.post("/webhook/:secret", (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── POST /verify — comprueba que el Bot Token es válido ──────────────────────
-telegramRouter.post("/verify", async (req, res) => {
+import { requirePermission } from "../middlewares/permissions";
+
+telegramRouter.post("/verify", requirePermission("telegram.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const token = await getTelegramToken(orgId);
@@ -1237,7 +1239,7 @@ telegramRouter.post("/verify", async (req, res) => {
 });
 
 // ── POST /set-webhook — registra el webhook URL en Telegram ──────────────────
-telegramRouter.post("/set-webhook", async (req, res) => {
+telegramRouter.post("/set-webhook", requirePermission("telegram.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const token = await getTelegramToken(orgId);
@@ -1312,7 +1314,7 @@ telegramRouter.post("/set-webhook", async (req, res) => {
 });
 
 // ── GET /webhook-info — estado actual del webhook según Telegram ─────────────
-telegramRouter.get("/webhook-info", async (req, res) => {
+telegramRouter.get("/webhook-info", requirePermission("telegram.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const token = await getTelegramToken(orgId);
@@ -1335,7 +1337,7 @@ telegramRouter.get("/webhook-info", async (req, res) => {
 });
 
 // ── POST /test-send — envía mensaje de prueba a un chat_id ───────────────────
-telegramRouter.post("/test-send", async (req, res) => {
+telegramRouter.post("/test-send", requirePermission("telegram.write"), async (req, res) => {
   try {
     const orgId  = req.orgId!;
     const { chatId } = req.body as { chatId?: string };
@@ -1378,7 +1380,7 @@ telegramRouter.post("/test-send", async (req, res) => {
 });
 
 // ── GET /api/telegram/audit — event log for Telegram Inbox ───────────────────
-telegramRouter.get("/audit", async (req, res) => {
+telegramRouter.get("/audit", requirePermission("telegram.read"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   const limit = Math.min(Number(req.query.limit ?? 200), 500);
   try {
@@ -1398,7 +1400,7 @@ telegramRouter.get("/audit", async (req, res) => {
 });
 
 // ── GET /api/telegram/status — bot + webhook info + stats ────────────────────
-telegramRouter.get("/status", async (req, res) => {
+telegramRouter.get("/status", requirePermission("telegram.read"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   try {
     const token = await getTelegramToken(orgId);
@@ -1478,7 +1480,7 @@ telegramRouter.get("/status", async (req, res) => {
 });
 
 // ── POST /api/telegram/send — send from CRM to a chat_id ─────────────────────
-telegramRouter.post("/send", async (req, res) => {
+telegramRouter.post("/send", requirePermission("telegram.write"), async (req, res) => {
   const orgId  = (req as any).orgId as number;
   const { chatId, message } = req.body as { chatId: number | string; message: string };
 
@@ -1540,7 +1542,7 @@ telegramRouter.post("/send", async (req, res) => {
 });
 
 // ── GET /api/telegram/debug/:clientId — memory debug panel ───────────────────
-telegramRouter.get("/debug/:clientId", async (req, res) => {
+telegramRouter.get("/debug/:clientId", requirePermission("telegram.read"), async (req, res) => {
   const orgId    = (req as any).orgId as number;
   const clientId = Number(req.params.clientId);
 
@@ -1616,7 +1618,7 @@ telegramRouter.get("/debug/:clientId", async (req, res) => {
 });
 
 // ── GET /api/telegram/conversations — Phase 5 inbox list ─────────────────────
-telegramRouter.get("/conversations", async (req, res) => {
+telegramRouter.get("/conversations", requirePermission("telegram.read"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   console.log(`[Telegram/conversations] orgId=${orgId}`);
   try {
@@ -1685,7 +1687,7 @@ telegramRouter.get("/conversations", async (req, res) => {
 });
 
 // ── GET /api/telegram/conversations/:clientId — messages thread ───────────────
-telegramRouter.get("/conversations/:clientId", async (req, res) => {
+telegramRouter.get("/conversations/:clientId", requirePermission("telegram.read"), async (req, res) => {
   const orgId    = (req as any).orgId as number;
   const clientId = Number(req.params.clientId);
   const limit    = Math.min(Number(req.query.limit ?? 100), 300);
@@ -1706,7 +1708,7 @@ telegramRouter.get("/conversations/:clientId", async (req, res) => {
 });
 
 // ── POST /api/telegram/conversations/:clientId/reply — manual CRM reply ──────
-telegramRouter.post("/conversations/:clientId/reply", async (req, res) => {
+telegramRouter.post("/conversations/:clientId/reply", requirePermission("telegram.write"), async (req, res) => {
   const orgId    = (req as any).orgId as number;
   const clientId = Number(req.params.clientId);
   const { message } = req.body as { message: string };

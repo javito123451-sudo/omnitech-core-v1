@@ -4,8 +4,10 @@ import { eq, and, asc } from "drizzle-orm";
 
 export const knowledgeBaseRouter = Router();
 
+import { requirePermission } from "../middlewares/permissions";
+
 // GET /api/knowledge-base — list all entries for org
-knowledgeBaseRouter.get("/", async (req, res) => {
+knowledgeBaseRouter.get("/", requirePermission("knowledge_base.read"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   try {
     const entries = await db
@@ -20,7 +22,7 @@ knowledgeBaseRouter.get("/", async (req, res) => {
 });
 
 // POST /api/knowledge-base — create entry
-knowledgeBaseRouter.post("/", async (req, res) => {
+knowledgeBaseRouter.post("/", requirePermission("knowledge_base.write"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   const { title, content, category, sortOrder } = req.body as {
     title: string; content: string; category?: string; sortOrder?: number;
@@ -47,7 +49,7 @@ knowledgeBaseRouter.post("/", async (req, res) => {
 });
 
 // PUT /api/knowledge-base/:id — update entry
-knowledgeBaseRouter.put("/:id", async (req, res) => {
+knowledgeBaseRouter.put("/:id", requirePermission("knowledge_base.write"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   const id = Number(req.params.id);
   const { title, content, category, isActive, sortOrder } = req.body as {
@@ -78,7 +80,7 @@ knowledgeBaseRouter.put("/:id", async (req, res) => {
 });
 
 // DELETE /api/knowledge-base/:id — delete entry
-knowledgeBaseRouter.delete("/:id", async (req, res) => {
+knowledgeBaseRouter.delete("/:id", requirePermission("knowledge_base.write"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   const id = Number(req.params.id);
   try {
@@ -91,7 +93,7 @@ knowledgeBaseRouter.delete("/:id", async (req, res) => {
 });
 
 // GET /api/knowledge-base/categories — get distinct categories
-knowledgeBaseRouter.get("/categories", async (req, res) => {
+knowledgeBaseRouter.get("/categories", requirePermission("knowledge_base.read"), async (req, res) => {
   const orgId = (req as any).orgId as number;
   try {
     const entries = await db

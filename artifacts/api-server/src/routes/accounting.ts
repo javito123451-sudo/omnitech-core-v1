@@ -177,7 +177,7 @@ accountingRouter.get("/invoices", requirePermission("accounting.read"), async (r
 });
 
 // GET /api/accounting/invoices/:id
-accountingRouter.get("/invoices/:id", async (req, res) => {
+accountingRouter.get("/invoices/:id", requirePermission("accounting.read"), async (req, res) => {
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   const [inv] = await db.select().from(invoicesTable)
@@ -238,7 +238,7 @@ accountingRouter.post("/invoices", requirePermission("accounting.write"), async 
 });
 
 // PATCH /api/accounting/invoices/:id
-accountingRouter.patch("/invoices/:id", async (req, res) => {
+accountingRouter.patch("/invoices/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -291,7 +291,7 @@ accountingRouter.patch("/invoices/:id", async (req, res) => {
 });
 
 // PATCH /api/accounting/invoices/:id/status — spec-correct status-only alias
-accountingRouter.patch("/invoices/:id/status", async (req, res) => {
+accountingRouter.patch("/invoices/:id/status", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -312,7 +312,7 @@ accountingRouter.patch("/invoices/:id/status", async (req, res) => {
 });
 
 // DELETE /api/accounting/invoices/:id
-accountingRouter.delete("/invoices/:id", async (req, res) => {
+accountingRouter.delete("/invoices/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -325,7 +325,7 @@ accountingRouter.delete("/invoices/:id", async (req, res) => {
 });
 
 // GET /api/accounting/invoices/:id/pdf
-accountingRouter.get("/invoices/:id/pdf", async (req, res) => {
+accountingRouter.get("/invoices/:id/pdf", requirePermission("accounting.read"), async (req, res) => {
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
   const [inv] = await db.select().from(invoicesTable)
@@ -363,7 +363,7 @@ accountingRouter.get("/invoices/:id/pdf", async (req, res) => {
 });
 
 // POST /api/accounting/invoices/from-quote/:quoteId — convert approved quote to invoice (spec endpoint)
-accountingRouter.post("/invoices/from-quote/:quoteId", async (req, res) => {
+accountingRouter.post("/invoices/from-quote/:quoteId", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId   = req.orgId!;
   const quoteId = Number(req.params["quoteId"]);
@@ -415,7 +415,7 @@ accountingRouter.post("/invoices/from-quote/:quoteId", async (req, res) => {
 });
 
 // POST /api/accounting/quotes/:id/to-invoice — legacy alias; enforces same approval rules as primary endpoint
-accountingRouter.post("/quotes/:id/to-invoice", async (req, res) => {
+accountingRouter.post("/quotes/:id/to-invoice", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const quoteId = Number(req.params["id"]);
@@ -471,7 +471,7 @@ accountingRouter.post("/quotes/:id/to-invoice", async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/accounting/payments
-accountingRouter.get("/payments", async (req, res) => {
+accountingRouter.get("/payments", requirePermission("accounting.read"), async (req, res) => {
   const orgId     = req.orgId!;
   const limit     = Math.min(Number(req.query["limit"] ?? 50), 200);
   const offset    = Number(req.query["offset"] ?? 0);
@@ -517,7 +517,7 @@ accountingRouter.get("/payments", async (req, res) => {
 });
 
 // POST /api/accounting/payments
-accountingRouter.post("/payments", async (req, res) => {
+accountingRouter.post("/payments", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const { invoiceId, clientId, amount, currency = "EUR", method = "transfer", reference, notes, paidAt } = req.body as {
@@ -574,7 +574,7 @@ accountingRouter.post("/payments", async (req, res) => {
 });
 
 // DELETE /api/accounting/payments/:id
-accountingRouter.delete("/payments/:id", async (req, res) => {
+accountingRouter.delete("/payments/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -588,7 +588,7 @@ accountingRouter.delete("/payments/:id", async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/accounting/credit-notes
-accountingRouter.get("/credit-notes", async (req, res) => {
+accountingRouter.get("/credit-notes", requirePermission("accounting.read"), async (req, res) => {
   const orgId  = req.orgId!;
   const limit  = Math.min(Number(req.query["limit"] ?? 50), 200);
   const offset = Number(req.query["offset"] ?? 0);
@@ -622,7 +622,7 @@ accountingRouter.get("/credit-notes", async (req, res) => {
 });
 
 // POST /api/accounting/credit-notes
-accountingRouter.post("/credit-notes", async (req, res) => {
+accountingRouter.post("/credit-notes", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const { invoiceId, clientId, amount, currency = "EUR", reason } = req.body as {
@@ -666,7 +666,7 @@ accountingRouter.post("/credit-notes", async (req, res) => {
 });
 
 // PATCH /api/accounting/credit-notes/:id
-accountingRouter.patch("/credit-notes/:id", async (req, res) => {
+accountingRouter.patch("/credit-notes/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -683,7 +683,7 @@ accountingRouter.patch("/credit-notes/:id", async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/accounting/expenses
-accountingRouter.get("/expenses", async (req, res) => {
+accountingRouter.get("/expenses", requirePermission("accounting.read"), async (req, res) => {
   const orgId    = req.orgId!;
   const limit    = Math.min(Number(req.query["limit"] ?? 50), 200);
   const offset   = Number(req.query["offset"] ?? 0);
@@ -706,7 +706,7 @@ accountingRouter.get("/expenses", async (req, res) => {
 });
 
 // POST /api/accounting/expenses
-accountingRouter.post("/expenses", async (req, res) => {
+accountingRouter.post("/expenses", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const { category = "general", description, amount, currency = "EUR", vendor, expenseDate, receiptUrl, taxDeductible = false, taxRate = 0 } = req.body as {
@@ -728,7 +728,7 @@ accountingRouter.post("/expenses", async (req, res) => {
 });
 
 // PATCH /api/accounting/expenses/:id
-accountingRouter.patch("/expenses/:id", async (req, res) => {
+accountingRouter.patch("/expenses/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -750,7 +750,7 @@ accountingRouter.patch("/expenses/:id", async (req, res) => {
 });
 
 // DELETE /api/accounting/expenses/:id
-accountingRouter.delete("/expenses/:id", async (req, res) => {
+accountingRouter.delete("/expenses/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -764,7 +764,7 @@ accountingRouter.delete("/expenses/:id", async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/accounting/summary
-accountingRouter.get("/summary", async (req, res) => {
+accountingRouter.get("/summary", requirePermission("accounting.read"), async (req, res) => {
   const orgId = req.orgId!;
   const now   = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -905,7 +905,7 @@ function calcRecurringTotal(items: RecurringItem[], taxRate: number): number {
 }
 
 // GET /api/accounting/recurring
-accountingRouter.get("/recurring", async (req, res) => {
+accountingRouter.get("/recurring", requirePermission("accounting.read"), async (req, res) => {
   const orgId  = req.orgId!;
   const limit  = Math.min(Number(req.query["limit"]  ?? 50), 200);
   const offset = Number(req.query["offset"] ?? 0);
@@ -950,7 +950,7 @@ accountingRouter.get("/recurring", async (req, res) => {
 });
 
 // POST /api/accounting/recurring
-accountingRouter.post("/recurring", async (req, res) => {
+accountingRouter.post("/recurring", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const {
@@ -983,7 +983,7 @@ accountingRouter.post("/recurring", async (req, res) => {
 });
 
 // PATCH /api/accounting/recurring/:id — toggle active or update nextRunAt
-accountingRouter.patch("/recurring/:id", async (req, res) => {
+accountingRouter.patch("/recurring/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin", "manager"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -1004,7 +1004,7 @@ accountingRouter.patch("/recurring/:id", async (req, res) => {
 });
 
 // DELETE /api/accounting/recurring/:id
-accountingRouter.delete("/recurring/:id", async (req, res) => {
+accountingRouter.delete("/recurring/:id", requirePermission("accounting.write"), async (req, res) => {
   if (!checkRole(req, res, ["owner", "admin"])) return;
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);

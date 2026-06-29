@@ -239,13 +239,16 @@ export default function WorkspaceDetailPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => {
+                const reason = prompt("Motivo del modo soporte (requerido):");
+                if (!reason) return;
                 localStorage.setItem("wsOverride", String(ws.id));
                 localStorage.setItem("wsOverrideName", ws.name);
+                localStorage.setItem("wsSupportReason", reason);
                 navigate(`${BASE}/dashboard`);
               }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-violet-600/10 border border-violet-500/20 text-violet-400 hover:bg-violet-600/20 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-amber-600/10 border border-amber-500/20 text-amber-400 hover:bg-amber-600/20 transition-all"
             >
-              <Eye size={16} /> Supervisar CRM
+              <Eye size={16} /> Modo Soporte
             </button>
             <button
               onClick={() => setConfirmSuspend(true)}

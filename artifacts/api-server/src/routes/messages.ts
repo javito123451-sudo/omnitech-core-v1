@@ -10,7 +10,9 @@ import {
 
 export const messagesRouter = Router();
 
-messagesRouter.get("/", async (req, res) => {
+import { requirePermission } from "../middlewares/permissions";
+
+messagesRouter.get("/", requirePermission("messages.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const query = ListMessagesQueryParams.parse(req.query);
@@ -26,7 +28,7 @@ messagesRouter.get("/", async (req, res) => {
   }
 });
 
-messagesRouter.post("/", async (req, res) => {
+messagesRouter.post("/", requirePermission("messages.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const body = SendMessageBody.parse(req.body);
@@ -61,7 +63,7 @@ messagesRouter.post("/", async (req, res) => {
   }
 });
 
-messagesRouter.post("/ai-reply", async (req, res) => {
+messagesRouter.post("/ai-reply", requirePermission("messages.write"), async (req, res) => {
   try {
     const body = GenerateAiReplyBody.parse(req.body);
     const orgId = req.orgId!;
@@ -99,7 +101,7 @@ messagesRouter.post("/ai-reply", async (req, res) => {
   }
 });
 
-export const conversationsHandler: RequestHandler = async (req, res) => {
+export const conversationsHandler: RequestHandler = [requirePermission("messages.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
 
@@ -146,4 +148,4 @@ export const conversationsHandler: RequestHandler = async (req, res) => {
     console.error("[conversationsHandler] error:", err);
     res.status(500).json({ error: String(err) });
   }
-};
+}] as unknown as RequestHandler;

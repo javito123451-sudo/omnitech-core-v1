@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot, BookOpen,
-  Eye, ArrowLeft, Library, Receipt,
+  Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -77,6 +77,20 @@ const sidebarGroups: NavGroup[] = [
       { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base", moduleKey: "ai_agents" },
       { icon: Library,  label: "Manual",         href: "/manual" },
       { icon: Puzzle,   label: "Integraciones",  href: "/integrations",  moduleKey: "integrations" },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { icon: Users,        label: "Mis Clientes",     href: "/my-clients",     moduleKey: "crm" },
+    ],
+  },
+  {
+    label: "Vendedor",
+    items: [
+      { icon: Target,       label: "Mis Prospectos",   href: "/my-prospects",   moduleKey: "crm" },
+      { icon: UserCheck,    label: "Mis Clientes",     href: "/my-customers",   moduleKey: "crm" },
+      { icon: TrendingUp,   label: "Mis Comisiones",   href: "/my-commissions", moduleKey: "crm" },
     ],
   },
 ];
@@ -226,12 +240,19 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     (item) => !item.moduleKey || canAccessModule(item.moduleKey),
   );
 
+  const orgRole = org?.role ?? "member";
+
   const visibleSidebarGroups = sidebarGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter(
-        (item) => !item.moduleKey || canAccessModule(item.moduleKey),
-      ),
+      items: group.items.filter((item) => {
+        if (item.moduleKey && !canAccessModule(item.moduleKey)) return false;
+        // Admin-only nav items
+        if (group.label === "Admin" && !["owner", "admin"].includes(orgRole)) return false;
+        // Vendedor-only nav items
+        if (group.label === "Vendedor" && orgRole !== "vendedor") return false;
+        return true;
+      }),
     }))
     .filter((group) => group.items.length > 0);
 
@@ -379,13 +400,13 @@ export default function MainLayout({ children }: { children: ReactNode }) {
         {/* Ambient gradient */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-background to-background pointer-events-none" />
 
-        {/* SUPER_ADMIN supervision banner */}
+        {/* Modo Soporte banner */}
         {wsOverrideName && (
-          <div className="relative z-20 flex items-center justify-between gap-3 px-4 py-2 bg-violet-600/20 border-b border-violet-500/30 shrink-0">
+          <div className="relative z-20 flex items-center justify-between gap-3 px-4 py-2 bg-amber-600/20 border-b border-amber-500/30 shrink-0">
             <div className="flex items-center gap-2 min-w-0">
-              <Eye size={14} className="text-violet-400 shrink-0" />
-              <span className="text-violet-300 text-xs font-medium truncate">
-                Modo supervisión: <strong className="text-white">{wsOverrideName}</strong>
+              <Shield size={14} className="text-amber-400 shrink-0" />
+              <span className="text-amber-300 text-xs font-medium truncate">
+                <strong className="text-white">MODO SOPORTE</strong> — {wsOverrideName} — {new Date().toLocaleString("es-ES")}
               </span>
             </div>
             <button
@@ -395,7 +416,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
                 setWsOverrideName(null);
                 navigate(`${basePath}/control-center/workspaces`);
               }}
-              className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-white bg-violet-500/20 hover:bg-violet-500/40 border border-violet-500/30 px-3 py-1 rounded-lg transition-all shrink-0"
+              className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-white bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/30 px-3 py-1 rounded-lg transition-all shrink-0"
             >
               <ArrowLeft size={12} /> Salir
             </button>

@@ -1,8 +1,10 @@
+import crypto from "crypto";
 import { Router } from "express";
 import { clerkClient } from "@clerk/express";
 import { db, orgInvitationsTable, organizationsTable, usersTable, orgMembersTable } from "@workspace/db";
-import { eq, and, isNull } from "drizzle-orm";
-import { requireAuth } from "../middlewares/auth";
+import { eq, and, isNull, count } from "drizzle-orm";
+import { requireAuth, requireSuperAdmin } from "../middlewares/auth";
+import { requirePermission } from "../middlewares/permissions";
 
 export const invitationsRouter = Router();
 
@@ -21,6 +23,40 @@ invitationsRouter.get("/:token", async (req, res) => {
     if (inv.expiresAt < new Date()) { res.status(410).json({ error: "Esta invitación ha expirado." }); return; }
 
     res.json({ id: inv.id, email: inv.email, role: inv.role, expiresAt: inv.expiresAt.toISOString(), orgName: inv.orgName, orgSlug: inv.orgSlug, inviterName: inv.inviterName, inviterEmail: inv.inviterEmail });
+  } catch (err) { res.status(500).json({ error: String(err) }); }
+});
+
+// ── POST /api/invitations — create invitation by role type ───────────
+// Types: admin, vendedor, cliente, usuario_cliente, member
+invitationsRouter.post("/", requirePermission("workspace.manage"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const inviterId = req.userId!;
+    const { email, role = "member", expiresInDays = 7 } = req.body as { email: string; role?: string; expiresInDays?: number };
+
+    if (!email?.trim()) { res.status(400).json({ error: "Email requerido" }); return; }
+
+    const validRoles = ["admin", "vendedor", "cliente", "usuario_cliente", "member", "owner"];
+    if (!validRoles.includes(role)) { res.status(400).json({ error: `Rol inválido: ${role}` }); return; }
+
+    // Check plan limits for member count
+    const [org] = await db.select().from(organizationsTable).where(eq(organizationsTable.id, orgId));
+    const memberCount = await db.select({ count: count() }).from(orgMembersTable).where(eq(orgMembersTable.orgId, orgId));
+    const planLimits: Record<string, number> = { starter: 3, growth: 10, scale: 50, free: 2 };
+    const limit = planLimits[org?.plan ?? "starter"];
+    if (Number(memberCount[0]?.count ?? 0) >= limit) {
+      res.status(403).json({ error: `Límite de usuarios alcanzado para plan ${org?.plan}. Máximo: ${limit}.` }); return;
+    }
+
+    const token = crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + Math.min(expiresInDays, 30));
+
+    const [inv] = await db.insert(orgInvitationsTable).values({
+      orgId, email: email.trim().toLowerCase(), role, token, invitedBy: inviterId, expiresAt,
+    }).returning();
+
+    res.status(201).json({ id: inv.id, email: inv.email, role: inv.role, token: inv.token, expiresAt: inv.expiresAt.toISOString() });
   } catch (err) { res.status(500).json({ error: String(err) }); }
 });
 

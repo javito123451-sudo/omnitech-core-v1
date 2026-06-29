@@ -86,7 +86,7 @@ export default function AccountingPage() {
       </div>
 
       {/* Content */}
-      {activeTab === "dashboard" && <AccountingDashboard />}
+      {activeTab === "dashboard" && <AccountingDashboard onNavigate={(t) => setTab(t as Tab)} />}
 
       {activeTab === "invoices" && (
         <div className="space-y-4">

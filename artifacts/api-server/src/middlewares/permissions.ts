@@ -64,9 +64,10 @@ export type Permission =
   // Integrations
   | "integrations.read"
   | "integrations.write"
-  // Analytics / Executive
+  // Analytics / Executive / Diagnostics
   | "analytics.read"
   | "executive.read"
+  | "diagnostics.read"
   // Settings
   | "settings.read"
   | "settings.write"
@@ -97,7 +98,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "telegram.read", "telegram.write",
     "ai.read", "ai.write", "memory.read", "memory.write",
     "integrations.read", "integrations.write",
-    "analytics.read", "executive.read",
+    "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
     "portal.read", "portal.write",
@@ -113,7 +114,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "telegram.read", "telegram.write",
     "ai.read", "ai.write", "memory.read", "memory.write",
     "integrations.read", "integrations.write",
-    "analytics.read", "executive.read",
+    "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
     "portal.read", "portal.write",

@@ -4,7 +4,9 @@ import { logAiCall } from "../utils/aiUsageLogger";
 
 export const calendarAiRouter = Router();
 
-calendarAiRouter.post("/", async (req, res) => {
+import { requirePermission } from "../middlewares/permissions";
+
+calendarAiRouter.post("/", requirePermission("ai.write"), async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     res.status(503).json({ error: "OPENAI_API_KEY no configurada" });

@@ -8,6 +8,14 @@
 
 Se ha implementado una capa de **RBAC granular** sobre la arquitectura de autorización existente, sin eliminar ni modificar funcionalidades previas. Los cambios son **aditivos** y **backward-compatible**.
 
+Las 6 prioridades de seguridad/funcionalidad han sido completadas:
+- **P1** ✅ Validación de seguridad en todos los endpoints
+- **P2** ✅ Mis Clientes (admin view filtrada por assigned_admin_id)
+- **P3** ✅ Vendedor (3 páginas: prospectos, clientes, comisiones)
+- **P4** ✅ Modo Soporte (banner + motivo + auditoría)
+- **P5** ✅ Planes (Starter/Growth/Scale → módulos visibles)
+- **P6** ✅ Invitaciones por tipo (admin, vendedor, cliente, etc.)
+
 ---
 
 ## Cambios Realizados

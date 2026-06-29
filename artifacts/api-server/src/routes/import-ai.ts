@@ -31,6 +31,8 @@ async function parsePdfBuffer(buf: Buffer): Promise<string> {
 
 export const importAiRouter = Router();
 
+import { requirePermission } from "../middlewares/permissions";
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -271,7 +273,7 @@ async function detectColumnMapping(
 }
 
 // ── POST /upload ──────────────────────────────────────────────────────────────
-importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
+importAiRouter.post("/upload", requirePermission("crm.write"), upload.single("file"), async (req, res) => {
   const file = req.file;
   if (!file) { res.status(400).json({ error: "No se ha enviado ningún archivo" }); return; }
 
@@ -427,7 +429,7 @@ importAiRouter.post("/upload", upload.single("file"), async (req, res) => {
 });
 
 // ── POST /check-duplicates ────────────────────────────────────────────────────
-importAiRouter.post("/check-duplicates", async (req, res) => {
+importAiRouter.post("/check-duplicates", requirePermission("crm.write"), async (req, res) => {
   const { records } = req.body as { records: Array<{ email?: string; name?: string }> };
   const orgId = (req as typeof req & { orgId?: number }).orgId ?? 1;
 
@@ -444,7 +446,7 @@ importAiRouter.post("/check-duplicates", async (req, res) => {
 });
 
 // ── POST /confirm — save extracted data to CRM ────────────────────────────────
-importAiRouter.post("/confirm", async (req, res) => {
+importAiRouter.post("/confirm", requirePermission("crm.write"), async (req, res) => {
   const { records } = req.body as {
     records: Array<{
       name?: string; email?: string; phone?: string; company?: string;
@@ -548,7 +550,7 @@ importAiRouter.post("/confirm", async (req, res) => {
 });
 
 // ── GET /history ──────────────────────────────────────────────────────────────
-importAiRouter.get("/history", async (req, res) => {
+importAiRouter.get("/history", requirePermission("crm.read"), async (req, res) => {
   const orgId = (req as typeof req & { orgId?: number }).orgId ?? 1;
   const rows  = await db.execute(sql`
     SELECT id, file_name, file_type, detected_type, confidence_pct, records_created, suggested_dest, created_at
@@ -558,7 +560,7 @@ importAiRouter.get("/history", async (req, res) => {
 });
 
 // ── GET /dashboard ────────────────────────────────────────────────────────────
-importAiRouter.get("/dashboard", async (req, res) => {
+importAiRouter.get("/dashboard", requirePermission("analytics.read"), async (req, res) => {
   const orgId = (req as typeof req & { orgId?: number }).orgId ?? 1;
 
   const [totals, byType] = await Promise.all([

@@ -15,6 +15,10 @@ import MainLayout from "@/components/layout/MainLayout";
 import ControlCenterLayout from "@/components/layout/ControlCenterLayout";
 import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
+import MyClientsPage from "@/pages/my-clients";
+import MyProspectsPage from "@/pages/my-prospects";
+import MyCustomersPage from "@/pages/my-customers";
+import MyCommissionsPage from "@/pages/my-commissions";
 import Assistant from "@/pages/assistant";
 import Calendar from "@/pages/calendar";
 import Statistics from "@/pages/statistics";
@@ -262,6 +266,34 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <Clients />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/my-clients">
+        <ProtectedRoute>
+          <MainLayout>
+            <MyClientsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/my-prospects">
+        <ProtectedRoute>
+          <MainLayout>
+            <MyProspectsPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/my-customers">
+        <ProtectedRoute>
+          <MainLayout>
+            <MyCustomersPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/my-commissions">
+        <ProtectedRoute>
+          <MainLayout>
+            <MyCommissionsPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>

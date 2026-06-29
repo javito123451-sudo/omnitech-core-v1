@@ -7,8 +7,10 @@ type AuthReq = Request & { orgId?: number; userId?: number };
 
 export const autopilotRouter = Router();
 
+import { requirePermission } from "../middlewares/permissions";
+
 // ── GET /api/autopilot/tasks ─────────────────────────────────────────────────
-autopilotRouter.get("/tasks", async (req: AuthReq, res: Response) => {
+autopilotRouter.get("/tasks", requirePermission("automations.read"), async (req: AuthReq, res: Response) => {
   const orgId = req.orgId!;
   try {
     const tasks = await db
@@ -24,7 +26,7 @@ autopilotRouter.get("/tasks", async (req: AuthReq, res: Response) => {
 });
 
 // ── POST /api/autopilot/tasks ────────────────────────────────────────────────
-autopilotRouter.post("/tasks", async (req: AuthReq, res: Response) => {
+autopilotRouter.post("/tasks", requirePermission("automations.write"), async (req: AuthReq, res: Response) => {
   const orgId = req.orgId!;
   const { name, triggerType, triggerConfig, actionType, actionConfig } = req.body as {
     name: string;
@@ -60,7 +62,7 @@ autopilotRouter.post("/tasks", async (req: AuthReq, res: Response) => {
 });
 
 // ── PATCH /api/autopilot/tasks/:id ──────────────────────────────────────────
-autopilotRouter.patch("/tasks/:id", async (req: AuthReq, res: Response) => {
+autopilotRouter.patch("/tasks/:id", requirePermission("automations.write"), async (req: AuthReq, res: Response) => {
   const orgId  = req.orgId!;
   const taskId = Number(req.params["id"]);
 
@@ -107,7 +109,7 @@ autopilotRouter.patch("/tasks/:id", async (req: AuthReq, res: Response) => {
 });
 
 // ── DELETE /api/autopilot/tasks/:id ─────────────────────────────────────────
-autopilotRouter.delete("/tasks/:id", async (req: AuthReq, res: Response) => {
+autopilotRouter.delete("/tasks/:id", requirePermission("automations.write"), async (req: AuthReq, res: Response) => {
   const orgId  = req.orgId!;
   const taskId = Number(req.params["id"]);
 
@@ -128,7 +130,7 @@ autopilotRouter.delete("/tasks/:id", async (req: AuthReq, res: Response) => {
 });
 
 // ── GET /api/autopilot/tasks/:id/runs ───────────────────────────────────────
-autopilotRouter.get("/tasks/:id/runs", async (req: AuthReq, res: Response) => {
+autopilotRouter.get("/tasks/:id/runs", requirePermission("automations.read"), async (req: AuthReq, res: Response) => {
   const orgId  = req.orgId!;
   const taskId = Number(req.params["id"]);
 

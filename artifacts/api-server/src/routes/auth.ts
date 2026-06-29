@@ -129,6 +129,22 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     // crm is the core module — always enabled, cannot be disabled
     modules.crm = true;
 
+    // ── Plan-based module gating ───────────────────────────────────────────
+    // Starter: crm only
+    // Growth: crm + ai_agents + analytics + integrations + automations
+    // Scale: all modules
+    const planModules: Record<string, string[]> = {
+      starter: ["crm"],
+      growth:  ["crm", "ai_agents", "analytics", "integrations", "automations"],
+      scale:   ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_accounting", "omni_import_ai", "whatsapp"],
+      free:    ["crm"],
+    };
+    const plan = primaryMembership?.orgPlan ?? "starter";
+    const allowedModules = planModules[plan] ?? planModules.starter;
+    for (const key of Object.keys(modules)) {
+      if (!allowedModules.includes(key)) modules[key] = false;
+    }
+
     // ── Permission set for primary role ───────────────────────────────────
     const { getPermissionsForRole } = await import("../middlewares/permissions");
     const permissions = primaryMembership

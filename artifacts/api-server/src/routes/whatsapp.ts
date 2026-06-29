@@ -852,7 +852,9 @@ function buildUserPrompt(
 }
 
 // ── POST /generate ────────────────────────────────────────────────────────────
-whatsappRouter.post("/generate", async (req, res) => {
+import { requirePermission } from "../middlewares/permissions";
+
+whatsappRouter.post("/generate", requirePermission("whatsapp.write"), async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
 
@@ -925,7 +927,7 @@ whatsappRouter.post("/generate", async (req, res) => {
 
 // ── POST /send — WhatsApp Business API ────────────────────────────────────────
 // Reads credentials from org_integrations first, falls back to env vars
-whatsappRouter.post("/send", async (req, res) => {
+whatsappRouter.post("/send", requirePermission("whatsapp.write"), async (req, res) => {
   const orgId = req.orgId!;
   const { to, message } = req.body as { to: string; message: string };
 
@@ -1012,7 +1014,7 @@ whatsappRouter.post("/send", async (req, res) => {
 });
 
 // ── POST /test-send — Envía mensaje de prueba real vía Meta API ───────────────
-whatsappRouter.post("/test-send", async (req, res) => {
+whatsappRouter.post("/test-send", requirePermission("whatsapp.write"), async (req, res) => {
   const orgId = req.orgId!;
   const { to } = req.body as { to: string };
 
@@ -1104,7 +1106,7 @@ whatsappRouter.post("/test-send", async (req, res) => {
 });
 
 // ── GET /audit — Auditoría detallada de mensajes WhatsApp (Fase E) ─────────────
-whatsappRouter.get("/audit", async (req, res) => {
+whatsappRouter.get("/audit", requirePermission("whatsapp.read"), async (req, res) => {
   const orgId = req.orgId!;
   const limit = Math.min(Number(req.query["limit"] ?? 100), 500);
 

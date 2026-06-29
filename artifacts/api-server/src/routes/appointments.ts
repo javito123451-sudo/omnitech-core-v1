@@ -108,7 +108,7 @@ appointmentsRouter.post("/", requirePermission("calendar.write"), async (req, re
   }
 });
 
-appointmentsRouter.patch("/:id", async (req, res) => {
+appointmentsRouter.patch("/:id", requirePermission("calendar.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const { id } = UpdateAppointmentParams.parse({ id: Number(req.params.id) });
@@ -164,7 +164,7 @@ appointmentsRouter.patch("/:id", async (req, res) => {
   }
 });
 
-appointmentsRouter.delete("/:id", async (req, res) => {
+appointmentsRouter.delete("/:id", requirePermission("calendar.delete"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const { id } = DeleteAppointmentParams.parse({ id: Number(req.params.id) });

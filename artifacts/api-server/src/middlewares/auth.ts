@@ -88,6 +88,7 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
             return;
           }
           // Activate support mode: admin enters client workspace with audit trail
+          const supportReason = (req.headers["x-support-reason"] as string) || "Sin motivo especificado";
           enterSupportMode(req, clerkUserId, overrideOrgId, "admin");
           req.userId  = user.id;
           req.orgId   = overrideOrgId;
@@ -98,7 +99,7 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
             resource: "workspace",
             resourceId: String(overrideOrgId),
             orgId: overrideOrgId,
-            details: { platformRole, targetOrgName: targetOrg.name },
+            details: { platformRole, targetOrgName: targetOrg.name, reason: supportReason },
             severity: "warning",
             result: "success",
           });

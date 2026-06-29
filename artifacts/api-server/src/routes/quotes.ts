@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { logAiCall } from "../utils/aiUsageLogger";
-import { db, quotesTable, quoteItemsTable, clientsTable, activityTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { db, quotesTable, quoteItemsTable, clientsTable, activityTable, usersTable } from "@workspace/db";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { generateQuotePdf } from "../utils/pdf-quote";
 import { getProviderSingleton } from "../ai/types";
 import { requirePermission } from "../middlewares/permissions";
@@ -48,7 +48,7 @@ quotesRouter.get("/", requirePermission("quotes.read"), async (req, res) => {
 });
 
 // ── Get single quote with items ────────────────────────────────────────────────
-quotesRouter.get("/:id", async (req, res) => {
+quotesRouter.get("/:id", requirePermission("quotes.read"), async (req, res) => {
   try {
     const orgId   = req.orgId!;
     const quoteId = parseInt(req.params.id);
@@ -160,7 +160,7 @@ quotesRouter.post("/", requirePermission("quotes.write"), async (req, res) => {
 });
 
 // ── Update quote (items + header) ─────────────────────────────────────────────
-quotesRouter.patch("/:id", async (req, res) => {
+quotesRouter.patch("/:id", requirePermission("quotes.write"), async (req, res) => {
   try {
     const orgId   = req.orgId!;
     const quoteId = parseInt(req.params.id);
@@ -221,7 +221,7 @@ quotesRouter.patch("/:id", async (req, res) => {
 });
 
 // ── Update status ──────────────────────────────────────────────────────────────
-quotesRouter.patch("/:id/status", async (req, res) => {
+quotesRouter.patch("/:id/status", requirePermission("quotes.write"), async (req, res) => {
   try {
     const orgId   = req.orgId!;
     const quoteId = parseInt(req.params.id);
@@ -267,7 +267,7 @@ quotesRouter.patch("/:id/status", async (req, res) => {
 });
 
 // ── Delete quote ───────────────────────────────────────────────────────────────
-quotesRouter.delete("/:id", async (req, res) => {
+quotesRouter.delete("/:id", requirePermission("quotes.delete"), async (req, res) => {
   try {
     const orgId   = req.orgId!;
     const quoteId = parseInt(req.params.id);
@@ -282,7 +282,7 @@ quotesRouter.delete("/:id", async (req, res) => {
 });
 
 // ── Generate + stream PDF ──────────────────────────────────────────────────────
-quotesRouter.get("/:id/pdf", async (req, res) => {
+quotesRouter.get("/:id/pdf", requirePermission("quotes.read"), async (req, res) => {
   try {
     const orgId   = req.orgId!;
     const quoteId = parseInt(req.params.id);
@@ -317,7 +317,7 @@ quotesRouter.get("/:id/pdf", async (req, res) => {
 });
 
 // ── POST /ai-prioritize — ¿Qué presupuesto perseguir hoy? ────────────────────
-quotesRouter.post("/ai-prioritize", async (req, res) => {
+quotesRouter.post("/ai-prioritize", requirePermission("ai.write"), async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
 
@@ -429,7 +429,7 @@ El array actions debe tener exactamente los mismos IDs en el mismo orden. Solo J
 });
 
 // ── POST /ai-generate — AI Quote Generator ────────────────────────────────────
-quotesRouter.post("/ai-generate", async (req, res) => {
+quotesRouter.post("/ai-generate", requirePermission("ai.write"), async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
 

@@ -1,0 +1,200 @@
+Continúa trabajando sobre OmniTech Core.
+
+NO quiero más documentación teórica.
+
+NO quiero volver a analizar la arquitectura.
+
+Ahora quiero IMPLEMENTAR las mejoras directamente sobre el proyecto existente.
+
+IMPORTANTE:
+
+- No reconstruyas el sistema.
+- No cambies la arquitectura principal.
+- No elimines funcionalidades existentes.
+- Todo debe ser compatible con la versión actual.
+
+Antes de modificar cualquier archivo revisa si ya existe una implementación reutilizable.
+
+===========================
+PRIORIDAD 1
+ROLES Y PERMISOS
+===========================
+
+Revisa todos los endpoints.
+
+Revisa todas las rutas.
+
+Revisa todos los middlewares.
+
+Revisa todos los servicios.
+
+Comprueba que SIEMPRE se valida:
+
+- usuario autenticado
+- role
+- workspace_id
+- company_id
+- permisos
+
+Si alguna consulta no filtra por workspace_id corrígela.
+
+No permitas que un usuario pueda acceder a datos de otra empresa.
+
+===========================
+PRIORIDAD 2
+MIS CLIENTES
+===========================
+
+Crear una nueva sección:
+
+Mis Clientes
+
+Visible únicamente para Administradores.
+
+Debe mostrar únicamente las empresas donde:
+
+assigned_admin = usuario actual
+
+Desde ahí el administrador podrá:
+
+- abrir ficha
+- revisar configuración
+- revisar usuarios
+- revisar incidencias
+- revisar memoria IA
+- entrar en modo soporte
+
+No debe aparecer ningún cliente que no tenga asignado.
+
+===========================
+PRIORIDAD 3
+VENDEDOR
+===========================
+
+Crear tres pantallas.
+
+Mis Prospectos
+
+Mis Clientes
+
+Mis Comisiones
+
+El vendedor únicamente verá:
+
+sus leads
+
+sus clientes
+
+sus ventas
+
+sus comisiones
+
+Nunca podrá acceder al workspace del cliente.
+
+Nunca podrá editar configuraciones.
+
+Nunca podrá acceder a memoria IA.
+
+===========================
+PRIORIDAD 4
+WORKSPACE
+===========================
+
+Crear un sistema de acceso tipo:
+
+Entrar en modo soporte
+
+NO iniciar sesión como cliente.
+
+Crear una sesión temporal.
+
+Mostrar un banner:
+
+"Modo soporte"
+
+Registrar:
+
+- administrador
+- empresa
+- fecha
+- hora
+- motivo
+
+Todo debe quedar auditado.
+
+===========================
+PRIORIDAD 5
+PLANES
+===========================
+
+Crear la relación:
+
+Plan
+
+↓
+
+Módulos
+
+Starter
+
+Growth
+
+Scale
+
+Los módulos visibles deben depender del plan contratado.
+
+No mostrar módulos deshabilitados.
+
+No permitir acceder escribiendo la URL.
+
+===========================
+PRIORIDAD 6
+INVITACIONES
+===========================
+
+Separar completamente las invitaciones.
+
+Invitar Administrador
+
+Invitar Vendedor
+
+Invitar Cliente
+
+Invitar Usuario del Cliente
+
+Cada invitación debe crear automáticamente:
+
+rol
+
+empresa
+
+workspace
+
+permisos
+
+estado
+
+fecha de expiración
+
+===========================
+IMPORTANTE
+===========================
+
+No generes código duplicado.
+
+No rompas funcionalidades existentes.
+
+No elimines componentes.
+
+Refactoriza únicamente donde sea necesario.
+
+Al terminar, genera un informe indicando:
+
+- archivos modificados
+- componentes modificados
+- tablas modificadas
+- rutas nuevas
+- middlewares nuevos
+- permisos añadidos
+- posibles riesgos
+- pruebas realizadas

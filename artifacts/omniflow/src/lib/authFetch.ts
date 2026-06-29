@@ -23,7 +23,11 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
   const wsOverride = typeof localStorage !== "undefined"
     ? localStorage.getItem("wsOverride")
     : null;
-  if (wsOverride) headers.set("x-ws-override", wsOverride);
+  if (wsOverride) {
+    headers.set("x-ws-override", wsOverride);
+    const wsSupportReason = localStorage.getItem("wsSupportReason");
+    if (wsSupportReason) headers.set("x-support-reason", wsSupportReason);
+  }
 
   // Multi-workspace: active workspace selection
   const activeWorkspace = typeof localStorage !== "undefined"

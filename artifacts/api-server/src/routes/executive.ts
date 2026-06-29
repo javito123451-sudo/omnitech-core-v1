@@ -5,6 +5,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, gte } from "drizzle-orm";
 import { getProviderSingleton } from "../ai/types";
+import { requirePermission } from "../middlewares/permissions";
 
 export const executiveRouter = Router();
 
@@ -74,8 +75,9 @@ function buildMonthlyForecast(
 }
 
 // ── Main endpoint ─────────────────────────────────────────────────────────────
-executiveRouter.get("/", async (req, res) => {
-  const orgId = (req as Request & { orgId?: number }).orgId ?? 1;
+executiveRouter.get("/", requirePermission("analytics.read"), async (req, res) => {
+  const orgId = (req as Request & { orgId?: number }).orgId;
+  if (!orgId) { res.status(403).json({ error: "Sin organización" }); return; }
   const now   = new Date();
   const thirtyAgo      = new Date(now.getTime() - 30  * 86_400_000);
   const sevenFromNow   = new Date(now.getTime() + 7   * 86_400_000);
@@ -352,7 +354,7 @@ executiveRouter.get("/", async (req, res) => {
 });
 
 // ── POST /report — AI Executive Report ───────────────────────────────────────
-executiveRouter.post("/report", async (req, res) => {
+executiveRouter.post("/report", requirePermission("analytics.read"), async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
 
@@ -486,7 +488,7 @@ Máximo 3 clientes prioritarios y 3 bloqueadores. Sé directo y accionable. Sin 
 });
 
 // ── POST /ceo — ¿Qué haría un CEO? ───────────────────────────────────────────
-executiveRouter.post("/ceo", async (req, res) => {
+executiveRouter.post("/ceo", requirePermission("analytics.read"), async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
 

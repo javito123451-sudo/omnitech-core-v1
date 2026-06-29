@@ -65,7 +65,9 @@ async function recordHistory(
 }
 
 // ── GET / — list (optional ?category= filter) ─────────────────────────────────
-memoryRouter.get("/", async (req, res) => {
+import { requirePermission } from "../middlewares/permissions";
+
+memoryRouter.get("/", requirePermission("memory.read"), async (req, res) => {
   try {
     const orgId    = req.orgId!;
     const category = (req.query["category"] as string | undefined)?.toLowerCase();
@@ -87,7 +89,7 @@ memoryRouter.get("/", async (req, res) => {
 });
 
 // ── GET /search?q= — semantic search ──────────────────────────────────────────
-memoryRouter.get("/search", async (req, res) => {
+memoryRouter.get("/search", requirePermission("memory.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const q = ((req.query["q"] as string) ?? "").trim();

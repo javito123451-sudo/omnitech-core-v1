@@ -26,6 +26,8 @@ import { eq, and, asc, desc, gte, lt, inArray, ilike, sum, count, sql } from "dr
 
 const router = Router();
 const AGENT_SLUG = "operator";
+
+import { requirePermission } from "../middlewares/permissions";
 type AgentMemoryRow = typeof agentMemoryTable.$inferSelect;
 
 // ── Semantic helpers ──────────────────────────────────────────────────────────
@@ -2036,7 +2038,7 @@ ${existingList}`,
 
 // ── Session endpoints ──────────────────────────────────────────────────────────
 
-router.get("/sessions", async (req, res) => {
+router.get("/sessions", requirePermission("ai.read"), async (req, res) => {
   try {
     const sessions = await db
       .select()
@@ -2054,7 +2056,7 @@ router.get("/sessions", async (req, res) => {
   }
 });
 
-router.get("/sessions/:sessionId/messages", async (req, res) => {
+router.get("/sessions/:sessionId/messages", requirePermission("ai.read"), async (req, res) => {
   try {
     const [session] = await db
       .select()
@@ -2083,7 +2085,7 @@ router.get("/sessions/:sessionId/messages", async (req, res) => {
 
 // ── Chat endpoint ─────────────────────────────────────────────────────────────
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission("ai.write"), async (req, res) => {
   const { messages, clientContext, sessionId: incomingSessionId } = req.body as {
     messages: { role: "user" | "assistant"; content: string }[];
     clientContext?: ClientContext;

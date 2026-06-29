@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, clientsTable, activityTable } from "@workspace/db";
+import { db, clientsTable, activityTable, organizationsTable } from "@workspace/db";
 import { eq, desc, and } from "drizzle-orm";
 import {
   ListClientsQueryParams,
@@ -182,3 +182,64 @@ clientsRouter.delete("/:id", requirePermission("crm.delete"), async (req, res) =
     res.status(400).json({ error: String(err) });
   }
 });
+
+// ── P2: Mis Clientes (admin) ─────────────────────────────────────────────
+// GET /api/clients/my-clients — solo clientes donde assigned_admin_id = user.id actual
+clientsRouter.get("/my-clients", requirePermission("crm.read"), async (req, res) => {
+  try {
+    const orgId  = req.orgId!;
+    const userId = req.userId!;
+    const rows = await db
+      .select()
+      .from(clientsTable)
+      .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.assignedAdminId, userId)))
+      .orderBy(desc(clientsTable.createdAt));
+    res.json(rows.map(r => ({ ...r, createdAt: r.createdAt.toISOString() })));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── P3: Vendedor — Mis Prospectos & Mis Clientes ────────────────────
+// GET /api/clients/my-leads — solo leads donde assigned_seller_id = user.id
+clientsRouter.get("/my-leads", requirePermission("crm.read"), async (req, res) => {
+  try {
+    const orgId  = req.orgId!;
+    const userId = req.userId!;
+    const rows = await db
+      .select()
+      .from(clientsTable)
+      .where(and(
+        eq(clientsTable.orgId, orgId),
+        eq(clientsTable.assignedSellerId, userId),
+        eq(clientsTable.status, "lead"),
+      ))
+      .orderBy(desc(clientsTable.createdAt));
+    res.json(rows.map(r => ({ ...r, createdAt: r.createdAt.toISOString() })));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// GET /api/clients/my-customers — solo clientes activos donde assigned_seller_id = user.id
+clientsRouter.get("/my-customers", requirePermission("crm.read"), async (req, res) => {
+  try {
+    const orgId  = req.orgId!;
+    const userId = req.userId!;
+    const rows = await db
+      .select()
+      .from(clientsTable)
+      .where(and(
+        eq(clientsTable.orgId, orgId),
+        eq(clientsTable.assignedSellerId, userId),
+        eq(clientsTable.status, "active"),
+      ))
+      .orderBy(desc(clientsTable.createdAt));
+    res.json(rows.map(r => ({ ...r, createdAt: r.createdAt.toISOString() })));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── P4: Soporte — POST /api/support/enter (con motivo) ──────────────────
+// Este endpoint se maneja en auth.ts junto con x-ws-override

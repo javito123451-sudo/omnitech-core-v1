@@ -11,12 +11,14 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
+import { requirePermission } from "../middlewares/permissions";
+
 /**
  * POST /api/diagnostics/run
  * Ejecutar diagnóstico completo para el workspace actual.
  * SUPER_ADMIN puede hacerlo para cualquier org. Admin de workspace solo para su org.
  */
-router.post("/run", async (req, res) => {
+router.post("/run", requirePermission("diagnostics.read"), async (req, res) => {
   const r = req as typeof req & { orgId?: number; clerkUserId?: string; isSuperAdmin?: boolean };
   const orgId = r.orgId;
   const clerkUserId = r.clerkUserId;
@@ -60,7 +62,7 @@ router.post("/run", async (req, res) => {
  * GET /api/diagnostics/latest
  * Último reporte del workspace.
  */
-router.get("/latest", async (req, res) => {
+router.get("/latest", requirePermission("diagnostics.read"), async (req, res) => {
   const r = req as typeof req & { orgId?: number };
   const orgId = r.orgId;
   if (!orgId) {
@@ -109,7 +111,7 @@ router.get("/latest", async (req, res) => {
  * GET /api/diagnostics/:id
  * Reporte específico.
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", requirePermission("workspace.view"), async (req, res) => {
   const r = req as typeof req & { orgId?: number };
   const orgId = r.orgId;
   const id = Number(req.params.id);
@@ -158,7 +160,7 @@ router.get("/:id", async (req, res) => {
  * GET /api/diagnostics/history
  * Historial paginado.
  */
-router.get("/history", async (req, res) => {
+router.get("/history", requirePermission("workspace.view"), async (req, res) => {
   const r = req as typeof req & { orgId?: number };
   const orgId = r.orgId;
   if (!orgId) {
@@ -211,7 +213,7 @@ router.get("/history", async (req, res) => {
  * POST /api/diagnostics/:id/fix
  * Auto-fix un issue del reporte.
  */
-router.post("/:id/fix", async (req, res) => {
+router.post("/:id/fix", requirePermission("workspace.manage"), async (req, res) => {
   const r = req as typeof req & { orgId?: number };
   const orgId = r.orgId;
   const id = Number(req.params.id);
@@ -249,7 +251,7 @@ router.post("/:id/fix", async (req, res) => {
  * GET /api/diagnostics/modules
  * Lista de módulos de diagnóstico disponibles.
  */
-router.get("/modules", async (_req, res) => {
+router.get("/modules", requirePermission("workspace.view"), async (_req, res) => {
   const modules = DiagnosticRegistry.list().map((name) => ({
     name,
     priority: DiagnosticRegistry.get(name)?.priority ?? 100,

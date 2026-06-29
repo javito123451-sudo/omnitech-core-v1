@@ -9,7 +9,9 @@ function calcGrowth(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-statsRouter.get("/dashboard", async (req, res) => {
+import { requirePermission } from "../middlewares/permissions";
+
+statsRouter.get("/dashboard", requirePermission("analytics.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const now = new Date();
@@ -78,7 +80,7 @@ statsRouter.get("/dashboard", async (req, res) => {
   }
 });
 
-statsRouter.get("/revenue", async (req, res) => {
+statsRouter.get("/revenue", requirePermission("analytics.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -107,7 +109,7 @@ statsRouter.get("/revenue", async (req, res) => {
   }
 });
 
-statsRouter.get("/clients", async (req, res) => {
+statsRouter.get("/clients", requirePermission("analytics.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -137,7 +139,7 @@ statsRouter.get("/clients", async (req, res) => {
   }
 });
 
-statsRouter.get("/activity", async (req, res) => {
+statsRouter.get("/activity", requirePermission("analytics.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const rows = await db
