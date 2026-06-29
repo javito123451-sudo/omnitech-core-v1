@@ -7,6 +7,7 @@ import {
   UserPlus, UserMinus, Crown, BarChart3, Eye, Shield, LayoutGrid,
   ChevronRight, ArrowRightLeft, XCircle, Search, KeyRound,
 } from "lucide-react";
+import { PortalDropdown, PortalDropdownItem } from "@/components/ui/PortalDropdown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -542,50 +543,29 @@ export default function WorkspacesPage() {
                     </span>
                   </td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center gap-1">
-                      {/* Administrar dropdown actions */}
-                      <div className="relative group">
-                        <button
-                          className="px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-all flex items-center gap-1"
-                          onClick={() => setManageWs(ws)}
-                        >
-                          <LayoutGrid size={13} /> Gestionar <ChevronRight size={12} className="group-hover:rotate-90 transition-transform" />
+                    <PortalDropdown
+                      align="right"
+                      trigger={
+                        <button className="px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-all flex items-center gap-1">
+                          <LayoutGrid size={13} /> Gestionar <ChevronRight size={12} />
                         </button>
-                        {manageWs?.id === ws.id && (
-                          <div className="absolute right-0 top-full mt-1 bg-[#0d0e1e] border border-white/10 rounded-xl shadow-2xl z-40 min-w-[200px] overflow-hidden">
-                            <button onClick={() => { setShowMembers(true); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-all">
-                              <Users size={13} className="text-violet-400" /> Ver usuarios
-                            </button>
-                            <button onClick={() => { setShowAssign(true); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-all">
-                              <UserPlus size={13} className="text-emerald-400" /> Asignar usuario
-                            </button>
-                            <button onClick={() => { setShowTransfer(true); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-all">
-                              <ArrowRightLeft size={13} className="text-amber-400" /> Transferir owner
-                            </button>
-                            <button onClick={() => { setShowConsumption(true); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-all">
-                              <BarChart3 size={13} className="text-blue-400" /> Ver consumo
-                            </button>
-                            <button onClick={() => { setImpersonateConfirm(ws); setManageWs(null); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-all">
-                              <Eye size={13} className="text-pink-400" /> Impersonar
-                            </button>
-                            <div className="border-t border-white/[0.06] my-1" />
-                            <button onClick={() => { setManageWs(null); setEditWs(ws); }} className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-all">
-                              <Edit2 size={13} /> Editar nombre
-                            </button>
-                            <button onClick={() => { setManageWs(null); setSuspendWs(ws); }} className="w-full text-left px-3 py-2 text-xs text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 transition-all">
-                              {ws.status === "active" ? <><PauseCircle size={13} /> Suspender</> : <><PlayCircle size={13} /> Activar</>}
-                            </button>
-                            <button onClick={() => { setManageWs(null); setDeleteId(ws.id); }} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 flex items-center gap-2 transition-all">
-                              <Trash2 size={13} /> Eliminar
-                            </button>
-                          </div>
-                        )}
-                        {/* Close on outside click */}
-                        {manageWs?.id === ws.id && (
-                          <div className="fixed inset-0 z-30" onClick={() => setManageWs(null)} />
-                        )}
-                      </div>
-                    </div>
+                      }
+                    >
+                      <PortalDropdownItem icon={<Users size={13} className="text-violet-400" />} label="Ver usuarios" onClick={() => { setManageWs(ws); setShowMembers(true); }} />
+                      <PortalDropdownItem icon={<UserPlus size={13} className="text-emerald-400" />} label="Asignar usuario" onClick={() => { setManageWs(ws); setShowAssign(true); }} />
+                      <PortalDropdownItem icon={<ArrowRightLeft size={13} className="text-amber-400" />} label="Transferir owner" onClick={() => { setManageWs(ws); setShowTransfer(true); }} />
+                      <PortalDropdownItem icon={<BarChart3 size={13} className="text-blue-400" />} label="Ver consumo" onClick={() => { setManageWs(ws); setShowConsumption(true); }} />
+                      <PortalDropdownItem icon={<Eye size={13} className="text-pink-400" />} label="Impersonar" onClick={() => { setImpersonateConfirm(ws); }} />
+                      <div className="border-t border-white/[0.06] my-1" />
+                      <PortalDropdownItem icon={<Edit2 size={13} />} label="Editar nombre" onClick={() => setEditWs(ws)} />
+                      <PortalDropdownItem
+                        icon={ws.status === "active" ? <PauseCircle size={13} /> : <PlayCircle size={13} />}
+                        label={ws.status === "active" ? "Suspender" : "Activar"}
+                        onClick={() => setSuspendWs(ws)}
+                        variant="warning"
+                      />
+                      <PortalDropdownItem icon={<Trash2 size={13} />} label="Eliminar" onClick={() => setDeleteId(ws.id)} variant="danger" />
+                    </PortalDropdown>
                   </td>
                 </tr>
               ))}

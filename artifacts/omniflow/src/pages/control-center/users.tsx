@@ -5,6 +5,7 @@ import {
   Users, Search, Shield, Building2, Crown, Loader2, UserX, UserCheck2,
   ChevronDown, X, AlertTriangle, CheckCircle2, Plus, Trash2, Filter,
 } from "lucide-react";
+import { PortalDropdown, PortalDropdownItem } from "@/components/ui/PortalDropdown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -30,36 +31,38 @@ const ROLE_COLORS: Record<string, string> = {
 const CRM_ROLES = ["owner", "admin", "member", "read_only"] as const;
 
 function RoleDropdown({ user, onSuccess }: { user: PlatformUser; onSuccess: () => void }) {
-  const [open, setOpen] = useState(false);
   const qc = useQueryClient();
   const mut = useMutation({
     mutationFn: ({ role }: { role: string }) => authFetch(`${BASE}/api/control-center/users/${user.clerkId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgId: user.orgId, role }),
     }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); setOpen(false); onSuccess(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); onSuccess(); },
   });
   if (!user.orgId || !user.orgRole) return <span className="text-slate-600 text-sm">—</span>;
   return (
-    <div className="relative">
-      <button onClick={() => setOpen(!open)}
-        className={`text-xs font-medium px-2.5 py-1 rounded-full capitalize flex items-center gap-1.5 ${ROLE_COLORS[user.orgRole] ?? ROLE_COLORS.member}`}>
-        {user.orgRole} <ChevronDown size={11} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-8 z-40 bg-[#0d0e1e] border border-white/10 rounded-xl p-1 shadow-2xl min-w-[140px]">
-            {CRM_ROLES.map(r => (
-              <button key={r} disabled={r === user.orgRole || mut.isPending} onClick={() => mut.mutate({ role: r })}
-                className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all capitalize ${r === user.orgRole ? "text-white bg-violet-600/20 cursor-default" : "text-slate-400 hover:text-white hover:bg-white/5"}`}>
-                {r}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+    <PortalDropdown
+      align="left"
+      trigger={
+        <button
+          className={`text-xs font-medium px-2.5 py-1 rounded-full capitalize flex items-center gap-1.5 ${ROLE_COLORS[user.orgRole] ?? ROLE_COLORS.member}`}>
+          {user.orgRole} <ChevronDown size={11} />
+        </button>
+      }
+    >
+      {CRM_ROLES.map(r => (
+        <button
+          key={r}
+          disabled={r === user.orgRole || mut.isPending}
+          onClick={() => mut.mutate({ role: r })}
+          className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all capitalize ${
+            r === user.orgRole ? "text-white bg-violet-600/20 cursor-default" : "text-slate-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          {r}
+        </button>
+      ))}
+    </PortalDropdown>
   );
 }
 
