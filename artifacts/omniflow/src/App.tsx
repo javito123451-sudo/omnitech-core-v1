@@ -57,6 +57,7 @@ import ModuleMatrixPage from "@/pages/control-center/module-matrix";
 import ImportAiPage from "@/pages/import-ai";
 import AutomationsPage from "@/pages/automations";
 import AccountingPage from "@/pages/accounting/index";
+import TaxPage from "@/pages/tax/index";
 import PortalPage from "@/pages/portal";
 import PlansPage from "@/pages/plans";
 import NoAccess from "@/pages/no-access";
@@ -472,6 +473,15 @@ function AppRoutes() {
           <MainLayout>
             <ModuleGuard moduleKey="omni_accounting">
               <AccountingPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/tax">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="omni_tax">
+              <TaxPage />
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>

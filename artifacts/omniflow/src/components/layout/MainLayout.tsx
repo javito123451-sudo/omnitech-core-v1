@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
-  MoreHorizontal, X, ChevronRight, Shield, Sparkles, Bot, BookOpen,
+  MoreHorizontal, X, ChevronRight, Shield, ShieldCheck, Sparkles, Bot, BookOpen,
   Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
   Ticket, Rocket,
 } from "lucide-react";
@@ -67,7 +67,8 @@ const sidebarGroups: NavGroup[] = [
   {
     label: "Finanzas",
     items: [
-      { icon: Receipt, label: "Contabilidad", href: "/accounting", moduleKey: "omni_accounting" },
+      { icon: Receipt,     label: "Contabilidad", href: "/accounting", moduleKey: "omni_accounting" },
+      { icon: ShieldCheck, label: "OmniTax",      href: "/tax",        moduleKey: "omni_tax" },
     ],
   },
   {

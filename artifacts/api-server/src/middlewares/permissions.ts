@@ -45,6 +45,12 @@ export type Permission =
   | "accounting.write"
   | "accounting.delete"
   | "accounting.approve"
+  // Tax / OmniTax
+  | "tax.read"
+  | "tax.write"
+  | "tax.delete"
+  | "tax.gestoria"
+  | "tax.admin"
   // Calendar / Appointments
   | "calendar.read"
   | "calendar.write"
@@ -92,6 +98,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "crm.read", "crm.write", "crm.delete", "crm.assign",
     "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
     "accounting.read", "accounting.write", "accounting.delete", "accounting.approve",
+    "tax.read", "tax.write", "tax.delete", "tax.gestoria", "tax.admin",
     "calendar.read", "calendar.write", "calendar.delete",
     "messages.read", "messages.write",
     "whatsapp.read", "whatsapp.write",

@@ -33,6 +33,7 @@ import { dashboardRouter } from "./dashboard";
 import { pipelineRouter } from "./pipeline";
 import { onboardingRouter } from "./onboarding";
 import { supportRouter } from "./support";
+import { taxRouter } from "./tax";
 
 const router: IRouter = Router();
 
@@ -99,5 +100,6 @@ router.use("/dashboard",      dashboardRouter);
 router.use("/pipeline",       requireModule("crm"), pipelineRouter);
 router.use("/onboarding",     onboardingRouter);
 router.use("/support",        supportRouter);
+router.use("/tax",            requireModule("omni_tax"), taxRouter);
 
 export default router;

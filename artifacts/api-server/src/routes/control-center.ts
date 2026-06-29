@@ -281,6 +281,7 @@ controlCenterRouter.get("/modules", async (_req, res) => {
     { slug: "automations",    name: "Automations",            description: "Flujos de trabajo automatizados",        alwaysOn: false },
     { slug: "omni_accounting",name: "Omni Accounting",         description: "Facturación, pagos y contabilidad",      alwaysOn: false },
     { slug: "omni_diagnostics",name: "Omni Diagnostics",      description: "Diagnóstico y salud del sistema",        alwaysOn: false },
+    { slug: "omni_tax",         name: "OmniTax",                description: "Motor fiscal, calendario y simuladores", alwaysOn: false },
   ];
   const configs = await db.select().from(moduleConfigsTable);
   const orgs    = await db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable);

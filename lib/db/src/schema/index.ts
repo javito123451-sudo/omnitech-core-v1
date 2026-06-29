@@ -15,3 +15,4 @@ export * from "./tasks";
 export * from "./accounting";
 export * from "./support-tickets";
 export * from "./pipeline";
+export * from "./tax";
