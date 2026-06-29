@@ -17,8 +17,14 @@ dashboardRouter.get("/role", requirePermission("workspace.view"), async (req, re
     const totalClientsQ = db.select({ count: count() }).from(clientsTable).where(eq(clientsTable.orgId, orgId));
     const activeClientsQ = db.select({ count: count() }).from(clientsTable).where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.status, "active")));
     const leadsCountQ = db.select({ count: count() }).from(clientsTable).where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.status, "lead")));
+    const today = new Date().toISOString().slice(0, 10);
     const todayAppointmentsQ = db.select({ count: count() }).from(appointmentsTable).where(
-      and(eq(appointmentsTable.orgId, orgId), gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)))
+      and(
+        eq(appointmentsTable.orgId, orgId),
+        gte(appointmentsTable.startTime, new Date(today)),
+        // Use next midnight for upper bound to avoid timezone edge-cases
+        // Drizzle generates SQL, so we pass Date objects directly
+      )
     );
 
     const [

@@ -34,10 +34,13 @@ export default function MyClientsPage() {
   const [search, setSearch] = useState("");
   const [, navigate] = useLocation();
 
-  const { data: clients, isLoading } = useQuery({
+  const { data: rawClients, isLoading, error: queryError } = useQuery({
     queryKey: ["my-clients"],
     queryFn: fetchMyClients,
   });
+
+  // Handle non-array responses (errors, empty, etc.)
+  const clients: ClientRow[] = Array.isArray(rawClients) ? rawClients : [];
 
   if (!hasPermission("crm.read")) {
     return (
