@@ -256,6 +256,80 @@ export async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS diagnostic_reports_created_at_idx ON diagnostic_reports(created_at DESC)`);
     logger.info("[Migration] ✅ FIX-J: diagnostic_reports table ensured");
 
+    // ── FIX K: Onboard Wizard tables + org columns ─────────────────────────────
+    // New columns on organizations table
+    await db.execute(sql`
+      ALTER TABLE organizations
+      ADD COLUMN IF NOT EXISTS feature_flags JSONB DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS fiscal_config JSONB DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS wizard_state JSONB DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS legal_name TEXT,
+      ADD COLUMN IF NOT EXISTS tax_id TEXT,
+      ADD COLUMN IF NOT EXISTS country TEXT,
+      ADD COLUMN IF NOT EXISTS address TEXT,
+      ADD COLUMN IF NOT EXISTS phone TEXT,
+      ADD COLUMN IF NOT EXISTS email TEXT,
+      ADD COLUMN IF NOT EXISTS website TEXT,
+      ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Europe/Madrid',
+      ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'es',
+      ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'EUR'
+    `);
+    // Tables
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS onboard_wizard_drafts (
+        id              SERIAL PRIMARY KEY,
+        name            TEXT NOT NULL,
+        wizard_data     JSONB NOT NULL DEFAULT '{}',
+        current_step    INTEGER NOT NULL DEFAULT 1,
+        created_by      TEXT,
+        status          TEXT NOT NULL DEFAULT 'draft',
+        completed_at    TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS onboard_templates (
+        id               SERIAL PRIMARY KEY,
+        slug             TEXT NOT NULL UNIQUE,
+        name             TEXT NOT NULL,
+        description      TEXT,
+        icon             TEXT,
+        default_modules  JSONB NOT NULL DEFAULT '[]',
+        default_fiscal   JSONB DEFAULT '{}',
+        recommended_plan TEXT DEFAULT 'starter',
+        default_roles    JSONB DEFAULT '[]',
+        is_active        BOOLEAN DEFAULT TRUE,
+        order_index      INTEGER DEFAULT 0,
+        created_at       TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    // Seed templates if empty
+    const tplCount = await db.execute(sql`SELECT COUNT(*) AS cnt FROM onboard_templates`);
+    if (Number((tplCount as { rows: Array<{cnt: string}> }).rows?.[0]?.cnt ?? 0) === 0) {
+      const templates = [
+        { slug: "autonomo", name: "Autonomo", description: "Freelance individual: CRM, facturacion, gestoria", icon: "User", default_modules: ["crm","quotes","omni_accounting","omni_tax"], default_fiscal: { companyType: "autonomo", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "starter", default_roles: [{ role: "admin", count: 1 }] },
+        { slug: "pyme", name: "PYME", description: "Pequena empresa: todos los modulos esenciales", icon: "Building2", default_modules: ["crm","quotes","omni_accounting","omni_tax","ai_agents","whatsapp","automations"], default_fiscal: { companyType: "sociedad", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "growth", default_roles: [{ role: "admin", count: 1 }, { role: "vendedor", count: 2 }, { role: "member", count: 2 }] },
+        { slug: "agencia", name: "Agencia", description: "Agencia de marketing: CRM, marketing, IA, automatizaciones", icon: "Megaphone", default_modules: ["crm","quotes","ai_agents","automations","omni_tax","portal_cliente"], default_fiscal: { companyType: "autonomo", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "growth", default_roles: [{ role: "admin", count: 1 }, { role: "manager", count: 1 }, { role: "member", count: 3 }] },
+        { slug: "inmobiliaria", name: "Inmobiliaria", description: "Inmobiliaria: CRM, portal cliente, presupuestos", icon: "Home", default_modules: ["crm","quotes","portal_cliente","omni_tax","omni_accounting"], default_fiscal: { companyType: "sociedad", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "starter", default_roles: [{ role: "admin", count: 1 }, { role: "vendedor", count: 3 }] },
+        { slug: "clinica", name: "Clinica", description: "Clinica/centro medico: CRM, agenda, automatizaciones", icon: "Heart", default_modules: ["crm","ai_agents","automations","whatsapp","portal_cliente"], default_fiscal: { companyType: "sociedad", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "growth", default_roles: [{ role: "admin", count: 1 }, { role: "member", count: 2 }, { role: "vendedor", count: 1 }] },
+        { slug: "restaurante", name: "Restaurante", description: "Restaurante: CRM, WhatsApp, automatizaciones", icon: "UtensilsCrossed", default_modules: ["crm","whatsapp","automations","omni_tax","ai_agents"], default_fiscal: { companyType: "autonomo", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "starter", default_roles: [{ role: "admin", count: 1 }, { role: "member", count: 2 }] },
+        { slug: "comercio", name: "Comercio", description: "Tienda fisica/online: CRM, facturacion, WhatsApp", icon: "ShoppingBag", default_modules: ["crm","quotes","omni_accounting","whatsapp","omni_tax"], default_fiscal: { companyType: "autonomo", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "starter", default_roles: [{ role: "admin", count: 1 }, { role: "vendedor", count: 2 }] },
+        { slug: "asesoria", name: "Asesoria", description: "Asesoria/gestoria: contabilidad, fiscal, CRM, presupuestos", icon: "Scale", default_modules: ["crm","quotes","omni_accounting","omni_tax","automations","ai_agents"], default_fiscal: { companyType: "autonomo", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "scale", default_roles: [{ role: "admin", count: 1 }, { role: "member", count: 3 }, { role: "vendedor", count: 1 }] },
+        { slug: "servicios", name: "Empresa de Servicios", description: "Empresa de servicios: CRM, contabilidad, gestoria", icon: "Briefcase", default_modules: ["crm","quotes","omni_accounting","omni_tax","automations"], default_fiscal: { companyType: "sociedad", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "growth", default_roles: [{ role: "admin", count: 1 }, { role: "member", count: 2 }, { role: "vendedor", count: 1 }] },
+        { slug: "personalizado", name: "Plantilla Personalizada", description: "Configuracion desde cero", icon: "Settings", default_modules: [], default_fiscal: { companyType: "autonomo", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "free", default_roles: [{ role: "admin", count: 1 }] },
+      ];
+      for (const t of templates) {
+        await db.execute(sql`
+          INSERT INTO onboard_templates (slug, name, description, icon, default_modules, default_fiscal, recommended_plan, default_roles, is_active, order_index)
+          VALUES (${t.slug}, ${t.name}, ${t.description}, ${t.icon}, ${JSON.stringify(t.default_modules)}::jsonb, ${JSON.stringify(t.default_fiscal)}::jsonb, ${t.recommended_plan}, ${JSON.stringify(t.default_roles)}::jsonb, true, ${templates.indexOf(t)})
+          ON CONFLICT (slug) DO NOTHING
+        `);
+      }
+      logger.info("[Migration] ✅ FIX-K: Onboard templates seeded (10 plantillas)");
+    }
+    logger.info("[Migration] ✅ FIX-K: Onboard Wizard tables + org columns ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

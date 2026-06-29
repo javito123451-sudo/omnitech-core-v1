@@ -58,6 +58,7 @@ import ImportAiPage from "@/pages/import-ai";
 import AutomationsPage from "@/pages/automations";
 import AccountingPage from "@/pages/accounting/index";
 import TaxPage from "@/pages/tax/index";
+import OnboardWizardPage from "@/pages/control-center/onboard-wizard";
 import PortalPage from "@/pages/portal";
 import PlansPage from "@/pages/plans";
 import NoAccess from "@/pages/no-access";
@@ -589,6 +590,13 @@ function AppRoutes() {
         <SuperAdminRoute>
           <ControlCenterLayout>
             <ModuleMatrixPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/onboard-wizard">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <OnboardWizardPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, boolean, integer, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, boolean, integer, unique, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -13,6 +13,21 @@ export const organizationsTable = pgTable("organizations", {
   onboardingStatus:  text("onboarding_status").default("pending"),
   onboardingStep:    integer("onboarding_step").default(0),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
+  // ── Wizard / Feature Flags ──────────────────────────────────────────────
+  featureFlags:      jsonb("feature_flags").default({}),
+  fiscalConfig:      jsonb("fiscal_config").default({}),
+  wizardState:       jsonb("wizard_state").default({}),
+  // ── Datos de empresa (rellenados por wizard) ─────────────────────────────
+  legalName:         text("legal_name"),
+  taxId:             text("tax_id"),
+  country:           text("country"),
+  address:           text("address"),
+  phone:             text("phone"),
+  email:             text("email"),
+  website:           text("website"),
+  timezone:          text("timezone").default("Europe/Madrid"),
+  language:          text("language").default("es"),
+  currency:          text("currency").default("EUR"),
   createdAt:         timestamp("created_at").defaultNow().notNull(),
 });
 

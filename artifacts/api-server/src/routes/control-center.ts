@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import {
   platformRolesTable, moduleConfigsTable, licensePlansTable, auditLogsTable,
   organizationsTable, usersTable, orgMembersTable, clientsTable, messagesTable, quotesTable,
+  onboardTemplatesTable, onboardWizardDraftsTable,
 } from "@workspace/db";
 import { eq, desc, count, and, sql, gte, lte, ilike, or, lt } from "drizzle-orm";
 import { requireSuperAdmin, hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
@@ -815,4 +816,217 @@ controlCenterRouter.get("/module-matrix", async (_req, res) => {
   });
 
   res.json({ catalog: MODULE_CATALOG, matrix, generatedAt: new Date().toISOString() });
+});
+
+// ── Onboard Wizard API ──────────────────────────────────────────────────────────────────────────
+
+const ONBOARD_WIZARD_STEPS = [
+  { id: 1, label: "Datos de empresa",      description: "Nombre, CIF, contacto, logo" },
+  { id: 2, label: "Crear Workspace",       description: "Workspace y organizacion base" },
+  { id: 3, label: "Plan contratado",       description: "Seleccionar plan de licencia" },
+  { id: 4, label: "Modulos",               description: "Activar modulos por feature flags" },
+  { id: 5, label: "Administrador",         description: "Crear usuario admin principal" },
+  { id: 6, label: "Equipo",                description: "Invitar miembros del equipo" },
+  { id: 7, label: "Clientes",              description: "Importar o crear clientes" },
+  { id: 8, label: "Configuracion fiscal",  description: "Tipo empresa, regimen, IVA, IRPF" },
+  { id: 9, label: "Integraciones",         description: "WhatsApp, Telegram, Email, Stripe" },
+  { id: 10, label: "IA Ava",               description: "Configurar asistente virtual" },
+];
+
+// GET /onboard-wizard/templates
+controlCenterRouter.get("/onboard-wizard/templates", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const templates = await db.select().from(onboardTemplatesTable).where(eq(onboardTemplatesTable.isActive, true)).orderBy(onboardTemplatesTable.orderIndex);
+  res.json({ templates, stepLabels: ONBOARD_WIZARD_STEPS });
+});
+
+// GET /onboard-wizard/drafts
+controlCenterRouter.get("/onboard-wizard/drafts", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const drafts = await db.select().from(onboardWizardDraftsTable).orderBy(desc(onboardWizardDraftsTable.updatedAt));
+  res.json({ drafts });
+});
+
+// POST /onboard-wizard/drafts
+controlCenterRouter.post("/onboard-wizard/drafts", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const { name, wizardData, currentStep } = req.body as { name: string; wizardData: Record<string, unknown>; currentStep?: number };
+  const [draft] = await db.insert(onboardWizardDraftsTable).values({
+    name: name ?? "Borrador sin titulo",
+    wizardData: wizardData ?? {},
+    currentStep: currentStep ?? 1,
+    createdBy: req.clerkUserId,
+    status: "draft",
+  }).returning();
+  res.json({ draft });
+});
+
+// PUT /onboard-wizard/drafts/:id
+controlCenterRouter.put("/onboard-wizard/drafts/:id", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const id = Number(req.params["id"]);
+  const { name, wizardData, currentStep } = req.body as { name?: string; wizardData?: Record<string, unknown>; currentStep?: number };
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (name !== undefined) updates.name = name;
+  if (wizardData !== undefined) updates.wizardData = wizardData;
+  if (currentStep !== undefined) updates.currentStep = currentStep;
+  await db.update(onboardWizardDraftsTable).set(updates).where(eq(onboardWizardDraftsTable.id, id));
+  res.json({ ok: true });
+});
+
+// DELETE /onboard-wizard/drafts/:id
+controlCenterRouter.delete("/onboard-wizard/drafts/:id", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const id = Number(req.params["id"]);
+  await db.delete(onboardWizardDraftsTable).where(eq(onboardWizardDraftsTable.id, id));
+  res.json({ ok: true });
+});
+
+// POST /onboard-wizard/create — ejecutar wizard completo
+controlCenterRouter.post("/onboard-wizard/create", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+
+  const payload = req.body as {
+    companyName: string; slug: string; legalName?: string; taxId?: string;
+    country?: string; address?: string; phone?: string; email?: string;
+    website?: string; timezone?: string; language?: string; currency?: string;
+    plan?: string; modules?: string[];
+    admin?: { name: string; email: string; password?: string; sendInvite?: boolean };
+    team?: Array<{ name: string; email: string; role: string }>;
+    clients?: Array<{ name: string; email?: string; phone?: string; source?: string }>;
+    fiscal?: { companyType: string; regime: string; vat: boolean; irpf: boolean; fiscalCountry: string };
+    integrations?: string[];
+    aiConfig?: { name: string; language: string; personality: string; automationLevel: string };
+    templateSlug?: string;
+  };
+
+  try {
+    // 1. Crear organizacion
+    const slug = payload.slug?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") ?? payload.companyName.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const [org] = await db.insert(organizationsTable).values({
+      name: payload.companyName,
+      slug,
+      plan: payload.plan ?? "starter",
+      legalName: payload.legalName ?? null,
+      taxId: payload.taxId ?? null,
+      country: payload.country ?? "ES",
+      address: payload.address ?? null,
+      phone: payload.phone ?? null,
+      email: payload.email ?? null,
+      website: payload.website ?? null,
+      timezone: payload.timezone ?? "Europe/Madrid",
+      language: payload.language ?? "es",
+      currency: payload.currency ?? "EUR",
+      fiscalConfig: payload.fiscal ?? {},
+      wizardState: { createdByWizard: true, template: payload.templateSlug ?? null, createdAt: new Date().toISOString() },
+    }).returning();
+
+    const orgId = org.id;
+
+    // 2. Crear licencia
+    await db.insert(licensePlansTable).values({
+      orgId, plan: payload.plan ?? "starter", seats: 5, isActive: true,
+      assignedBy: req.clerkUserId, createdAt: new Date(), updatedAt: new Date(),
+    });
+
+    // 3. Activar modulos (feature flags via module_configs)
+    const MODULE_CATALOG_SLUGS = [
+      "crm", "quotes", "omni_accounting", "omni_tax", "ai_agents", "automations",
+      "analytics", "integrations", "whatsapp", "omni_import_ai", "knowledge_base",
+      "portal_cliente", "omni_docs",
+    ];
+    const requestedModules = payload.modules ?? [];
+    for (const modSlug of MODULE_CATALOG_SLUGS) {
+      const isEnabled = requestedModules.includes(modSlug);
+      await db.insert(moduleConfigsTable).values({
+        orgId, moduleSlug: modSlug, isEnabled, config: {}, updatedBy: req.clerkUserId,
+      }).onConflictDoNothing();
+    }
+
+    // 4. Crear admin principal
+    let adminUserId: number | null = null;
+    if (payload.admin?.email) {
+      const existingUser = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, payload.admin.email)).limit(1);
+      if (existingUser.length > 0) {
+        adminUserId = existingUser[0]!.id;
+      }
+      // Nota: si no existe en users (Clerk), lo creamos como placeholder
+      if (!adminUserId) {
+        const [newUser] = await db.insert(usersTable).values({
+          clerkId: `wizard-${Date.now()}`, email: payload.admin.email, name: payload.admin.name ?? payload.admin.email,
+          status: "active", createdAt: new Date(),
+        }).returning();
+        adminUserId = newUser.id;
+      }
+      await db.insert(orgMembersTable).values({
+        orgId, userId: adminUserId, role: "owner", joinedAt: new Date(), isSuspended: false,
+      }).onConflictDoNothing();
+    }
+
+    // 5. Crear equipo
+    const createdUsers: Array<{ name: string; email: string; role: string }> = [];
+    if (payload.team && payload.team.length > 0) {
+      for (const member of payload.team) {
+        if (!member.email) continue;
+        const existingUser = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, member.email)).limit(1);
+        let userId: number;
+        if (existingUser.length > 0) {
+          userId = existingUser[0]!.id;
+        } else {
+          const [u] = await db.insert(usersTable).values({
+            clerkId: `wizard-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            email: member.email, name: member.name ?? member.email,
+            status: "active", createdAt: new Date(),
+          }).returning();
+          userId = u.id;
+        }
+        const role = ["owner","admin","member","read_only","vendedor","manager"].includes(member.role) ? member.role : "member";
+        await db.insert(orgMembersTable).values({
+          orgId, userId, role, joinedAt: new Date(), isSuspended: false,
+        }).onConflictDoNothing();
+        createdUsers.push({ name: member.name ?? member.email, email: member.email, role });
+      }
+    }
+
+    // 6. Crear clientes de prueba / importados
+    const createdClients: Array<{ name: string; id: number }> = [];
+    if (payload.clients && payload.clients.length > 0) {
+      for (const c of payload.clients) {
+        if (!c.name) continue;
+        const [client] = await db.insert(clientsTable).values({
+          orgId, name: c.name, email: c.email ?? null, phone: c.phone ?? null,
+          source: c.source ?? "wizard", status: "active", createdAt: new Date(), updatedAt: new Date(),
+        }).returning();
+        createdClients.push({ name: c.name, id: client.id });
+      }
+    }
+
+    // 7. Guardar draft completado
+    const wizardSummary = {
+      orgId, companyName: payload.companyName, slug, plan: payload.plan ?? "starter",
+      modulesEnabled: requestedModules, adminEmail: payload.admin?.email ?? null,
+      teamCount: createdUsers.length, clientCount: createdClients.length,
+      fiscal: payload.fiscal ?? null, integrations: payload.integrations ?? [],
+      aiConfig: payload.aiConfig ?? null,
+    };
+
+    await logAudit({
+      actorClerkId: req.clerkUserId!, action: "workspace_created_via_wizard",
+      resource: "workspace", resourceId: String(orgId),
+      details: wizardSummary, severity: "info", req,
+    });
+
+    res.json({
+      ok: true, orgId, orgName: payload.companyName, slug,
+      summary: {
+        users: createdUsers.length + (payload.admin ? 1 : 0),
+        clients: createdClients.length,
+        modulesEnabled: requestedModules.length,
+        plan: payload.plan ?? "starter",
+      },
+    });
+  } catch (err) {
+    console.error("[OnboardWizard] Error:", err);
+    res.status(500).json({ error: String(err) });
+  }
 });

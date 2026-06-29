@@ -4,7 +4,7 @@ import {
   Shield, LayoutDashboard, Building2, Users, Puzzle,
   Lock, ChevronRight, LogOut, Menu, X, Hexagon,
   Crown, Bot, Plug, ClipboardList, HardDrive,
-  Key, Activity, ShieldCheck,
+  Key, Activity, ShieldCheck, Rocket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
@@ -19,6 +19,7 @@ const ccNav = [
     items: [
       { icon: LayoutDashboard, label: "Dashboard",       href: "/control-center"              },
       { icon: Building2,       label: "Workspaces",      href: "/control-center/workspaces"   },
+      { icon: Rocket,          label: "Onboard Wizard",  href: "/control-center/onboard-wizard" },
       { icon: Users,           label: "Usuarios",        href: "/control-center/users"        },
       { icon: Crown,           label: "Roles",           href: "/control-center/roles"        },
     ],
