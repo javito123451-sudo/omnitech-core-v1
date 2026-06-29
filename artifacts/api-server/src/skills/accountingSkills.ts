@@ -1,6 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  Ava V2 — Accounting Skills
 //  Invoice, payment, and financial summary actions
+//  SECURITY NOTE: All write operations delegate to ../services/accounting.ts
+//  which holds the shared business logic. The endpoint layer at
+//  /api/accounting/invoices handles requirePermission + checkRole + logAudit.
+//  The skill layer handles module + role gating in executeCrmTool before
+//  reaching this code, and adds its own logAuditSystem trail.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import {
@@ -12,11 +17,13 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, ilike, inArray, sum, count, gte, sql } from "drizzle-orm";
 import type { SkillDefinition, SkillContext } from "./types";
+import { createInvoiceCore, registerPaymentCore } from "../services/accounting";
+import { logAuditSystem } from "../utils/auditLogger";
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────────────────
 
 async function findClient(
   orgId: number,
@@ -52,87 +59,62 @@ async function createInvoice(
   const dueDateStr = params["due_date"] ? String(params["due_date"]) : null;
 
   if (!clientName || rawItems.length === 0) {
-    return JSON.stringify({ error: "Se necesita client_name y al menos un ítem." });
+    return JSON.stringify({ error: "Se necesita client_name y al menos un \u00edtem." });
   }
 
   const client = await findClient(orgId, clientName, context);
   if (!client) {
-    return JSON.stringify({ error: `No encontré el cliente "${clientName}".` });
+    return JSON.stringify({ error: `No encontr\u00e9 el cliente "${clientName}".` });
   }
 
-  const lineItems = rawItems.map((item, idx) => ({
+  const items = rawItems.map(item => ({
     description: item.description,
-    quantity: Number(item.quantity) || 1,
+    quantity:  Number(item.quantity) || 1,
     unitPrice: Number(item.unit_price) || 0,
-    total: (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
-    orderIndex: idx,
   }));
-  const subtotal = lineItems.reduce((acc, i) => acc + i.total, 0);
-  const taxAmount = parseFloat(((subtotal * taxRate) / 100).toFixed(2));
-  const total = parseFloat((subtotal + taxAmount).toFixed(2));
 
-  const year = new Date().getFullYear();
-  const [{ cnt }] = await db
-    .select({ cnt: count() })
-    .from(invoicesTable)
-    .where(and(eq(invoicesTable.orgId, orgId), gte(invoicesTable.createdAt, new Date(`${year}-01-01`))));
-  const invoiceNumber = `F${year}-${String(Number(cnt ?? 0) + 1).padStart(4, "0")}`;
+  const { invoice, invoiceNumber, total } = await createInvoiceCore({
+    orgId,
+    clientId: client.id,
+    taxRate,
+    notes,
+    dueDate: dueDateStr,
+    items,
+  });
 
-  const [inv] = await db
-    .insert(invoicesTable)
-    .values({
-      orgId,
-      clientId: client.id,
-      invoiceNumber,
-      status: "draft",
-      currency: "EUR",
-      subtotal: String(subtotal),
-      taxRate: String(taxRate),
-      taxAmount: String(taxAmount),
-      total: String(total),
-      notes,
-      dueDate: dueDateStr ? new Date(dueDateStr) : null,
-    })
-    .returning();
-
-  if (!inv) {
-    return JSON.stringify({ error: "Error al crear la factura en la base de datos." });
-  }
-
-  await db.insert(invoiceItemsTable).values(
-    lineItems.map((item) => ({
-      invoiceId: inv.id,
-      description: item.description,
-      quantity: String(item.quantity),
-      unitPrice: String(item.unitPrice),
-      total: String(parseFloat(item.total.toFixed(2))),
-      orderIndex: item.orderIndex,
-    })),
-  );
+  // Audit trail for AI-generated action
+  await logAuditSystem({
+    actorClerkId: context.user?.id ?? "ava-ai",
+    action: "invoice_created",
+    resource: "invoice",
+    resourceId: invoice.id,
+    orgId,
+    details: { invoiceNumber, total, source: "ava_skill_create_invoice" },
+  });
 
   return JSON.stringify({
     success: true,
     dbVerified: true,
-    invoiceId: inv.id,
+    invoiceId: invoice.id,
     invoiceNumber,
     clientName: client.name,
     clientCompany: client.company ?? null,
     total,
     taxRate,
-    taxAmount,
-    subtotal,
+    taxAmount: invoice.taxAmount,
+    subtotal: invoice.subtotal,
     status: "draft",
-    items: lineItems.map((i) => ({
+    items: invoice.items.map((i: { description: string; quantity: number; unitPrice: number; total: number }) => ({
       description: i.description,
       quantity: i.quantity,
       unitPrice: i.unitPrice,
-      total: parseFloat(i.total.toFixed(2)),
+      total: i.total,
     })),
-    message: `Factura ${invoiceNumber} creada en borrador para ${client.name} — ${fmt(total)}.`,
+    message: `Factura ${invoiceNumber} creada en borrador para ${client.name} \u2014 ${fmt(total)}.`,
   });
 }
 
-// ── get_invoice ───────────────────────────────────────────────────────────
+// ── get_invoice ───────────────────────────────────────────────────────────────────────────
 
 async function getInvoice(
   params: Record<string, unknown>,
@@ -189,7 +171,7 @@ async function getInvoice(
   });
 }
 
-// ── list_pending_invoices ─────────────────────────────────────────────────
+// ── list_pending_invoices ────────────────────────────────────────────────────────────────────
 
 async function listPendingInvoices(
   params: Record<string, unknown>,
@@ -241,11 +223,12 @@ async function listPendingInvoices(
   });
 }
 
-// ── register_payment ──────────────────────────────────────────────────────
+// ── register_payment ───────────────────────────────────────────────────────────────────────────
 
 async function registerPayment(
   params: Record<string, unknown>,
   orgId: number,
+  context: SkillContext,
 ): Promise<string> {
   const invoiceNumber = String(params["invoice_number"] ?? "");
   const amount = Number(params["amount"] ?? 0);
@@ -262,58 +245,40 @@ async function registerPayment(
     .where(and(eq(invoicesTable.invoiceNumber, invoiceNumber), eq(invoicesTable.orgId, orgId)));
   if (!inv) return JSON.stringify({ error: `Factura "${invoiceNumber}" no encontrada.` });
 
-  const [payment] = await db
-    .insert(paymentsTable)
-    .values({
-      orgId,
-      invoiceId: inv.id,
-      clientId: inv.clientId ?? null,
-      amount: String(amount),
-      currency: "EUR",
-      method,
-      reference,
-      paidAt: new Date(),
-    })
-    .returning();
+  const { payment, invoiceStatus, totalPaid, balance } = await registerPaymentCore({
+    orgId,
+    invoiceId: inv.id,
+    clientId: inv.clientId ?? null,
+    amount,
+    method,
+    reference,
+  });
 
-  const [{ totalPaid }] = await db
-    .select({ totalPaid: sum(paymentsTable.amount) })
-    .from(paymentsTable)
-    .where(eq(paymentsTable.invoiceId, inv.id));
-  const paid = parseFloat(String(totalPaid ?? 0));
-  const invTotal = parseFloat(String(inv.total));
-  let newStatus = inv.status;
-
-  if (paid >= invTotal) {
-    await db
-      .update(invoicesTable)
-      .set({ status: "paid", paidAt: new Date(), updatedAt: new Date() })
-      .where(eq(invoicesTable.id, inv.id));
-    newStatus = "paid";
-  } else if (paid > 0) {
-    await db
-      .update(invoicesTable)
-      .set({ status: "partial", updatedAt: new Date() })
-      .where(eq(invoicesTable.id, inv.id));
-    newStatus = "partial";
-  }
+  await logAuditSystem({
+    actorClerkId: context.user?.id ?? "ava-ai",
+    action: "payment_registered",
+    resource: "payment",
+    resourceId: payment.id,
+    orgId,
+    details: { invoiceNumber, amount, method, invoiceStatus, source: "ava_skill_register_payment" },
+  });
 
   return JSON.stringify({
     success: true,
-    paymentId: payment!.id,
+    paymentId: payment.id,
     invoiceNumber,
     amount,
-    paid,
-    balance: Math.max(0, invTotal - paid),
-    invoiceStatus: newStatus,
+    paid: totalPaid,
+    balance,
+    invoiceStatus,
     message:
-      newStatus === "paid"
+      invoiceStatus === "paid"
         ? `Pago de ${fmt(amount)} registrado. La factura ${invoiceNumber} queda completamente pagada.`
-        : `Pago parcial de ${fmt(amount)} registrado. Quedan ${fmt(invTotal - paid)} pendientes en ${invoiceNumber}.`,
+        : `Pago parcial de ${fmt(amount)} registrado. Quedan ${fmt(balance)} pendientes en ${invoiceNumber}.`,
   });
 }
 
-// ── get_client_debt ─────────────────────────────────────────────────────────
+// ── get_client_debt ───────────────────────────────────────────────────────────────────────────
 
 async function getClientDebt(
   params: Record<string, unknown>,
@@ -327,7 +292,7 @@ async function getClientDebt(
     .from(clientsTable)
     .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientName}%`)))
     .limit(3);
-  if (matched.length === 0) return JSON.stringify({ error: `No encontré el cliente "${clientName}".` });
+  if (matched.length === 0) return JSON.stringify({ error: `No encontr\u00e9 el cliente "${clientName}".` });
   const client = matched[0]!;
 
   const invoices = await db
@@ -365,7 +330,7 @@ async function getClientDebt(
   });
 }
 
-// ── get_monthly_income ────────────────────────────────────────────────────
+// ── get_monthly_income ───────────────────────────────────────────────────────────────────────────
 
 async function getMonthlyIncome(
   params: Record<string, unknown>,
@@ -377,7 +342,7 @@ async function getMonthlyIncome(
     period === "this_year"
       ? new Date(now.getFullYear(), 0, 1)
       : new Date(now.getFullYear(), now.getMonth(), 1);
-  const periodLabel = period === "this_year" ? "este año" : "este mes";
+  const periodLabel = period === "this_year" ? "este a\u00f1o" : "este mes";
 
   const [{ revenue }] = await db
     .select({ revenue: sum(paymentsTable.amount) })
@@ -399,11 +364,11 @@ async function getMonthlyIncome(
     revenue: rev,
     expenses: exp,
     profit,
-    message: `${periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1)}: Ingresos ${fmt(rev)} · Gastos ${fmt(exp)} · Beneficio ${fmt(profit)}.`,
+    message: `${periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1)}: Ingresos ${fmt(rev)} \u00b7 Gastos ${fmt(exp)} \u00b7 Beneficio ${fmt(profit)}.`,
   });
 }
 
-// ── accounting_summary ─────────────────────────────────────────────────────
+// ── accounting_summary ───────────────────────────────────────────────────────────────────────────
 
 async function accountingSummary(
   _params: Record<string, unknown>,
@@ -456,7 +421,7 @@ async function accountingSummary(
     thisMonthRevenue: parseFloat(String(monthRevenue ?? 0)),
     thisYearRevenue: parseFloat(String(yearRevenue ?? 0)),
     paidInvoicesCount: Number(paidCount ?? 0),
-    message: `Resumen contable: ${fmt(pendingTotal)} pendientes · ${overdueCount ?? 0} vencidas · ${fmt(parseFloat(String(monthRevenue ?? 0)))} cobrado este mes · ${fmt(parseFloat(String(yearRevenue ?? 0)))} acumulado anual.`,
+    message: `Resumen contable: ${fmt(pendingTotal)} pendientes \u00b7 ${overdueCount ?? 0} vencidas \u00b7 ${fmt(parseFloat(String(monthRevenue ?? 0)))} cobrado este mes \u00b7 ${fmt(parseFloat(String(yearRevenue ?? 0)))} acumulado anual.`,
   });
 }
 
@@ -468,8 +433,8 @@ export const createInvoiceSkill: SkillDefinition = {
   id: "create_invoice",
   name: "Crear Factura",
   description:
-    "Crea una factura real en el módulo de contabilidad. " +
-    "Úsala cuando el usuario diga 'crear factura', 'emitir factura', 'facturar a', etc.",
+    "Crea una factura real en el m\u00f3dulo de contabilidad. " +
+    "\u00dasala cuando el usuario diga 'crear factura', 'emitir factura', 'facturar a', etc.",
   params: [
     { name: "client_name", type: "string", description: "Nombre del cliente", required: true },
     { name: "items", type: "array", description: "Array de {description, quantity, unit_price}", required: true },
@@ -483,10 +448,10 @@ export const createInvoiceSkill: SkillDefinition = {
 export const getInvoiceSkill: SkillDefinition = {
   id: "get_invoice",
   name: "Ver Factura",
-  description: "Obtiene el detalle de una factura por número o ID.",
+  description: "Obtiene el detalle de una factura por n\u00famero o ID.",
   params: [
-    { name: "invoice_number", type: "string", description: "Número de factura ej: F2026-0001", required: false },
-    { name: "invoice_id", type: "number", description: "ID numérico de la factura", required: false },
+    { name: "invoice_number", type: "string", description: "N\u00famero de factura ej: F2026-0001", required: false },
+    { name: "invoice_id", type: "number", description: "ID num\u00e9rico de la factura", required: false },
   ],
   execute: getInvoice,
 };
@@ -494,10 +459,10 @@ export const getInvoiceSkill: SkillDefinition = {
 export const listPendingInvoicesSkill: SkillDefinition = {
   id: "list_pending_invoices",
   name: "Facturas Pendientes",
-  description: "Lista facturas pendientes de cobro. Úsala para '¿qué me deben?', '¿cuánto tengo por cobrar?'.",
+  description: "Lista facturas pendientes de cobro. \u00dasala para '\u00bfqu\u00e9 me deben?', '\u00bfcu\u00e1nto tengo por cobrar?'.",
   params: [
     { name: "include_overdue", type: "boolean", description: "Solo vencidas", default: false },
-    { name: "limit", type: "number", description: "Máximo resultados", default: 20 },
+    { name: "limit", type: "number", description: "M\u00e1ximo resultados", default: 20 },
   ],
   execute: listPendingInvoices,
 };
@@ -505,9 +470,9 @@ export const listPendingInvoicesSkill: SkillDefinition = {
 export const registerPaymentSkill: SkillDefinition = {
   id: "register_payment",
   name: "Registrar Pago",
-  description: "Registra un pago contra una factura existente. La marca como pagada automáticamente.",
+  description: "Registra un pago contra una factura existente. La marca como pagada autom\u00e1ticamente.",
   params: [
-    { name: "invoice_number", type: "string", description: "Número de factura", required: true },
+    { name: "invoice_number", type: "string", description: "N\u00famero de factura", required: true },
     { name: "amount", type: "number", description: "Importe recibido", required: true },
     { name: "method", type: "string", description: "transfer, card, cash, check, other", default: "transfer" },
     { name: "reference", type: "string", description: "Referencia bancaria", required: false },
@@ -528,7 +493,7 @@ export const getClientDebtSkill: SkillDefinition = {
 export const getMonthlyIncomeSkill: SkillDefinition = {
   id: "get_monthly_income",
   name: "Ingresos Mensuales",
-  description: "Resumen de ingresos, gastos y beneficio del mes o año actual.",
+  description: "Resumen de ingresos, gastos y beneficio del mes o a\u00f1o actual.",
   params: [
     { name: "period", type: "string", description: "this_month o this_year", default: "this_month" },
   ],
@@ -540,7 +505,7 @@ export const accountingSummarySkill: SkillDefinition = {
   name: "Resumen Contable",
   description:
     "Devuelve un resumen financiero: total pendiente, facturas vencidas, ingresos del mes, acumulado anual. " +
-    "Úsala para '¿cómo van las cuentas?', 'resumen contable', 'balance financiero'.",
+    "\u00dasala para '\u00bfc\u00f3mo van las cuentas?', 'resumen contable', 'balance financiero'.",
   params: [],
   execute: accountingSummary,
 };

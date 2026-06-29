@@ -732,16 +732,36 @@ const APPT_STATUS_LABEL: Record<string, string> = {
 //  Ava V2: executeCrmTool
 // ═══════════════════════════════════════════════════════════════════════════
 // Primero intenta el Skill Engine; si el skill no existe, fallback a legacy.
+const ACCOUNTING_TOOLS = [
+  "create_invoice", "get_invoice", "list_pending_invoices",
+  "register_payment", "get_client_debt", "get_monthly_income", "accounting_summary",
+];
+
 export async function executeCrmTool(
   toolName: string,
   args: Record<string, unknown>,
   orgId: number,
+  userContext?: { orgRole?: string; clerkUserId?: string },
 ): Promise<string> {
+  // Accounting tools: module + role gating before Skill Engine
+  if (ACCOUNTING_TOOLS.includes(toolName)) {
+    const accountingEnabled = await isModuleEnabled(orgId, "omni_accounting");
+    if (!accountingEnabled) {
+      return JSON.stringify({ error: "El módulo de contabilidad (omni_accounting) no está habilitado para este workspace." });
+    }
+    const allowedRoles = ["owner", "admin", "manager"];
+    if (!allowedRoles.includes(userContext?.orgRole ?? "")) {
+      return JSON.stringify({ error: "No tienes permiso para operaciones de contabilidad. Requiere rol owner, admin o manager." });
+    }
+  }
+
   // Ava V2: intenta el Skill Engine primero
   const skill = getSkill(toolName);
   if (skill) {
     console.log(`[executeCrmTool] Ava V2: delegando a Skill Engine — ${toolName}`);
-    const result = await executeSkill(toolName, args, orgId, {});
+    const result = await executeSkill(toolName, args, orgId, {
+      user: userContext?.clerkUserId ? { id: userContext.clerkUserId, name: "" } : undefined,
+    });
     return result.result;
   }
 
@@ -2302,7 +2322,10 @@ router.post("/", requirePermission("ai.write"), async (req, res) => {
           crmToolCalls.map(async tc => {
             let args: Record<string, unknown> = {};
             try { args = JSON.parse(tc.function.arguments) as Record<string, unknown>; } catch { /* use {} */ }
-            const result = await executeCrmTool(tc.function.name, args, orgId);
+            const result = await executeCrmTool(tc.function.name, args, orgId, {
+              orgRole: req.orgRole,
+              clerkUserId: req.clerkUserId,
+            });
             console.log(`[CRM] tool=${tc.function.name} args=${tc.function.arguments} result_len=${result.length}`);
             return { role: "tool" as const, tool_call_id: tc.id, content: result };
           }),

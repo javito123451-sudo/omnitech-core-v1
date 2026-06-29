@@ -72,18 +72,9 @@ export function PortalDropdown({
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const handleItemClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!closeOnItemClick) return;
-    // Solo cerrar si el click fue en un botón directo (no en un contenedor intermedio)
-    const target = e.target as HTMLElement;
-    if (target.closest("button, a, [role='menuitem']")) {
-      setOpen(false);
-    }
-  };
-
   return (
     <div ref={triggerRef} className="relative inline-block">
-      <div onClick={() => { measure(); setOpen(v => !v); }} style={{ cursor: "pointer" }}>
+      <div onClick={(e) => { e.stopPropagation(); measure(); setOpen(v => !v); }} style={{ cursor: "pointer" }}>
         {trigger}
       </div>
       {open && (
@@ -109,7 +100,14 @@ export function PortalDropdown({
                 ...(pos.left !== undefined ? { left: pos.left } : {}),
                 ...(pos.right !== undefined ? { right: pos.right } : {}),
               }}
-              onClick={handleItemClick}
+              onClick={(e) => {
+                // Stop propagation so backdrop doesn't catch it
+                e.stopPropagation();
+                if (closeOnItemClick) {
+                  // Small delay so item onClick fires first
+                  setTimeout(() => setOpen(false), 0);
+                }
+              }}
             >
               {children}
             </div>,

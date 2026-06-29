@@ -8,6 +8,14 @@ import { eq, and, desc, count, sum, sql, gte, or, ilike } from "drizzle-orm";
 import { logAudit } from "../utils/auditLogger";
 import { generateInvoicePdf } from "../utils/pdf-invoice";
 import { requirePermission } from "../middlewares/permissions";
+import {
+  createInvoiceCore,
+  registerPaymentCore,
+  verifyClientOrg,
+  verifyInvoiceOrg,
+  type CreateInvoiceInput,
+  type RegisterPaymentInput,
+} from "../services/accounting";
 
 export const accountingRouter = Router();
 
@@ -200,9 +208,8 @@ accountingRouter.post("/invoices", requirePermission("accounting.write"), async 
 
   // Validate referenced IDs belong to this org before any insert
   if (clientId) {
-    const [cl] = await db.select({ id: clientsTable.id }).from(clientsTable)
-      .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
-    if (!cl) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
+    const ok = await verifyClientOrg(clientId, orgId);
+    if (!ok) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
   }
   if (quoteId) {
     const [qt] = await db.select({ id: quotesTable.id }).from(quotesTable)
@@ -210,31 +217,12 @@ accountingRouter.post("/invoices", requirePermission("accounting.write"), async 
     if (!qt) { res.status(403).json({ error: "Presupuesto no pertenece a esta organización" }); return; }
   }
 
-  const { subtotal, taxAmount, total } = calcTotals(items, taxRate);
-  const invoiceNumber = await nextInvoiceNumber(orgId);
+  const { invoice, invoiceNumber, total } = await createInvoiceCore({
+    orgId, clientId, quoteId, currency, taxRate, notes, dueDate, items,
+  });
 
-  const [inv] = await db.insert(invoicesTable).values({
-    orgId, clientId: clientId ?? null, quoteId: quoteId ?? null,
-    invoiceNumber, status: "draft", currency,
-    subtotal: String(subtotal), taxRate: String(taxRate),
-    taxAmount: String(taxAmount), total: String(total),
-    notes: notes ?? null,
-    dueDate: dueDate ? new Date(dueDate) : null,
-  }).returning();
-
-  await db.insert(invoiceItemsTable).values(
-    items.map((item, idx) => ({
-      invoiceId: inv!.id,
-      description: item.description,
-      quantity:  String(item.quantity),
-      unitPrice: String(item.unitPrice),
-      total:     String(parseFloat((item.quantity * item.unitPrice).toFixed(2))),
-      orderIndex: idx,
-    })),
-  );
-
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "invoice_created", resource: "invoice", resourceId: inv!.id, orgId, details: { invoiceNumber, total }, req });
-  res.status(201).json(await enrichInvoice(inv!));
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "invoice_created", resource: "invoice", resourceId: invoice.id, orgId, details: { invoiceNumber, total }, req });
+  res.status(201).json(invoice);
 });
 
 // PATCH /api/accounting/invoices/:id
@@ -529,48 +517,20 @@ accountingRouter.post("/payments", requirePermission("accounting.write"), async 
 
   // Validate ownership BEFORE any insert
   if (invoiceId) {
-    const [inv] = await db.select({ id: invoicesTable.id }).from(invoicesTable)
-      .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
-    if (!inv) { res.status(403).json({ error: "Factura no pertenece a esta organización" }); return; }
+    const ok = await verifyInvoiceOrg(invoiceId, orgId);
+    if (!ok) { res.status(403).json({ error: "Factura no pertenece a esta organización" }); return; }
   }
   if (clientId) {
-    const [cl] = await db.select({ id: clientsTable.id }).from(clientsTable)
-      .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
-    if (!cl) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
+    const ok = await verifyClientOrg(clientId, orgId);
+    if (!ok) { res.status(403).json({ error: "Cliente no pertenece a esta organización" }); return; }
   }
 
-  const [payment] = await db.insert(paymentsTable).values({
-    orgId, invoiceId: invoiceId ?? null, clientId: clientId ?? null,
-    amount: String(amount), currency, method,
-    reference: reference ?? null, notes: notes ?? null,
-    paidAt: paidAt ? new Date(paidAt) : new Date(),
-  }).returning();
+  const { payment, invoiceStatus, totalPaid, balance } = await registerPaymentCore({
+    orgId, invoiceId, clientId, amount, currency, method, reference, notes, paidAt,
+  });
 
-  // Auto-advance invoice status after confirmed ownership
-  if (invoiceId) {
-    const [inv] = await db.select().from(invoicesTable)
-      .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
-    if (inv) {
-      const [{ totalPaid }] = await db
-        .select({ totalPaid: sum(paymentsTable.amount) })
-        .from(paymentsTable)
-        .where(eq(paymentsTable.invoiceId, invoiceId));
-      const paid = parseFloat(String(totalPaid ?? 0));
-      const invTotal = parseFloat(String(inv.total));
-      if (paid >= invTotal) {
-        await db.update(invoicesTable)
-          .set({ status: "paid", paidAt: new Date(), updatedAt: new Date() })
-          .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
-      } else if (paid > 0) {
-        await db.update(invoicesTable)
-          .set({ status: "partial", updatedAt: new Date() })
-          .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.orgId, orgId)));
-      }
-    }
-  }
-
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "payment_registered", resource: "payment", resourceId: payment!.id, orgId, details: { amount, method, invoiceId }, req });
-  res.status(201).json({ ...payment, amount: parseFloat(String(payment!.amount)) });
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "payment_registered", resource: "payment", resourceId: payment.id, orgId, details: { amount, method, invoiceId, invoiceStatus }, req });
+  res.status(201).json({ ...payment, amount: parseFloat(String(payment.amount)), invoiceStatus, totalPaid, balance });
 });
 
 // DELETE /api/accounting/payments/:id
