@@ -1,0 +1,411 @@
+# IMPLEMENTACIÓN DEL MÓDULO OMNITAX & GESTORÍA
+
+## IMPORTANTE
+
+Antes de escribir una sola línea de código:
+
+1. Analiza completamente la arquitectura actual de OmniTech-Core.
+2. Revisa la estructura de Workspaces, Roles, Permisos, CRM, Facturación, Contabilidad, IA Ava y Auditoría.
+3. Diseña un plan técnico indicando:
+
+   * Nuevas tablas.
+   * Relaciones.
+   * APIs.
+   * Componentes Frontend.
+   * Servicios Backend.
+   * Seguridad.
+4. No romper ninguna funcionalidad existente.
+5. Mantener la filosofía SaaS Multiempresa.
+
+---
+
+# OBJETIVO
+
+Crear el módulo **OmniTax & Gestoría** totalmente integrado dentro de OmniTech.
+
+No desarrollar un sistema independiente.
+
+Debe formar parte del ecosistema existente.
+
+---
+
+# NUEVO MENÚ
+
+Finanzas
+
+* Presupuestos
+* Facturación
+* Contabilidad
+* OmniTax
+* Gestoría
+
+---
+
+# MÓDULO OMNITAX
+
+## Dashboard
+
+Mostrar:
+
+* Estado fiscal
+* Próximas obligaciones
+* Calendario fiscal
+* Declaraciones pendientes
+* Declaraciones preparadas
+* Estimación de IVA
+* Estimación de IRPF
+* Estimación de Renta
+* Beneficio anual
+* Beneficio mensual
+
+---
+
+# CALENDARIO FISCAL
+
+Detectar automáticamente:
+
+* Autónomo
+* Sociedad
+* Profesional
+* Comunidad de bienes
+
+Generar automáticamente las obligaciones fiscales según el tipo de contribuyente.
+
+Mostrar:
+
+Pendiente
+
+En preparación
+
+Listo
+
+Presentado
+
+No aplicable
+
+---
+
+# MOTOR FISCAL
+
+Crear un motor independiente.
+
+Debe calcular automáticamente:
+
+IVA
+
+IRPF
+
+Retenciones
+
+Beneficio
+
+Base imponible
+
+Ingresos
+
+Gastos
+
+Flujo de caja
+
+NO debe presentar declaraciones oficiales.
+
+Solo cálculos internos.
+
+---
+
+# SIMULADOR IVA
+
+Calcular automáticamente:
+
+IVA repercutido
+
+IVA soportado
+
+Resultado estimado
+
+Importe aproximado a pagar
+
+Comparativa con trimestre anterior
+
+---
+
+# SIMULADOR IRPF
+
+Calcular:
+
+Beneficio
+
+Base imponible
+
+Retenciones
+
+Pago estimado
+
+Comparativa anual
+
+---
+
+# SIMULADOR DECLARACIÓN DE LA RENTA
+
+Crear únicamente un BORRADOR ORIENTATIVO.
+
+Debe indicar claramente:
+
+"Este documento es una simulación y no constituye una declaración oficial."
+
+Nunca presentar automáticamente.
+
+Generar PDF descargable.
+
+---
+
+# IA AVA FISCAL
+
+Crear un agente especializado.
+
+Ejemplos:
+
+"¿Cuánto pagaré este trimestre?"
+
+"¿Tengo declaraciones pendientes?"
+
+"¿Cuánto IVA llevo acumulado?"
+
+"¿Qué impuestos vencen este mes?"
+
+"¿Cómo puedo reducir mi carga fiscal utilizando únicamente gastos deducibles que ya estén registrados?"
+
+Responder utilizando únicamente la información almacenada en OmniTech.
+
+---
+
+# GESTORÍA
+
+Crear un portal independiente.
+
+Botón:
+
+"Quiero que OmniTech presente mi declaración."
+
+Flujo:
+
+1. Revisar documentación.
+2. Detectar documentos faltantes.
+3. Solicitar automáticamente la documentación.
+4. Crear expediente.
+5. Estado:
+
+   * Pendiente
+   * En revisión
+   * Esperando documentación
+   * Listo
+   * Presentado
+6. Integración con pagos.
+7. Asignación automática de expediente al equipo gestor.
+
+---
+
+# PORTAL INTERNO DE GESTORÍA
+
+Crear un Workspace exclusivo para Gestores.
+
+Funciones:
+
+Lista de expedientes.
+
+Filtros.
+
+Asignación de gestor.
+
+Observaciones.
+
+Historial.
+
+Documentación.
+
+Comunicación con cliente.
+
+Cambios de estado.
+
+---
+
+# IMPORTACIÓN AUTOMÁTICA
+
+Permitir importar:
+
+PDF
+
+Excel
+
+CSV
+
+Word
+
+OCR
+
+Fotografía
+
+Correo electrónico
+
+Facturas
+
+Extractos bancarios
+
+Clasificación automática mediante IA.
+
+---
+
+# RECORDATORIOS AUTOMÁTICOS
+
+Enviar notificaciones cuando:
+
+Falten documentos.
+
+Existan declaraciones próximas.
+
+Existan impuestos pendientes.
+
+Existan declaraciones listas para revisión.
+
+Configurable por:
+
+Email
+
+WhatsApp
+
+Telegram
+
+Notificaciones internas.
+
+---
+
+# DASHBOARD FISCAL
+
+Widgets:
+
+Estado fiscal.
+
+Calendario.
+
+IVA estimado.
+
+IRPF estimado.
+
+Renta estimada.
+
+Declaraciones pendientes.
+
+Beneficio.
+
+Ingresos.
+
+Gastos.
+
+Documentación pendiente.
+
+Health Score Fiscal.
+
+---
+
+# FISCAL HEALTH SCORE
+
+Crear una puntuación de 0 a 100.
+
+Ejemplo:
+
+95/100
+
+Mostrar recomendaciones automáticas.
+
+No emitir asesoramiento legal o fiscal definitivo; únicamente alertas y sugerencias basadas en los datos disponibles.
+
+---
+
+# WORKSPACES
+
+Todo debe estar aislado por Workspace.
+
+Nunca compartir información fiscal entre empresas.
+
+---
+
+# PERMISOS
+
+SUPER_ADMIN
+
+ADMIN
+
+MANAGER
+
+ACCOUNTANT
+
+GESTOR
+
+CLIENTE
+
+Permisos independientes.
+
+---
+
+# AUDITORÍA
+
+Registrar:
+
+Creación.
+
+Modificación.
+
+Borrado.
+
+Cálculos.
+
+Generación de borradores.
+
+Solicitud de gestoría.
+
+Cambios de estado.
+
+---
+
+# INTEGRACIONES
+
+CRM
+
+Clientes
+
+Facturación
+
+Presupuestos
+
+Contabilidad
+
+Omni Sign
+
+Omni Import AI
+
+Portal Cliente
+
+Ava AI
+
+Calendario
+
+Notificaciones
+
+---
+
+# IMPORTANTE
+
+No implementar todavía la presentación oficial de declaraciones ante la Administración.
+
+La primera versión solo debe:
+
+* Calcular.
+* Simular.
+* Generar borradores.
+* Preparar expedientes.
+* Solicitar documentación.
+* Gestionar el flujo interno de gestoría.
+
+Toda presentación oficial deberá quedar preparada para futuras integraciones y requerirá siempre la confirmación del cliente y la revisión de un gestor autorizado.
+
+Al finalizar el análisis, entrega primero un documento con el impacto técnico y la planificación de implementación antes de modificar el código.
