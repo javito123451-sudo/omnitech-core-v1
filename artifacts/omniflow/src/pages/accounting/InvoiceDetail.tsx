@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import {
   ArrowLeft, Download, CreditCard, FileText, Check, Clock,
-  AlertTriangle, X, Plus, Trash2, Share2, Copy, CheckCheck, LinkOff, Bell,
+  AlertTriangle, X, Plus, Trash2, Share2, Copy, CheckCheck, Link2Off, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -225,7 +225,7 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
               title="Revocar enlace compartido"
               className="flex items-center gap-2 px-3 py-2 bg-rose-900/40 hover:bg-rose-800/50 disabled:opacity-50 text-rose-400 text-sm rounded-lg transition-colors border border-rose-800/40"
             >
-              <LinkOff className="w-4 h-4" />
+              <Link2Off className="w-4 h-4" />
               {revokeMut.isPending ? "Revocando…" : "Revocar enlace"}
             </button>
           )}
