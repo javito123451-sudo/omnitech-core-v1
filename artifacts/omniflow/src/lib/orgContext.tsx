@@ -12,52 +12,6 @@ const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const MODULES_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-interface ModulesCache {
-  modules: Record<string, boolean>;
-  expiresAt: number;
-  version: number;
-}
-
-function getCacheKey(clerkId: string) {
-  return `omni_modules_${clerkId}`;
-}
-
-function readModulesCache(clerkId: string): { modules: Record<string, boolean>; version: number } | null {
-  try {
-    const raw = localStorage.getItem(getCacheKey(clerkId));
-    if (!raw) return null;
-    const parsed: ModulesCache = JSON.parse(raw);
-    if (Date.now() > parsed.expiresAt) {
-      localStorage.removeItem(getCacheKey(clerkId));
-      return null;
-    }
-    return { modules: parsed.modules, version: parsed.version ?? 0 };
-  } catch {
-    return null;
-  }
-}
-
-function writeModulesCache(clerkId: string, modules: Record<string, boolean>, version: number) {
-  try {
-    const entry: ModulesCache = {
-      modules,
-      expiresAt: Date.now() + MODULES_CACHE_TTL_MS,
-      version,
-    };
-    localStorage.setItem(getCacheKey(clerkId), JSON.stringify(entry));
-  } catch {
-    // localStorage may be unavailable (private browsing, quota exceeded) — ignore
-  }
-}
-
-function clearModulesCache(clerkId: string) {
-  try {
-    localStorage.removeItem(getCacheKey(clerkId));
-  } catch {
-    // ignore
-  }
-}
-
 export interface OrgInfo {
   id: number;
   name: string;
@@ -73,6 +27,57 @@ export interface UserInfo {
   email: string;
   name: string | null;
   avatarUrl?: string | null;
+}
+
+interface SidebarCache {
+  modules: Record<string, boolean>;
+  org: OrgInfo | null;
+  expiresAt: number;
+  version: number;
+}
+
+function getCacheKey(clerkId: string) {
+  return `omni_sidebar_${clerkId}`;
+}
+
+function readSidebarCache(clerkId: string): { modules: Record<string, boolean>; org: OrgInfo | null; version: number } | null {
+  try {
+    const raw = localStorage.getItem(getCacheKey(clerkId));
+    if (!raw) return null;
+    const parsed: SidebarCache = JSON.parse(raw);
+    if (Date.now() > parsed.expiresAt) {
+      localStorage.removeItem(getCacheKey(clerkId));
+      return null;
+    }
+    return { modules: parsed.modules, org: parsed.org ?? null, version: parsed.version ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
+function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, org: OrgInfo | null, version: number) {
+  try {
+    const entry: SidebarCache = {
+      modules,
+      org,
+      expiresAt: Date.now() + MODULES_CACHE_TTL_MS,
+      version,
+    };
+    localStorage.setItem(getCacheKey(clerkId), JSON.stringify(entry));
+    // Remove the old key if it exists (migration from previous cache shape)
+    localStorage.removeItem(`omni_modules_${clerkId}`);
+  } catch {
+    // localStorage may be unavailable (private browsing, quota exceeded) — ignore
+  }
+}
+
+function clearSidebarCache(clerkId: string) {
+  try {
+    localStorage.removeItem(getCacheKey(clerkId));
+    localStorage.removeItem(`omni_modules_${clerkId}`);
+  } catch {
+    // ignore
+  }
 }
 
 interface OrgContextValue {
@@ -111,7 +116,6 @@ export function useOrg() {
 export function OrgProvider({ children }: { children: ReactNode }) {
   const { isSignedIn, isLoaded, user: clerkUser } = useUser();
   const { getToken } = useAuth();
-  const [org, setOrg] = useState<OrgInfo | null>(null);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -123,16 +127,22 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     [permissions],
   );
 
+  // Eagerly seed both modules and org from cache so the sidebar renders on
+  // the very first paint — before Clerk finishes initializing.
   const [modules, setModules] = useState<Record<string, boolean>>(() => {
-    // Eagerly seed from cache if the Clerk user ID is already known at init time.
-    // This covers the common case where the page is refreshed while still logged in.
-    // The ID may not yet be available on the very first render after a cold login —
-    // in that case we fall back to {} and re-seed once the effect runs.
     if (typeof window !== "undefined" && clerkUser?.id) {
-      return readModulesCache(clerkUser.id)?.modules ?? {};
+      return readSidebarCache(clerkUser.id)?.modules ?? {};
     }
     return {};
   });
+
+  const [org, setOrg] = useState<OrgInfo | null>(() => {
+    if (typeof window !== "undefined" && clerkUser?.id) {
+      return readSidebarCache(clerkUser.id)?.org ?? null;
+    }
+    return null;
+  });
+
   const [tick, setTick] = useState(0);
 
   const refetch = () => setTick((t) => t + 1);
@@ -148,16 +158,16 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     [modules],
   );
 
-  // Seed modules from cache as soon as we know the Clerk user ID (handles
+  // Seed modules + org from cache as soon as we know the Clerk user ID (handles
   // the cold-login case where clerkUser.id wasn't available during useState init).
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !clerkUser?.id) return;
-    const cached = readModulesCache(clerkUser.id);
+    const cached = readSidebarCache(clerkUser.id);
     if (cached) {
       setModules((prev) =>
-        // Only apply if modules is still empty (server fetch hasn't completed yet)
         Object.keys(prev).length === 0 ? { ...cached.modules, crm: true } : prev,
       );
+      setOrg((prev) => (prev === null && cached.org ? cached.org : prev));
     }
   }, [isLoaded, isSignedIn, clerkUser?.id]);
 
@@ -166,7 +176,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
     const currentClerkId = clerkUser?.id ?? null;
     if (!isSignedIn) {
-      if (currentClerkId) clearModulesCache(currentClerkId);
+      if (currentClerkId) clearSidebarCache(currentClerkId);
       setOrg(null);
       setUser(null);
       setNeedsSetup(false);
@@ -207,15 +217,12 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         setNeedsSetup(!organization);
         setModules(freshModules);
         setPermissions(perms ?? []);
-        // If the server version is newer than what was cached, the stale cache entry
-        // is superseded by the fresh server data. Write the new version so future
-        // page loads won't re-seed with outdated modules.
         if (u?.clerkId) {
-          const cached = readModulesCache(u.clerkId);
+          const cached = readSidebarCache(u.clerkId);
           if (!cached || cached.version < version) {
-            clearModulesCache(u.clerkId);
+            clearSidebarCache(u.clerkId);
           }
-          writeModulesCache(u.clerkId, freshModules, version);
+          writeSidebarCache(u.clerkId, freshModules, organization, version);
         }
       })
       .catch((err) => {
