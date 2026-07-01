@@ -89,8 +89,16 @@ async function enrichInvoice(inv: typeof invoicesTable.$inferSelect) {
   const totalPaid = payments.reduce((s, p) => s + parseFloat(String(p.amount)), 0);
 
   const shareRow = await db.execute(sql`
-    SELECT share_token, share_token_expires_at FROM invoices WHERE id = ${inv.id} LIMIT 1
-  `) as unknown as { rows: Array<{ share_token: string | null; share_token_expires_at: string | null }> };
+    SELECT share_token, share_token_expires_at,
+           payment_notification_pending, payment_reference, payment_notified_at
+    FROM invoices WHERE id = ${inv.id} LIMIT 1
+  `) as unknown as { rows: Array<{
+    share_token: string | null;
+    share_token_expires_at: string | null;
+    payment_notification_pending: boolean | null;
+    payment_reference: string | null;
+    payment_notified_at: string | null;
+  }> };
   const shareData = shareRow.rows[0];
 
   return {
@@ -109,8 +117,11 @@ async function enrichInvoice(inv: typeof invoicesTable.$inferSelect) {
     payments,
     totalPaid,
     balance: parseFloat(String(inv.total)) - totalPaid,
-    shareToken:          shareData?.share_token ?? null,
-    shareTokenExpiresAt: shareData?.share_token_expires_at ?? null,
+    shareToken:                  shareData?.share_token ?? null,
+    shareTokenExpiresAt:         shareData?.share_token_expires_at ?? null,
+    paymentNotificationPending:  Boolean(shareData?.payment_notification_pending),
+    paymentReference:            shareData?.payment_reference ?? null,
+    paymentNotifiedAt:           shareData?.payment_notified_at ?? null,
   };
 }
 
@@ -1055,6 +1066,57 @@ accountingRouter.delete("/invoices/:id/share", requirePermission("accounting.wri
   res.json({ ok: true });
 });
 
+// PATCH /api/accounting/invoices/:id/resolve-payment-notification — #41
+// action: "confirm" clears the badge; action: "reject" also clears the reference
+accountingRouter.patch("/invoices/:id/resolve-payment-notification", requirePermission("accounting.write"), async (req, res) => {
+  const orgId  = req.orgId!;
+  const id     = Number(req.params["id"]);
+  const action = req.body?.action as string | undefined;
+
+  if (action !== "confirm" && action !== "reject") {
+    res.status(400).json({ error: "action debe ser 'confirm' o 'reject'" }); return;
+  }
+
+  const [inv] = await db.select().from(invoicesTable)
+    .where(and(eq(invoicesTable.id, id), eq(invoicesTable.orgId, orgId)));
+  if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
+
+  if (action === "confirm") {
+    await db.execute(sql`
+      UPDATE invoices
+      SET payment_notification_pending = FALSE, updated_at = NOW()
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+  } else {
+    await db.execute(sql`
+      UPDATE invoices
+      SET payment_notification_pending = FALSE,
+          payment_reference            = NULL,
+          payment_notified_at          = NULL,
+          updated_at                   = NOW()
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+  }
+
+  try {
+    await db.execute(sql`
+      INSERT INTO audit_logs (actor_clerk_id, action, resource, resource_id, org_id, severity, meta, created_at)
+      VALUES (
+        ${req.clerkId ?? 'unknown'},
+        ${action === "confirm" ? "payment_notification_confirmed" : "payment_notification_rejected"},
+        'invoice',
+        ${id},
+        ${orgId},
+        'info',
+        ${JSON.stringify({ invoiceId: id, action })},
+        NOW()
+      )
+    `);
+  } catch { /* non-fatal */ }
+
+  res.json({ ok: true });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC INVOICE ROUTER — no auth required
 // Mounted at /api/accounting-public by routes/index.ts (before requireAuth)
@@ -1072,6 +1134,7 @@ async function getInvoiceByToken(token: string) {
     JOIN organizations o ON o.id = i.org_id
     WHERE i.share_token = ${token}
       AND i.share_token_expires_at > NOW()
+      AND i.status != 'cancelled'
     LIMIT 1
   `) as unknown as { rows: Array<Record<string, unknown>> };
   if (!rows.rows.length) return null;
@@ -1132,6 +1195,14 @@ publicAccountingRouter.post("/invoices/:token/notify-payment", async (req, res) 
   }
   if (inv.status === "cancelled") {
     res.status(422).json({ error: "No se puede notificar el pago de una factura cancelada" }); return;
+  }
+
+  // #43 — prevent duplicate notifications
+  const pendingCheck = await db.execute(sql`
+    SELECT payment_notification_pending FROM invoices WHERE id = ${inv.id} LIMIT 1
+  `) as unknown as { rows: Array<{ payment_notification_pending: boolean }> };
+  if (pendingCheck.rows[0]?.payment_notification_pending) {
+    res.status(409).json({ error: "Ya hay una notificación de pago pendiente de revisión para esta factura" }); return;
   }
 
   const reference = String(req.body?.reference ?? "").trim().slice(0, 500) || null;

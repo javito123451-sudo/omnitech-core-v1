@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import {
   ArrowLeft, Download, CreditCard, FileText, Check, Clock,
-  AlertTriangle, X, Plus, Trash2, Share2, Copy, CheckCheck, LinkOff,
+  AlertTriangle, X, Plus, Trash2, Share2, Copy, CheckCheck, LinkOff, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +37,9 @@ interface InvoiceDetail {
   balance: number;
   shareToken: string | null;
   shareTokenExpiresAt: string | null;
+  paymentNotificationPending: boolean;
+  paymentReference: string | null;
+  paymentNotifiedAt: string | null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
@@ -160,6 +163,23 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
       toast({ title: "Enlace revocado" });
     },
     onError: () => toast({ title: "Error revocando el enlace", variant: "destructive" }),
+  });
+
+  const resolveNotifMut = useMutation({
+    mutationFn: async (action: "confirm" | "reject") => {
+      const r = await authFetch(
+        `${import.meta.env.BASE_URL}api/accounting/invoices/${id}/resolve-payment-notification`,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) },
+      );
+      if (!r.ok) throw new Error("Error procesando la notificación");
+      return action;
+    },
+    onSuccess: (action) => {
+      qc.invalidateQueries({ queryKey: ["invoice", id] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      toast({ title: action === "confirm" ? "Pago confirmado — notificación resuelta" : "Notificación rechazada" });
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
   if (isLoading || !inv) {
@@ -352,6 +372,48 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
               <p className={cn("text-sm font-medium", new Date(inv.dueDate) < new Date() && inv.status !== "paid" ? "text-rose-400" : "text-white")}>
                 {new Date(inv.dueDate).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
               </p>
+            </div>
+          )}
+
+          {/* Payment notification panel — #41 #42 */}
+          {inv.paymentNotificationPending && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-amber-400 shrink-0" />
+                <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Pago notificado por cliente</h3>
+              </div>
+              {inv.paymentNotifiedAt && (
+                <p className="text-xs text-slate-400">
+                  Recibido el{" "}
+                  <span className="text-slate-300">
+                    {new Date(inv.paymentNotifiedAt).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
+                  </span>
+                </p>
+              )}
+              {inv.paymentReference && (
+                <div className="bg-slate-800/60 rounded-lg px-3 py-2">
+                  <p className="text-xs text-slate-400 mb-0.5">Referencia bancaria</p>
+                  <p className="text-sm font-mono text-white break-all">{inv.paymentReference}</p>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => resolveNotifMut.mutate("confirm")}
+                  disabled={resolveNotifMut.isPending}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 disabled:opacity-50 text-emerald-400 text-xs font-medium rounded-lg border border-emerald-600/30 transition-colors"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  Confirmar pago
+                </button>
+                <button
+                  onClick={() => resolveNotifMut.mutate("reject")}
+                  disabled={resolveNotifMut.isPending}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-600/20 hover:bg-rose-600/30 disabled:opacity-50 text-rose-400 text-xs font-medium rounded-lg border border-rose-600/30 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Rechazar
+                </button>
+              </div>
             </div>
           )}
 

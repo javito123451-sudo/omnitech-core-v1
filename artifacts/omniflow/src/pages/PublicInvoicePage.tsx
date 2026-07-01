@@ -68,7 +68,9 @@ export default function PublicInvoicePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reference: reference.trim() }),
       });
-      if (!r.ok) throw new Error((await r.json()).error ?? "Error al enviar notificación");
+      const body = await r.json();
+      if (r.status === 409) throw Object.assign(new Error(body.error ?? "Notificación duplicada"), { isDuplicate: true });
+      if (!r.ok) throw new Error(body.error ?? "Error al enviar notificación");
     },
     onSuccess: () => {
       setNotified(true);
