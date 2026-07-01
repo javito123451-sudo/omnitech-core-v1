@@ -311,9 +311,21 @@ controlCenterRouter.get("/workspaces/:id/consumption", async (req, res) => {
 
 // ── POST /workspaces/:id/impersonate ───────────────────────────────────────────
 controlCenterRouter.post("/workspaces/:id/impersonate", async (req, res) => {
-  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede impersonar" }); return; }
-  const orgId = Number(req.params["id"]);
-  const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId));
+  // ── Auth guard + debug logs ────────────────────────────────────────────
+  // Defense-in-depth: verify auth explicitly (requireSuperAdmin middleware already ran)
+  const auth = getAuth(req);
+  const userId = auth?.userId ?? null;
+  const workspaceId = Number(req.params["id"]);
+  if (!userId) {
+    res.status(401).json({ error: "Sesión no válida. Inicia sesión de nuevo." });
+    return;
+  }
+  if (!req.isSuperAdmin) {
+    res.status(403).json({ error: "Solo SUPER_ADMIN puede impersonar workspaces." });
+    return;
+  }
+
+  const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, workspaceId));
   if (!org) { res.status(404).json({ error: "Workspace no encontrado" }); return; }
 
   // Close any previous active support session for this admin
@@ -323,49 +335,50 @@ controlCenterRouter.post("/workspaces/:id/impersonate", async (req, res) => {
     WHERE admin_clerk_id = ${req.clerkUserId!} AND status = 'active'
   `);
 
-  // Create new support session
-  const [session] = await db.execute(sql`
+  // Create new support session — db.execute returns QueryResult, NOT an array
+  const insertResult = await db.execute(sql`
     INSERT INTO support_sessions (admin_clerk_id, org_id, org_name, reason, status, started_at)
-    VALUES (${req.clerkUserId!}, ${orgId}, ${org.name}, 'Impersonación desde Workspace Management', 'active', NOW())
+    VALUES (${req.clerkUserId!}, ${workspaceId}, ${org.name}, 'Impersonación desde Workspace Management', 'active', NOW())
     RETURNING id
-  `) as unknown as [{ id: number }[]];
+  `) as unknown as { rows: Array<{ id: number }> };
+  const sessionId = insertResult.rows?.[0]?.id ?? null;
 
-  const sessionId = session?.[0]?.id ?? null;
-
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_impersonated", resource: "workspace", resourceId: String(orgId), details: { orgName: org.name, sessionId }, severity: "warning", req });
-  res.json({ ok: true, orgId, orgName: org.name, sessionId, warning: "Esta acción ha sido registrada en auditoría" });
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_impersonated", resource: "workspace", resourceId: String(workspaceId), details: { orgName: org.name, sessionId }, severity: "warning", req });
+  res.json({ ok: true, orgId: workspaceId, orgName: org.name, sessionId, warning: "Esta acción ha sido registrada en auditoría" });
 });
 
 // ── GET /support-session/active ────────────────────────────────────────────────
 controlCenterRouter.get("/support-session/active", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
-  const [row] = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT id, admin_clerk_id, org_id, org_name, reason, status, started_at
     FROM support_sessions
     WHERE admin_clerk_id = ${req.clerkUserId!} AND status = 'active'
     ORDER BY started_at DESC
     LIMIT 1
-  `) as unknown as [Array<{
+  `) as unknown as { rows: Array<{
     id: number; admin_clerk_id: string; org_id: number; org_name: string | null;
     reason: string | null; status: string; started_at: Date;
-  }>];
-  if (!row || row.length === 0) { res.json({ active: false }); return; }
-  res.json({ active: true, session: row[0]! });
+  }> };
+  const rows = result.rows ?? [];
+  if (rows.length === 0) { res.json({ active: false }); return; }
+  res.json({ active: true, session: rows[0]! });
 });
 
 // ── POST /support-session/exit ─────────────────────────────────────────────────
 controlCenterRouter.post("/support-session/exit", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
-  const [row] = await db.execute(sql`
+  const result2 = await db.execute(sql`
     SELECT id, org_id, org_name
     FROM support_sessions
     WHERE admin_clerk_id = ${req.clerkUserId!} AND status = 'active'
     ORDER BY started_at DESC
     LIMIT 1
-  `) as unknown as [Array<{ id: number; org_id: number; org_name: string | null }>];
-  if (!row || row.length === 0) { res.json({ ok: true, message: "No había sesión activa" }); return; }
+  `) as unknown as { rows: Array<{ id: number; org_id: number; org_name: string | null }> };
+  const rows2 = result2.rows ?? [];
+  if (rows2.length === 0) { res.json({ ok: true, message: "No había sesión activa" }); return; }
 
-  const s = row[0]!;
+  const s = rows2[0]!;
   await db.execute(sql`
     UPDATE support_sessions
     SET status = 'closed', ended_at = NOW()
