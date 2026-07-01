@@ -1318,88 +1318,9 @@ export async function executeCrmTool(
       });
     }
 
-    // ── create_invoice ──────────────────────────────────────────────────────
-    if (toolName === "create_invoice") {
-      const accountingEnabled = await isModuleEnabled(orgId, "omni_accounting");
-      if (!accountingEnabled) {
-        return JSON.stringify({ error: "El módulo de contabilidad (omni_accounting) no está habilitado para este workspace." });
-      }
-
-      const clientName = String(args["client_name"] ?? "");
-      const rawItems   = (args["items"] as { description: string; quantity: number; unit_price: number }[]) ?? [];
-      const taxRate    = Number(args["tax_rate"] ?? 21);
-      const notes      = args["notes"]    ? String(args["notes"])    : null;
-      const dueDateStr = args["due_date"] ? String(args["due_date"]) : null;
-
-      if (!clientName || rawItems.length === 0) {
-        return JSON.stringify({ error: "Se necesita client_name y al menos un ítem" });
-      }
-
-      const matchedClients = await db.select()
-        .from(clientsTable)
-        .where(and(eq(clientsTable.orgId, orgId), ilike(clientsTable.name, `%${clientName}%`)))
-        .limit(5);
-      if (matchedClients.length === 0) {
-        return JSON.stringify({ error: `No encontré ningún cliente que coincida con "${clientName}".` });
-      }
-      const client = matchedClients[0]!;
-
-      const lineItems = rawItems.map((item, idx) => ({
-        description: item.description,
-        quantity:    Number(item.quantity)   || 1,
-        unitPrice:   Number(item.unit_price) || 0,
-        total:       (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
-        orderIndex:  idx,
-      }));
-      const subtotal  = lineItems.reduce((acc, i) => acc + i.total, 0);
-      const taxAmount = parseFloat(((subtotal * taxRate) / 100).toFixed(2));
-      const total     = parseFloat((subtotal + taxAmount).toFixed(2));
-
-      // Generate invoice number
-      const year = new Date().getFullYear();
-      const [{ cnt }] = await db.select({ cnt: count() }).from(invoicesTable)
-        .where(and(eq(invoicesTable.orgId, orgId), gte(invoicesTable.createdAt, new Date(`${year}-01-01`))));
-      const invoiceNumber = `F${year}-${String(Number(cnt ?? 0) + 1).padStart(4, "0")}`;
-
-      const [inv] = await db.insert(invoicesTable).values({
-        orgId,
-        clientId: client.id,
-        invoiceNumber,
-        status: "draft",
-        currency: "EUR",
-        subtotal: String(subtotal),
-        taxRate:  String(taxRate),
-        taxAmount: String(taxAmount),
-        total:    String(total),
-        notes:    notes,
-        dueDate:  dueDateStr ? new Date(dueDateStr) : null,
-      }).returning();
-
-      await db.insert(invoiceItemsTable).values(
-        lineItems.map(item => ({
-          invoiceId: inv!.id,
-          description: item.description,
-          quantity:  String(item.quantity),
-          unitPrice: String(item.unitPrice),
-          total:     String(parseFloat(item.total.toFixed(2))),
-          orderIndex: item.orderIndex,
-        })),
-      );
-
-      return JSON.stringify({
-        success: true,
-        invoiceId: inv!.id,
-        invoiceNumber,
-        clientName: client.name,
-        total,
-        taxRate,
-        taxAmount,
-        subtotal,
-        status: "draft",
-        items: lineItems.map(i => ({ description: i.description, quantity: i.quantity, unitPrice: i.unitPrice, total: parseFloat(i.total.toFixed(2)) })),
-        message: `Factura ${invoiceNumber} creada en borrador para ${client.name} — ${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(total)}. Disponible en Contabilidad > Facturas.`,
-      });
-    }
+    // create_invoice is handled by the Skill Engine (accountingSkills.ts → createInvoiceCore)
+    // at the top of executeCrmTool (ACCOUNTING_TOOLS guard + getSkill path).
+    // No legacy fallback needed here — it would be unreachable dead code.
 
     // ── get_invoice ─────────────────────────────────────────────────────────
     if (toolName === "get_invoice") {

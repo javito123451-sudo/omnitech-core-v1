@@ -26,9 +26,13 @@ import { authFetch } from "@/lib/authFetch";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Role = "user" | "ai";
+type ToolEvent =
+  | { type: "invoice_created"; invoice: { invoiceNumber: string; clientName: string; total: number; subtotal: number; taxAmount: number; taxRate: number; status: string; items?: { description: string; quantity: number; unitPrice: number; total: number }[] } }
+  | { type: "payment_registered"; payment: { invoiceNumber: string; amount: number; paid: number; balance: number; invoiceStatus: string } };
 type Msg = {
   id: string; role: Role; content: string; ts: Date;
   streaming?: boolean; error?: boolean;
+  toolEvents?: ToolEvent[];
 };
 type Session = {
   id: string; title: string; preview: string; ts: Date;
@@ -142,6 +146,75 @@ function AiAvatar() {
   );
 }
 
+// ── EUR formatter ─────────────────────────────────────────────────────────────
+const eur = (n: number) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
+
+// ── Invoice Card ──────────────────────────────────────────────────────────────
+function InvoiceCard({ ev }: { ev: Extract<ToolEvent, { type: "invoice_created" }> }) {
+  const { invoice } = ev;
+  return (
+    <div className="mt-2 rounded-xl border border-emerald-500/25 bg-emerald-950/20 p-3 text-xs space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 font-semibold text-emerald-400">
+          <FileText className="w-3.5 h-3.5"/> Factura creada
+        </span>
+        <span className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 rounded-full px-2 py-0.5 uppercase tracking-wide text-[10px]">
+          {invoice.status}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-300">
+        <span className="text-slate-500">Número</span><span className="font-mono font-semibold text-white">{invoice.invoiceNumber}</span>
+        <span className="text-slate-500">Cliente</span><span>{invoice.clientName}</span>
+        <span className="text-slate-500">Subtotal</span><span>{eur(invoice.subtotal)}</span>
+        <span className="text-slate-500">IVA ({invoice.taxRate}%)</span><span>{eur(invoice.taxAmount)}</span>
+      </div>
+      <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
+        <span className="text-slate-400">Total</span>
+        <span className="text-lg font-bold text-white">{eur(invoice.total)}</span>
+      </div>
+      {invoice.items && invoice.items.length > 0 && (
+        <div className="space-y-1 border-t border-white/[0.06] pt-2">
+          {invoice.items.map((item, i) => (
+            <div key={i} className="flex justify-between text-slate-400">
+              <span className="truncate max-w-[60%]">{item.description} ×{item.quantity}</span>
+              <span>{eur(item.total)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Payment Card ──────────────────────────────────────────────────────────────
+function PaymentCard({ ev }: { ev: Extract<ToolEvent, { type: "payment_registered" }> }) {
+  const { payment } = ev;
+  const isPaid = payment.invoiceStatus === "paid";
+  return (
+    <div className="mt-2 rounded-xl border border-blue-500/25 bg-blue-950/20 p-3 text-xs space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 font-semibold text-blue-400">
+          <DollarSign className="w-3.5 h-3.5"/> Pago registrado
+        </span>
+        <span className={cn(
+          "rounded-full px-2 py-0.5 uppercase tracking-wide text-[10px] border",
+          isPaid
+            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25"
+            : "bg-amber-500/15 text-amber-300 border-amber-500/25",
+        )}>
+          {payment.invoiceStatus}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-300">
+        <span className="text-slate-500">Factura</span><span className="font-mono font-semibold text-white">{payment.invoiceNumber}</span>
+        <span className="text-slate-500">Importe</span><span className="text-white font-semibold">{eur(payment.amount)}</span>
+        <span className="text-slate-500">Total pagado</span><span>{eur(payment.paid)}</span>
+        {!isPaid && <><span className="text-slate-500">Pendiente</span><span className="text-amber-300">{eur(payment.balance)}</span></>}
+      </div>
+    </div>
+  );
+}
+
 // ── Message bubble ────────────────────────────────────────────────────────────
 function MessageBubble({ msg }: { msg: Msg }) {
   const isUser = msg.role === "user";
@@ -163,6 +236,13 @@ function MessageBubble({ msg }: { msg: Msg }) {
                 {renderMarkdown(msg.content)}
                 {msg.streaming && msg.content && (
                   <span className="inline-block w-0.5 h-4 bg-primary ml-0.5 animate-pulse align-middle"/>
+                )}
+                {!isUser && msg.toolEvents?.map((ev, i) =>
+                  ev.type === "invoice_created"
+                    ? <InvoiceCard key={i} ev={ev}/>
+                    : ev.type === "payment_registered"
+                      ? <PaymentCard key={i} ev={ev}/>
+                      : null
                 )}
               </span>
           }
@@ -943,10 +1023,22 @@ export default function Assistant() {
             void queryClient.invalidateQueries({ queryKey: ["appointments"] });
           }
           if (parsed.event === "invoice_created" || parsed.event === "payment_registered") {
-            // Invalidate accounting caches so invoices/payments reflect new data
             void queryClient.invalidateQueries({ queryKey: ["invoices"] });
             void queryClient.invalidateQueries({ queryKey: ["payments"] });
             void queryClient.invalidateQueries({ queryKey: ["accounting"] });
+            const toolEv = parsed as unknown as ToolEvent;
+            setSessions(prev => prev.map(s =>
+              s.id === targetId
+                ? {
+                    ...s,
+                    msgs: s.msgs.map(m =>
+                      m.id === aiId
+                        ? { ...m, toolEvents: [...(m.toolEvents ?? []), toolEv] }
+                        : m,
+                    ),
+                  }
+                : s,
+            ));
           }
           if (parsed.event === "memory_saved" && parsed.memory) {
             const mem = parsed.memory;
