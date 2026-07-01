@@ -19,15 +19,17 @@ export const invoicesTable = pgTable("invoices", {
   taxRate:       numeric("tax_rate",  { precision: 5,  scale: 2 }).notNull().default("21"),
   taxAmount:     numeric("tax_amount",{ precision: 12, scale: 2 }).notNull().default("0"),
   total:         numeric("total",     { precision: 12, scale: 2 }).notNull().default("0"),
-  notes:         text("notes"),
-  dueDate:       timestamp("due_date"),
-  paidAt:        timestamp("paid_at"),
-  createdAt:     timestamp("created_at").notNull().defaultNow(),
-  updatedAt:     timestamp("updated_at").notNull().defaultNow(),
+  notes:               text("notes"),
+  dueDate:             timestamp("due_date"),
+  paidAt:              timestamp("paid_at"),
+  recurringInvoiceId:  integer("recurring_invoice_id"),
+  createdAt:           timestamp("created_at").notNull().defaultNow(),
+  updatedAt:           timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
   index("invoices_org_id_idx").on(t.orgId),
   index("invoices_client_id_idx").on(t.clientId),
   index("invoices_status_idx").on(t.status),
+  index("invoices_recurring_invoice_id_idx").on(t.recurringInvoiceId),
 ]);
 
 // ── invoice_items ─────────────────────────────────────────────────────────────

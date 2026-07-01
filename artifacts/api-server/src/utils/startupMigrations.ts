@@ -362,6 +362,15 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-L: marketing_campaigns table ensured");
 
+    // ── FIX-N: recurring_invoice_id column on invoices ────────────────────────
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_invoice_id INTEGER REFERENCES recurring_invoices(id) ON DELETE SET NULL
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS invoices_recurring_invoice_id_idx ON invoices(recurring_invoice_id) WHERE recurring_invoice_id IS NOT NULL
+    `);
+    logger.info("[Migration] ✅ FIX-N: invoices.recurring_invoice_id column ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

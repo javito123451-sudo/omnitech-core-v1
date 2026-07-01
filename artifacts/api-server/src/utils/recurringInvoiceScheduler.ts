@@ -79,17 +79,18 @@ async function processDueTemplates(): Promise<void> {
       dueDate.setDate(dueDate.getDate() + 30);
 
       const [inv] = await db.insert(invoicesTable).values({
-        orgId:         tmpl.org_id,
-        clientId:      tmpl.client_id,
+        orgId:              tmpl.org_id,
+        clientId:           tmpl.client_id,
         invoiceNumber,
         status,
-        currency:      tmpl.currency,
-        subtotal:      String(parseFloat(subtotal.toFixed(2))),
-        taxRate:       String(taxRate),
-        taxAmount:     String(taxAmount),
-        total:         String(total),
-        notes:         `Generada automáticamente desde plantilla recurrente: ${tmpl.description}`,
+        currency:           tmpl.currency,
+        subtotal:           String(parseFloat(subtotal.toFixed(2))),
+        taxRate:            String(taxRate),
+        taxAmount:          String(taxAmount),
+        total:              String(total),
+        notes:              `Generada automáticamente desde plantilla recurrente: ${tmpl.description}`,
         dueDate,
+        recurringInvoiceId: tmpl.id,
       }).returning();
 
       if (inv && items.length) {
