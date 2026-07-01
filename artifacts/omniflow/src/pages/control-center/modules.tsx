@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import { useState } from "react";
+import { useOrg } from "@/lib/orgContext";
 import {
   Puzzle, Loader2, Building2, LayoutGrid, List,
   ShieldCheck, RefreshCw, Search,
@@ -68,6 +69,7 @@ function ModuleSwitch({
 
 export default function ModulesPage() {
   const qc = useQueryClient();
+  const { refetch: refetchOrg, org } = useOrg();
   const [view, setView] = useState<View>("byOrg");
   const [selectedMod, setSelectedMod] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -86,6 +88,11 @@ export default function ModulesPage() {
         body: JSON.stringify({ orgId, moduleSlug, isEnabled }),
       }).then(r => r.json()),
     onMutate: ({ orgId, moduleSlug }) => setPendingKey(`${orgId}:${moduleSlug}`),
+    onSuccess: (_data, { orgId }) => {
+      // If the toggled workspace is the admin's own workspace, refresh
+      // the OrgContext so the sidebar reflects the change immediately.
+      if (org && org.id === orgId) refetchOrg();
+    },
     onSettled: () => {
       setPendingKey(null);
       void qc.invalidateQueries({ queryKey: ["cc-modules"] });

@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { hasPlatformRole } from "../middlewares/superAdmin";
 import { logAudit, shouldLogLogin } from "../utils/auditLogger";
+import { getOrgModuleVersion } from "../lib/moduleVersion";
 
 // ── Blocklist check — returns true if the Clerk ID is permanently blocked ─────
 async function isBlockedClerkId(clerkUserId: string): Promise<boolean> {
@@ -180,6 +181,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
         isSuspended: m.isSuspended,
       })),
       modules,
+      modulesVersion: primaryMembership ? getOrgModuleVersion(primaryMembership.orgId) : 0,
       permissions: Array.from(permissions),
     };
 

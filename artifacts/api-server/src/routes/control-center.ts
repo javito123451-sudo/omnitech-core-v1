@@ -10,6 +10,7 @@ import { eq, desc, count, and, sql, gte, lte, ilike, or, lt, isNull } from "driz
 import { requireSuperAdmin, hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
 import { aiCenterRouter } from "./ai-center-routes";
 import { clearModuleCache } from "../middlewares/requireModule";
+import { bumpOrgModuleVersion } from "../lib/moduleVersion";
 import { logAudit as _logAudit } from "../utils/auditLogger";
 import { sendInvitationEmail } from "../lib/email";
 import { randomUUID } from "crypto";
@@ -642,8 +643,9 @@ controlCenterRouter.patch("/modules", async (req, res) => {
     .values({ orgId, moduleSlug, isEnabled, updatedBy: req.clerkUserId })
     .onConflictDoUpdate({ target: [moduleConfigsTable.orgId, moduleConfigsTable.moduleSlug], set: { isEnabled, updatedBy: req.clerkUserId!, updatedAt: new Date() } });
   clearModuleCache(orgId, moduleSlug);
+  const modulesVersion = bumpOrgModuleVersion(orgId);
   await logAudit({ actorClerkId: req.clerkUserId!, action: `module_${isEnabled ? "enabled" : "disabled"}`, resource: "module", resourceId: moduleSlug, orgId, req });
-  res.json({ ok: true });
+  res.json({ ok: true, modulesVersion });
 });
 
 // ── GET /licenses ─────────────────────────────────────────────────────────────

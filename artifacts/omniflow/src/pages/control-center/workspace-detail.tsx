@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import { useParams, useLocation } from "wouter";
 import { useState } from "react";
+import { useOrg } from "@/lib/orgContext";
 import {
   Building2, ArrowLeft, Users, UserCheck, MessageSquare, FileText,
   Puzzle, Clock, CheckCircle2, XCircle, PauseCircle, PlayCircle,
@@ -111,6 +112,7 @@ export default function WorkspaceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const qc = useQueryClient();
+  const { refetch: refetchOrg, org } = useOrg();
   const wsId = Number(id);
   const [tab, setTab]         = useState<Tab>("general");
   const [editName, setEditName] = useState(false);
@@ -142,7 +144,12 @@ export default function WorkspaceDetailPage() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orgId: wsId, moduleSlug, isEnabled }),
       }).then(r => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["cc-workspace", wsId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["cc-workspace", wsId] });
+      // If this workspace is the admin's own workspace, refresh the OrgContext
+      // so the sidebar reflects the change without requiring a page reload.
+      if (org && org.id === wsId) refetchOrg();
+    },
   });
 
   if (isLoading) return (

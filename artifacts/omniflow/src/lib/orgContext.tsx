@@ -15,13 +15,14 @@ const MODULES_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 interface ModulesCache {
   modules: Record<string, boolean>;
   expiresAt: number;
+  version: number;
 }
 
 function getCacheKey(clerkId: string) {
   return `omni_modules_${clerkId}`;
 }
 
-function readModulesCache(clerkId: string): Record<string, boolean> | null {
+function readModulesCache(clerkId: string): { modules: Record<string, boolean>; version: number } | null {
   try {
     const raw = localStorage.getItem(getCacheKey(clerkId));
     if (!raw) return null;
@@ -30,17 +31,18 @@ function readModulesCache(clerkId: string): Record<string, boolean> | null {
       localStorage.removeItem(getCacheKey(clerkId));
       return null;
     }
-    return parsed.modules;
+    return { modules: parsed.modules, version: parsed.version ?? 0 };
   } catch {
     return null;
   }
 }
 
-function writeModulesCache(clerkId: string, modules: Record<string, boolean>) {
+function writeModulesCache(clerkId: string, modules: Record<string, boolean>, version: number) {
   try {
     const entry: ModulesCache = {
       modules,
       expiresAt: Date.now() + MODULES_CACHE_TTL_MS,
+      version,
     };
     localStorage.setItem(getCacheKey(clerkId), JSON.stringify(entry));
   } catch {
@@ -127,7 +129,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     // The ID may not yet be available on the very first render after a cold login —
     // in that case we fall back to {} and re-seed once the effect runs.
     if (typeof window !== "undefined" && clerkUser?.id) {
-      return readModulesCache(clerkUser.id) ?? {};
+      return readModulesCache(clerkUser.id)?.modules ?? {};
     }
     return {};
   });
@@ -154,7 +156,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     if (cached) {
       setModules((prev) =>
         // Only apply if modules is still empty (server fetch hasn't completed yet)
-        Object.keys(prev).length === 0 ? { ...cached, crm: true } : prev,
+        Object.keys(prev).length === 0 ? { ...cached.modules, crm: true } : prev,
       );
     }
   }, [isLoaded, isSignedIn, clerkUser?.id]);
@@ -192,20 +194,28 @@ export function OrgProvider({ children }: { children: ReactNode }) {
           organization: OrgInfo | null;
           organizations: OrgInfo[];
           modules: Record<string, boolean>;
+          modulesVersion: number;
           permissions: string[];
         }>;
       })
-      .then(({ user: u, organization, organizations: orgs, modules: mods, permissions: perms }) => {
+      .then(({ user: u, organization, organizations: orgs, modules: mods, permissions: perms, modulesVersion: serverVersion }) => {
         const freshModules = { ...mods, crm: true };
+        const version = serverVersion ?? 0;
         setUser(u);
         setOrg(organization);
         setOrganizations(orgs ?? []);
         setNeedsSetup(!organization);
         setModules(freshModules);
         setPermissions(perms ?? []);
-        // Persist to cache so the next render (e.g. page refresh) has data immediately
+        // If the server version is newer than what was cached, the stale cache entry
+        // is superseded by the fresh server data. Write the new version so future
+        // page loads won't re-seed with outdated modules.
         if (u?.clerkId) {
-          writeModulesCache(u.clerkId, freshModules);
+          const cached = readModulesCache(u.clerkId);
+          if (!cached || cached.version < version) {
+            clearModulesCache(u.clerkId);
+          }
+          writeModulesCache(u.clerkId, freshModules, version);
         }
       })
       .catch((err) => {
