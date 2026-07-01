@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import {
   ArrowLeft, Download, CreditCard, FileText, Check, Clock,
-  AlertTriangle, X, Plus, Trash2, Share2, Copy, CheckCheck,
+  AlertTriangle, X, Plus, Trash2, Share2, Copy, CheckCheck, LinkOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -35,6 +35,8 @@ interface InvoiceDetail {
   payments: Payment[];
   totalPaid: number;
   balance: number;
+  shareToken: string | null;
+  shareTokenExpiresAt: string | null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
@@ -134,17 +136,30 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
     mutationFn: async () => {
       const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/invoices/${id}/share`, { method: "POST" });
       if (!r.ok) throw new Error("Error generando enlace");
-      const { token } = await r.json() as { token: string };
+      const { token } = await r.json() as { token: string; expiresAt: string };
       const base = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, "");
       return `${base}/invoice/${token}`;
     },
     onSuccess: async (link) => {
       await navigator.clipboard.writeText(link);
       setCopied(true);
+      qc.invalidateQueries({ queryKey: ["invoice", id] });
       toast({ title: "Enlace copiado al portapapeles" });
       setTimeout(() => setCopied(false), 3000);
     },
     onError: () => toast({ title: "Error generando el enlace", variant: "destructive" }),
+  });
+
+  const revokeMut = useMutation({
+    mutationFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/invoices/${id}/share`, { method: "DELETE" });
+      if (!r.ok) throw new Error("Error revocando enlace");
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoice", id] });
+      toast({ title: "Enlace revocado" });
+    },
+    onError: () => toast({ title: "Error revocando el enlace", variant: "destructive" }),
   });
 
   if (isLoading || !inv) {
@@ -171,7 +186,7 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
           </div>
           <p className="text-sm text-slate-400">{inv.client?.name ?? "Sin cliente"} · {new Date(inv.createdAt).toLocaleDateString("es-ES")}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={downloadPdf} className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors">
             <Download className="w-4 h-4" /> PDF
           </button>
@@ -183,6 +198,17 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
             {copied ? <CheckCheck className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
             {copied ? "¡Copiado!" : "Compartir"}
           </button>
+          {inv.shareToken && (
+            <button
+              onClick={() => revokeMut.mutate()}
+              disabled={revokeMut.isPending}
+              title="Revocar enlace compartido"
+              className="flex items-center gap-2 px-3 py-2 bg-rose-900/40 hover:bg-rose-800/50 disabled:opacity-50 text-rose-400 text-sm rounded-lg transition-colors border border-rose-800/40"
+            >
+              <LinkOff className="w-4 h-4" />
+              {revokeMut.isPending ? "Revocando…" : "Revocar enlace"}
+            </button>
+          )}
           {inv.status !== "paid" && inv.status !== "cancelled" && (
             <button
               onClick={() => setShowPayment(true)}
@@ -326,6 +352,35 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
               <p className={cn("text-sm font-medium", new Date(inv.dueDate) < new Date() && inv.status !== "paid" ? "text-rose-400" : "text-white")}>
                 {new Date(inv.dueDate).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
               </p>
+            </div>
+          )}
+
+          {/* Share link status */}
+          {inv.shareToken && inv.shareTokenExpiresAt && (
+            <div className="bg-slate-800/40 border border-white/5 rounded-xl p-4">
+              <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Enlace público</h3>
+              {new Date(inv.shareTokenExpiresAt) > new Date() ? (
+                <>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                    <span className="text-xs text-emerald-400 font-medium">Activo</span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Caduca el{" "}
+                    <span className="text-slate-300">
+                      {new Date(inv.shareTokenExpiresAt).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block" />
+                    <span className="text-xs text-rose-400 font-medium">Expirado</span>
+                  </div>
+                  <p className="text-xs text-slate-400">Genera uno nuevo con "Compartir"</p>
+                </>
+              )}
             </div>
           )}
         </div>

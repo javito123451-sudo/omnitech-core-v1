@@ -435,6 +435,27 @@ export async function runStartupMigrations(): Promise<void> {
 
     logger.info("[Migration] ✅ FIX-P: OmniAds tables (ads_campaigns, ads_creatives) ensured");
 
+    // ── FIX-Q: share_token_expires_at column on invoices ─────────────────────
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS share_token_expires_at TIMESTAMP
+    `);
+    logger.info("[Migration] ✅ FIX-Q: invoices.share_token_expires_at column ensured");
+
+    // ── FIX-R: backfill expiry for existing share tokens with NULL expiry ─────
+    // Links generated before FIX-Q was added have no expiry — give them 90 days
+    // from the migration date so they don't remain valid indefinitely.
+    const backfilled = await db.execute(sql`
+      UPDATE invoices
+      SET share_token_expires_at = NOW() + INTERVAL '90 days'
+      WHERE share_token IS NOT NULL AND share_token_expires_at IS NULL
+    `);
+    const bfCount = (backfilled as { rowCount?: number }).rowCount ?? 0;
+    if (bfCount > 0) {
+      logger.info(`[Migration] ✅ FIX-R: backfilled share_token_expires_at for ${bfCount} invoice(s)`);
+    } else {
+      logger.info("[Migration] ✅ FIX-R: no share tokens needed backfill");
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

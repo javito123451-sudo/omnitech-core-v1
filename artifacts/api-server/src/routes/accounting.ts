@@ -88,6 +88,11 @@ async function enrichInvoice(inv: typeof invoicesTable.$inferSelect) {
 
   const totalPaid = payments.reduce((s, p) => s + parseFloat(String(p.amount)), 0);
 
+  const shareRow = await db.execute(sql`
+    SELECT share_token, share_token_expires_at FROM invoices WHERE id = ${inv.id} LIMIT 1
+  `) as unknown as { rows: Array<{ share_token: string | null; share_token_expires_at: string | null }> };
+  const shareData = shareRow.rows[0];
+
   return {
     ...inv,
     subtotal:  parseFloat(String(inv.subtotal)),
@@ -104,6 +109,8 @@ async function enrichInvoice(inv: typeof invoicesTable.$inferSelect) {
     payments,
     totalPaid,
     balance: parseFloat(String(inv.total)) - totalPaid,
+    shareToken:          shareData?.share_token ?? null,
+    shareTokenExpiresAt: shareData?.share_token_expires_at ?? null,
   };
 }
 
@@ -974,7 +981,7 @@ accountingRouter.delete("/recurring/:id", requirePermission("accounting.write"),
   res.json({ ok: true });
 });
 
-// POST /api/accounting/invoices/:id/share — generate or return share token (authenticated)
+// POST /api/accounting/invoices/:id/share — generate or refresh share token (authenticated)
 accountingRouter.post("/invoices/:id/share", requirePermission("accounting.read"), async (req, res) => {
   const orgId = req.orgId!;
   const id    = Number(req.params["id"]);
@@ -983,14 +990,56 @@ accountingRouter.post("/invoices/:id/share", requirePermission("accounting.read"
     .where(and(eq(invoicesTable.id, id), eq(invoicesTable.orgId, orgId)));
   if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
 
-  let token = (inv as typeof inv & { shareToken?: string | null }).shareToken ?? null;
+  const existing = await db.execute(sql`
+    SELECT share_token, share_token_expires_at FROM invoices WHERE id = ${id} LIMIT 1
+  `) as unknown as { rows: Array<{ share_token: string | null; share_token_expires_at: string | null }> };
+  const row = existing.rows[0];
 
-  if (!token) {
+  const now = new Date();
+  const newExpiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000); // 90 days
+
+  let token = row?.share_token ?? null;
+  const currentExpiry = row?.share_token_expires_at ? new Date(row.share_token_expires_at) : null;
+  const isExpired = currentExpiry ? currentExpiry <= now : false;
+  const missingExpiry = token !== null && currentExpiry === null;
+
+  if (!token || isExpired) {
+    // No token yet, or token has expired — generate a fresh one
     token = randomBytes(32).toString("hex");
-    await db.execute(sql`UPDATE invoices SET share_token = ${token}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`);
+    await db.execute(sql`
+      UPDATE invoices
+      SET share_token = ${token}, share_token_expires_at = ${newExpiresAt.toISOString()}, updated_at = NOW()
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+    res.json({ token, expiresAt: newExpiresAt.toISOString() });
+  } else if (missingExpiry) {
+    // Token exists but has no expiry (pre-FIX-Q legacy row) — persist a real expiry in DB
+    await db.execute(sql`
+      UPDATE invoices
+      SET share_token_expires_at = ${newExpiresAt.toISOString()}, updated_at = NOW()
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+    res.json({ token, expiresAt: newExpiresAt.toISOString() });
+  } else {
+    // Token exists and has a valid expiry — return as-is
+    res.json({ token, expiresAt: currentExpiry!.toISOString() });
   }
+});
 
-  res.json({ token });
+// DELETE /api/accounting/invoices/:id/share — revoke share link
+accountingRouter.delete("/invoices/:id/share", requirePermission("accounting.write"), async (req, res) => {
+  const orgId = req.orgId!;
+  const id    = Number(req.params["id"]);
+
+  const [inv] = await db.select().from(invoicesTable)
+    .where(and(eq(invoicesTable.id, id), eq(invoicesTable.orgId, orgId)));
+  if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
+
+  await db.execute(sql`
+    UPDATE invoices SET share_token = NULL, share_token_expires_at = NULL, updated_at = NOW()
+    WHERE id = ${id} AND org_id = ${orgId}
+  `);
+  res.json({ ok: true });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1009,6 +1058,7 @@ async function getInvoiceByToken(token: string) {
     LEFT JOIN clients c ON c.id = i.client_id
     JOIN organizations o ON o.id = i.org_id
     WHERE i.share_token = ${token}
+      AND i.share_token_expires_at > NOW()
     LIMIT 1
   `) as unknown as { rows: Array<Record<string, unknown>> };
   if (!rows.rows.length) return null;
