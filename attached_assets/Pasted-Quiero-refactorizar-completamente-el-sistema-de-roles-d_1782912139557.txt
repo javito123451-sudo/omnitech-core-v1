@@ -1,0 +1,218 @@
+Quiero refactorizar completamente el sistema de roles de OmniTech Core.
+
+OBJETIVO
+
+Separar los permisos globales del SaaS de los permisos de cada empresa (Workspace).
+
+Actualmente existe confusión entre "Rol CRM" y "Rol Plataforma".
+
+Debe quedar así:
+
+========================
+1. ROL DE PLATAFORMA
+========================
+
+Es un rol GLOBAL.
+
+Solo afecta al SaaS.
+
+Valores posibles:
+
+SUPER_ADMIN
+STAFF_OMNITECH
+SOPORTE
+DESARROLLADOR
+BILLING
+NONE
+
+Este rol NO depende del Workspace.
+
+Un usuario normal siempre tendrá:
+
+NONE
+
+Solo empleados de OmniTech tendrán un rol distinto.
+
+========================
+2. ROL DEL WORKSPACE
+========================
+
+Cada Workspace tiene sus propios permisos.
+
+Valores:
+
+OWNER
+
+ADMIN
+
+MANAGER
+
+MEMBER
+
+CLIENT
+
+GUEST
+
+Un mismo usuario puede ser:
+
+Workspace A → OWNER
+
+Workspace B → MEMBER
+
+Workspace C → CLIENT
+
+Sin modificar su rol de plataforma.
+
+========================
+3. BASE DE DATOS
+========================
+
+Separar completamente ambos conceptos.
+
+En users:
+
+platform_role
+
+Ejemplo:
+
+platform_role = SUPER_ADMIN
+
+o
+
+platform_role = NONE
+
+Crear una tabla:
+
+workspace_members
+
+Campos:
+
+id
+
+workspace_id
+
+user_id
+
+workspace_role
+
+created_at
+
+updated_at
+
+Nunca guardar el rol del Workspace en users.
+
+========================
+4. LOGIN
+========================
+
+Al iniciar sesión:
+
+1. Obtener usuario.
+
+2. Leer platform_role.
+
+3. Obtener todos los workspaces.
+
+4. Obtener el workspace_role correspondiente.
+
+========================
+5. CONTROL CENTER
+========================
+
+Solo los usuarios con:
+
+SUPER_ADMIN
+
+STAFF_OMNITECH
+
+podrán entrar.
+
+El resto nunca verá ese menú.
+
+========================
+6. WORKSPACE
+========================
+
+Dentro de cada empresa solo se utilizan:
+
+OWNER
+
+ADMIN
+
+MANAGER
+
+MEMBER
+
+CLIENT
+
+GUEST
+
+Nunca utilizar STAFF_OMNITECH.
+
+Nunca utilizar SUPER_ADMIN.
+
+========================
+7. INTERFAZ
+========================
+
+Cambiar:
+
+"Rol CRM"
+
+por
+
+"Rol Workspace"
+
+Cambiar:
+
+"Rol Plataforma"
+
+Mostrar:
+
+—
+
+cuando sea NONE.
+
+No mostrar STAFF_OMNITECH si el usuario no pertenece al equipo de OmniTech.
+
+========================
+8. MIGRACIÓN
+========================
+
+Migrar automáticamente:
+
+Si platform_role = STAFF_OMNITECH pero el usuario no pertenece al equipo interno de OmniTech:
+
+platform_role = NONE
+
+Conservar el rol del Workspace.
+
+========================
+9. PERMISOS
+========================
+
+Crear dos middlewares independientes:
+
+requirePlatformRole()
+
+requireWorkspaceRole()
+
+Nunca mezclarlos.
+
+========================
+10. RESULTADO FINAL
+========================
+
+El sistema debe soportar:
+
+- Un usuario perteneciendo a varios Workspaces.
+
+- Un rol diferente en cada Workspace.
+
+- Un único rol de plataforma.
+
+- Escalabilidad para miles de empresas.
+
+No romper la compatibilidad con el resto del sistema.
+
+Actualizar frontend, backend, base de datos y tipos TypeScript.
