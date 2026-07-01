@@ -37,17 +37,38 @@ interface SidebarCache {
   version: number;
 }
 
-function getCacheKey(clerkId: string) {
-  return `omni_sidebar_${clerkId}`;
+/** Points to the orgId whose cache entry is "current" for this user. */
+function getPointerKey(clerkId: string) {
+  return `omni_sidebar_ptr_${clerkId}`;
+}
+
+/** Per-workspace cache entry key — includes the org ID so each workspace is isolated. */
+function getCacheKey(clerkId: string, orgId: string | number) {
+  return `omni_sidebar_${clerkId}_${orgId}`;
+}
+
+function readCurrentOrgId(clerkId: string): string | null {
+  try {
+    return localStorage.getItem(getPointerKey(clerkId));
+  } catch {
+    return null;
+  }
 }
 
 function readSidebarCache(clerkId: string): { modules: Record<string, boolean>; org: OrgInfo | null; version: number } | null {
   try {
-    const raw = localStorage.getItem(getCacheKey(clerkId));
+    // When a workspace override is active (support mode), use that org ID as
+    // the cache key so the correct workspace's data is served immediately on
+    // first paint — before the API response arrives. wsOverride stores the
+    // numeric org ID as a string (set by workspaces.tsx / workspace-detail.tsx).
+    const wsOverride = localStorage.getItem("wsOverride");
+    const orgId = wsOverride ?? readCurrentOrgId(clerkId);
+    if (!orgId) return null;
+    const raw = localStorage.getItem(getCacheKey(clerkId, orgId));
     if (!raw) return null;
     const parsed: SidebarCache = JSON.parse(raw);
     if (Date.now() > parsed.expiresAt) {
-      localStorage.removeItem(getCacheKey(clerkId));
+      localStorage.removeItem(getCacheKey(clerkId, orgId));
       return null;
     }
     return { modules: parsed.modules, org: parsed.org ?? null, version: parsed.version ?? 0 };
@@ -58,14 +79,30 @@ function readSidebarCache(clerkId: string): { modules: Record<string, boolean>; 
 
 function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, org: OrgInfo | null, version: number) {
   try {
+    // Use a sentinel when org is null so the slot is still written and the
+    // pointer is not left pointing at a different workspace.
+    const newOrgId = org ? String(org.id) : "no-org";
+
     const entry: SidebarCache = {
       modules,
       org,
       expiresAt: Date.now() + MODULES_CACHE_TTL_MS,
       version,
     };
-    localStorage.setItem(getCacheKey(clerkId), JSON.stringify(entry));
-    // Remove the old key if it exists (migration from previous cache shape)
+    localStorage.setItem(getCacheKey(clerkId, newOrgId), JSON.stringify(entry));
+
+    // Only advance the pointer when NOT in support/override mode.
+    // The pointer is the fallback `readSidebarCache` uses after `wsOverride`
+    // is cleared (e.g. after exiting support mode). It must always reflect the
+    // user's own workspace — never the overridden one — so that a full-page
+    // reload after exit immediately serves the correct workspace's data.
+    const wsOverride = localStorage.getItem("wsOverride");
+    if (!wsOverride) {
+      localStorage.setItem(getPointerKey(clerkId), newOrgId);
+    }
+
+    // Remove legacy keys from previous cache shape.
+    localStorage.removeItem(`omni_sidebar_${clerkId}`);
     localStorage.removeItem(`omni_modules_${clerkId}`);
   } catch {
     // localStorage may be unavailable (private browsing, quota exceeded) — ignore
@@ -74,7 +111,18 @@ function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, or
 
 function clearSidebarCache(clerkId: string) {
   try {
-    localStorage.removeItem(getCacheKey(clerkId));
+    // Enumerate and remove every per-workspace entry for this user so that
+    // logout leaves no stale data regardless of how many workspaces were visited.
+    const prefix = `omni_sidebar_${clerkId}_`;
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) keysToRemove.push(key);
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+    localStorage.removeItem(getPointerKey(clerkId));
+    // Legacy keys from previous cache shape
+    localStorage.removeItem(`omni_sidebar_${clerkId}`);
     localStorage.removeItem(`omni_modules_${clerkId}`);
   } catch {
     // ignore
