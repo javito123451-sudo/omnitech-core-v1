@@ -10,7 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useClerk, useUser } from "@clerk/react";
-import { useOrg } from "@/lib/orgContext";
+import { useOrg, clearSidebarCacheForOrg } from "@/lib/orgContext";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { authFetch } from "@/lib/authFetch";
 
@@ -257,6 +257,14 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     try {
       await authFetch(`${basePath}/api/control-center/support-session/exit`, { method: "POST" });
     } catch { /* non-critical */ }
+
+    // Clear the override workspace's cache entry so its stale data does not
+    // resurface when the admin's own workspace is loaded next.
+    const overrideOrgId = localStorage.getItem("wsOverride");
+    if (overrideOrgId && clerkUser?.id) {
+      clearSidebarCacheForOrg(clerkUser.id, overrideOrgId);
+    }
+
     localStorage.removeItem("wsOverride");
     localStorage.removeItem("wsOverrideName");
     localStorage.removeItem("wsSupportReason");

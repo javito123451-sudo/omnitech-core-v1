@@ -110,6 +110,15 @@ function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, or
   }
 }
 
+/** Remove the cache entry for a single specific org (used when exiting support mode). */
+export function clearSidebarCacheForOrg(clerkId: string, orgId: string | number) {
+  try {
+    localStorage.removeItem(getCacheKey(clerkId, String(orgId)));
+  } catch {
+    // ignore
+  }
+}
+
 function clearSidebarCache(clerkId: string) {
   try {
     // Enumerate and remove every per-workspace entry for this user so that
@@ -206,6 +215,15 @@ export function OrgProvider({ children }: { children: ReactNode }) {
    */
   const hasCachedData = useRef(false);
 
+  /**
+   * Tracks the last wsOverride value seen by the fetch effect so we can
+   * detect support-mode transitions and immediately wipe stale org state
+   * before the new workspace's API response arrives.
+   */
+  const prevWsOverrideRef = useRef<string | null>(
+    typeof window !== "undefined" ? localStorage.getItem("wsOverride") : null,
+  );
+
   const refetch = () => setTick((t) => t + 1);
 
   const canAccessModule = useCallback(
@@ -257,6 +275,20 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       setPlatformRole("NONE");
       setLoading(false);
       return;
+    }
+
+    // Detect support-mode (wsOverride) transitions so stale org data from the
+    // previous workspace is never shown while the new workspace's fetch is in
+    // flight. We compare against the value seen on the last run of this effect.
+    const wsOverrideNow = localStorage.getItem("wsOverride");
+    if (wsOverrideNow !== prevWsOverrideRef.current) {
+      // wsOverride changed (entered or exited support mode mid-session).
+      // Wipe in-memory org/modules immediately so the sidebar renders nothing
+      // rather than stale data until the API response arrives.
+      prevWsOverrideRef.current = wsOverrideNow;
+      hasCachedData.current = false;
+      setOrg(null);
+      setModules({});
     }
 
     // Only block the UI with a spinner when there is nothing cached to show.
