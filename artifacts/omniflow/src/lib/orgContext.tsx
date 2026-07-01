@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   useCallback,
   type ReactNode,
@@ -198,6 +199,13 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
   const [tick, setTick] = useState(0);
 
+  /**
+   * Set to true as soon as cache data is seeded into state.
+   * When true, the background refresh runs silently — loading is never set
+   * back to true so the cached sidebar stays fully visible during slow fetches.
+   */
+  const hasCachedData = useRef(false);
+
   const refetch = () => setTick((t) => t + 1);
 
   const canAccessModule = useCallback(
@@ -213,14 +221,20 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
   // Seed modules + org from cache as soon as we know the Clerk user ID (handles
   // the cold-login case where clerkUser.id wasn't available during useState init).
+  // When cache data is found we also optimistically unlock loading so the sidebar
+  // stays visible while the background refresh is in flight.
+  // hasCachedData.current is set to !!cached so a cache miss for the current
+  // user explicitly clears a value left by a previous session.
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !clerkUser?.id) return;
     const cached = readSidebarCache(clerkUser.id);
+    hasCachedData.current = !!cached;
     if (cached) {
       setModules((prev) =>
         Object.keys(prev).length === 0 ? { ...cached.modules, crm: true } : prev,
       );
       setOrg((prev) => (prev === null && cached.org ? cached.org : prev));
+      setLoading(false);
     }
   }, [isLoaded, isSignedIn, clerkUser?.id]);
 
@@ -230,6 +244,10 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     const currentClerkId = clerkUser?.id ?? null;
     if (!isSignedIn) {
       if (currentClerkId) clearSidebarCache(currentClerkId);
+      // Reset so a future sign-in starts fresh — a previous session's cached
+      // data must not prevent the loading state from appearing when there is
+      // no cache for the new session.
+      hasCachedData.current = false;
       setOrg(null);
       setUser(null);
       setNeedsSetup(false);
@@ -241,7 +259,15 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setLoading(true);
+    // Only block the UI with a spinner when there is nothing cached to show.
+    // If we already seeded from cache, the fetch runs as a silent background
+    // refresh — the sidebar stays fully visible regardless of how slow the
+    // server is. This effect runs after the cache-seeding effect (defined
+    // earlier in the file), so hasCachedData.current is already up-to-date.
+    if (!hasCachedData.current) {
+      setLoading(true);
+    }
+
     getToken()
       .then(token => {
         const headers: HeadersInit = {
@@ -282,7 +308,9 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch((err) => {
-        console.error("OrgProvider: failed to load user", err);
+        // Background refresh failed — keep showing cached data as-is.
+        // Only log so the user sees no visible error state.
+        console.error("OrgProvider: background refresh failed", err);
       })
       .finally(() => {
         setLoading(false);
