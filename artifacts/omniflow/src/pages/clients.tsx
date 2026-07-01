@@ -19,7 +19,7 @@ import {
 import {
   Search, Plus, Phone, Mail, Building2, Tag, FileText,
   DollarSign, X, Pencil, Trash2, ChevronRight, Clock, User,
-  MessageCircle, Bot, Send, Receipt,
+  MessageCircle, Bot, Send, Receipt, Link2, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -443,7 +443,27 @@ function ClientProfileDialog({
   const [showQuote, setShowQuote]         = useState(false);
   const [showWhatsApp, setShowWhatsApp]   = useState(false);
   const [activeTab, setActiveTab]         = useState<"info" | "messages" | "finanzas">("info");
+  const [portalState, setPortalState]     = useState<"idle" | "loading" | "copied">("idle");
   const tags = parseTags(client.tags);
+
+  const handlePortalLink = async () => {
+    setPortalState("loading");
+    try {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/portal/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id }),
+      });
+      if (!r.ok) throw new Error("Error al generar el enlace");
+      const { token } = await r.json() as { token: string };
+      const url = `${window.location.origin}${import.meta.env.BASE_URL}portal?token=${token}`;
+      await navigator.clipboard.writeText(url);
+      setPortalState("copied");
+      setTimeout(() => setPortalState("idle"), 2500);
+    } catch {
+      setPortalState("idle");
+    }
+  };
 
   const handleDelete = () => {
     deleteClient.mutate({ id: client.id }, {
@@ -625,6 +645,25 @@ function ClientProfileDialog({
                 <span className="mr-1.5">📄</span> Presupuesto IA
               </Button>
             </div>
+            <Button
+              onClick={handlePortalLink}
+              disabled={portalState === "loading"}
+              variant="outline"
+              className={cn(
+                "w-full h-9 text-sm font-medium transition-all",
+                portalState === "copied"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                  : "border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-400"
+              )}
+            >
+              {portalState === "copied" ? (
+                <><Check className="w-3.5 h-3.5 mr-1.5" /> ¡Enlace copiado!</>
+              ) : portalState === "loading" ? (
+                <><div className="w-3.5 h-3.5 mr-1.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> Generando enlace...</>
+              ) : (
+                <><Link2 className="w-3.5 h-3.5 mr-1.5" /> Enviar enlace del portal</>
+              )}
+            </Button>
             <div className="flex gap-2">
               <Button onClick={onEdit} className="flex-1 bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-muted-foreground hover:text-foreground h-9 text-sm" variant="outline">
                 <Pencil className="w-3.5 h-3.5 mr-1.5" /> Editar
