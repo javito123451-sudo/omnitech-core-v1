@@ -174,6 +174,32 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
   cliente: [
     "portal.read",
   ],
+  // ── New workspace roles ───────────────────────────────────────────────
+  // MANAGER: like admin but cannot invite users
+  manager: [
+    "workspace.view", "workspace.edit",
+    "crm.read", "crm.write", "crm.delete", "crm.assign",
+    "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
+    "accounting.read", "accounting.write",
+    "calendar.read", "calendar.write", "calendar.delete",
+    "messages.read", "messages.write",
+    "whatsapp.read", "whatsapp.write",
+    "telegram.read", "telegram.write",
+    "ai.read", "ai.write", "memory.read", "memory.write",
+    "integrations.read",
+    "analytics.read", "executive.read",
+    "settings.read",
+    "users.read",
+    "portal.read",
+  ],
+  // CLIENT: client portal read access only
+  client: [
+    "portal.read",
+  ],
+  // GUEST: workspace view only
+  guest: [
+    "workspace.view",
+  ],
 };
 
 // ── Extend Express Request type ──────────────────────────────────────────────

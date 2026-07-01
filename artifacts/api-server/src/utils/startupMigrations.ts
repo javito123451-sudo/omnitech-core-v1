@@ -371,6 +371,21 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-N: invoices.recurring_invoice_id column ensured");
 
+    // ── FIX-O: users.platform_role column + populate from platform_roles ──────
+    await db.execute(sql`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS platform_role TEXT NOT NULL DEFAULT 'NONE'
+    `);
+    // Populate platform_role from platform_roles for existing users
+    await db.execute(sql`
+      UPDATE users u
+      SET platform_role = pr.role
+      FROM platform_roles pr
+      WHERE pr.clerk_user_id = u.clerk_id
+        AND pr.is_active = true
+        AND u.platform_role = 'NONE'
+    `);
+    logger.info("[Migration] ✅ FIX-O: users.platform_role column ensured + populated from platform_roles");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

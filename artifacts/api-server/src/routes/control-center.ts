@@ -235,7 +235,7 @@ controlCenterRouter.post("/workspaces/:id/assign-user", async (req, res) => {
     .where(eq(usersTable.email, email.trim().toLowerCase()));
   if (!user) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
 
-  const VALID = ["owner", "admin", "member", "read_only", "vendedor"];
+  const VALID = ["owner", "admin", "manager", "member", "client", "guest", "read_only", "vendedor", "cliente"];
   if (!VALID.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
 
   // Check if already a member
@@ -279,7 +279,7 @@ controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) =
     res.status(400).json({ error: "Formato de email inválido" }); return;
   }
 
-  const VALID = ["owner", "admin", "member", "read_only", "vendedor"];
+  const VALID = ["owner", "admin", "manager", "member", "client", "guest", "read_only", "vendedor", "cliente"];
   if (!VALID.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
 
   // Check if user already exists
@@ -566,11 +566,11 @@ controlCenterRouter.get("/users", async (_req, res) => {
   res.json(enriched);
 });
 
-// ── PATCH /users/:clerkId — change CRM role ───────────────────────────────────
+// ── PATCH /users/:clerkId — change workspace role ─────────────────────────────
 controlCenterRouter.patch("/users/:clerkId", async (req, res) => {
   const { clerkId } = req.params;
   const { orgId, role } = req.body as { orgId: number; role: string };
-  const VALID_ROLES = ["owner", "admin", "member", "read_only", "vendedor"];
+  const VALID_ROLES = ["owner", "admin", "manager", "member", "client", "guest", "read_only", "vendedor", "cliente"];
   if (!VALID_ROLES.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
 
   const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.clerkId, clerkId));
@@ -756,6 +756,8 @@ controlCenterRouter.post("/platform-roles", async (req, res) => {
   await db.insert(platformRolesTable)
     .values({ clerkUserId, role, displayName: displayName ?? null, email: email ?? null, notes: notes ?? null, grantedBy: req.clerkUserId })
     .onConflictDoUpdate({ target: [platformRolesTable.clerkUserId], set: { role, isActive: true, updatedAt: new Date() } });
+  // Sync users.platform_role for immediate effect
+  await db.execute(sql`UPDATE users SET platform_role = ${role} WHERE clerk_id = ${clerkUserId}`);
   clearRoleCache(clerkUserId);
   await logAudit({ actorClerkId: req.clerkUserId!, action: "platform_role_granted", resource: "platform_role", resourceId: clerkUserId, details: { role }, severity: "warning", req });
   res.json({ ok: true });
@@ -766,6 +768,8 @@ controlCenterRouter.delete("/platform-roles/:clerkUserId", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede revocar roles" }); return; }
   const { clerkUserId } = req.params;
   await db.update(platformRolesTable).set({ isActive: false, updatedAt: new Date() }).where(eq(platformRolesTable.clerkUserId, clerkUserId));
+  // Sync users.platform_role back to NONE
+  await db.execute(sql`UPDATE users SET platform_role = 'NONE' WHERE clerk_id = ${clerkUserId}`);
   clearRoleCache(clerkUserId);
   await logAudit({ actorClerkId: req.clerkUserId!, action: "platform_role_revoked", resource: "platform_role", resourceId: clerkUserId, severity: "warning", req });
   res.json({ ok: true });

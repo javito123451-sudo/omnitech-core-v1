@@ -152,14 +152,19 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       ? getPermissionsForRole(primaryMembership.role)
       : new Set<string>();
 
+    // ── Resolve platform role from platform_roles table ────────────────────
+    const resolvedPlatformRole = user.platformRole ?? "NONE";
+
     const responsePayload = {
       user: {
-        id:        user.id,
-        clerkId:   user.clerkId,
-        email:     user.email,
-        name:      user.name,
-        avatarUrl: user.avatarUrl,
+        id:           user.id,
+        clerkId:      user.clerkId,
+        email:        user.email,
+        name:         user.name,
+        avatarUrl:    user.avatarUrl,
+        platformRole: resolvedPlatformRole,
       },
+      platformRole: resolvedPlatformRole,
       organization: primaryMembership
         ? {
             id:      primaryMembership.orgId,

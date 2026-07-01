@@ -43,12 +43,23 @@ const PLAN_COLORS: Record<string, string> = {
 const ROLE_COLORS: Record<string, string> = {
   owner:     "bg-amber-500/20 text-amber-400",
   admin:     "bg-blue-500/20 text-blue-400",
+  manager:   "bg-cyan-500/20 text-cyan-400",
   member:    "bg-slate-500/20 text-slate-300",
+  client:    "bg-emerald-500/20 text-emerald-400",
+  guest:     "bg-slate-600/20 text-slate-500",
   read_only: "bg-slate-600/20 text-slate-400",
+  vendedor:  "bg-orange-500/20 text-orange-400",
+  cliente:   "bg-emerald-500/20 text-emerald-400",
 };
 
 const ROLE_ICON: Record<string, React.ElementType> = {
-  owner: Crown, admin: Shield, member: Users, read_only: Eye,
+  owner:     Crown,
+  admin:     Shield,
+  manager:   UserCheck,
+  member:    Users,
+  client:    Eye,
+  guest:     Eye,
+  read_only: Eye,
 };
 
 const SEV_STYLES: Record<string, { icon: React.ElementType; color: string }> = {
@@ -363,7 +374,7 @@ export default function WorkspaceDetailPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.06]">
-                  {["Usuario", "Rol CRM", "Estado", "Miembro desde"].map(h => (
+                  {["Usuario", "Rol Workspace", "Estado", "Miembro desde"].map(h => (
                     <th key={h} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-5 py-4">{h}</th>
                   ))}
                 </tr>

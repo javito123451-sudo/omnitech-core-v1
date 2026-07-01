@@ -27,6 +27,7 @@ export interface UserInfo {
   email: string;
   name: string | null;
   avatarUrl?: string | null;
+  platformRole?: string;
 }
 
 interface SidebarCache {
@@ -93,6 +94,8 @@ interface OrgContextValue {
   hasPermission: (perm: string) => boolean;
   /** All organizations this user belongs to (multi-workspace) */
   organizations: OrgInfo[];
+  /** Global platform role (SUPER_ADMIN / STAFF_OMNITECH / NONE / etc.) */
+  platformRole: string;
   refetch: () => void;
 }
 
@@ -106,6 +109,7 @@ const OrgContext = createContext<OrgContextValue>({
   permissions: [],
   hasPermission: () => false,
   organizations: [],
+  platformRole: "NONE",
   refetch: () => {},
 });
 
@@ -121,6 +125,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [organizations, setOrganizations] = useState<OrgInfo[]>([]);
+  const [platformRole, setPlatformRole] = useState<string>("NONE");
 
   const hasPermission = useCallback(
     (perm: string): boolean => permissions.includes(perm),
@@ -183,6 +188,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       setModules({});
       setPermissions([]);
       setOrganizations([]);
+      setPlatformRole("NONE");
       setLoading(false);
       return;
     }
@@ -206,9 +212,10 @@ export function OrgProvider({ children }: { children: ReactNode }) {
           modules: Record<string, boolean>;
           modulesVersion: number;
           permissions: string[];
+          platformRole?: string;
         }>;
       })
-      .then(({ user: u, organization, organizations: orgs, modules: mods, permissions: perms, modulesVersion: serverVersion }) => {
+      .then(({ user: u, organization, organizations: orgs, modules: mods, permissions: perms, modulesVersion: serverVersion, platformRole: pRole }) => {
         const freshModules = { ...mods, crm: true };
         const version = serverVersion ?? 0;
         setUser(u);
@@ -217,6 +224,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         setNeedsSetup(!organization);
         setModules(freshModules);
         setPermissions(perms ?? []);
+        setPlatformRole(pRole ?? u?.platformRole ?? "NONE");
         if (u?.clerkId) {
           const cached = readSidebarCache(u.clerkId);
           if (!cached || cached.version < version) {
@@ -234,7 +242,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   }, [isSignedIn, isLoaded, tick]);
 
   return (
-    <OrgContext.Provider value={{ org, user, loading, needsSetup, modules, canAccessModule, permissions, hasPermission, organizations, refetch }}>
+    <OrgContext.Provider value={{ org, user, loading, needsSetup, modules, canAccessModule, permissions, hasPermission, organizations, platformRole, refetch }}>
       {children}
     </OrgContext.Provider>
   );

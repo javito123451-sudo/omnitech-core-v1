@@ -23,12 +23,16 @@ type Tab = "all" | "admins";
 const ROLE_COLORS: Record<string, string> = {
   owner:          "bg-amber-500/20 text-amber-400",
   admin:          "bg-blue-500/20 text-blue-400",
+  manager:        "bg-cyan-500/20 text-cyan-400",
   member:         "bg-slate-500/20 text-slate-300",
+  client:         "bg-emerald-500/20 text-emerald-400",
+  guest:          "bg-slate-600/20 text-slate-500",
   read_only:      "bg-slate-600/20 text-slate-400",
+  vendedor:       "bg-orange-500/20 text-orange-400",
   SUPER_ADMIN:    "bg-violet-500/20 text-violet-400",
   STAFF_OMNITECH: "bg-pink-500/20 text-pink-400",
 };
-const CRM_ROLES = ["owner", "admin", "member", "read_only"] as const;
+const WORKSPACE_ROLES = ["owner", "admin", "manager", "member", "client", "guest", "read_only", "vendedor"] as const;
 
 function RoleDropdown({ user, onSuccess }: { user: PlatformUser; onSuccess: () => void }) {
   const qc = useQueryClient();
@@ -50,7 +54,7 @@ function RoleDropdown({ user, onSuccess }: { user: PlatformUser; onSuccess: () =
         </button>
       }
     >
-      {CRM_ROLES.map(r => (
+      {WORKSPACE_ROLES.map(r => (
         <button
           key={r}
           disabled={r === user.orgRole || mut.isPending}
@@ -288,7 +292,7 @@ export default function UsersPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/[0.06]">
-                {["Usuario", "Workspace", "Rol CRM", "Rol Plataforma", "Estado", "Creado", "Acciones"].map(h => (
+                {["Usuario", "Workspace", "Rol Workspace", "Rol Plataforma", "Estado", "Creado", "Acciones"].map(h => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-5 py-4">{h}</th>
                 ))}
               </tr>

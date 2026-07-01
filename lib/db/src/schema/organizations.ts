@@ -47,6 +47,8 @@ export const usersTable = pgTable("users", {
   status:          text("status").notNull().default("active"),
   suspendedReason: text("suspended_reason"),
   suspendedAt:     timestamp("suspended_at"),
+  // ── Platform role (global, OmniTech-internal) ──────────────────────────
+  platformRole:    text("platform_role").notNull().default("NONE"),
   // ── Security / RBAC fields (nullable for backward compat) ──────────────
   assignedOrgId:   integer("assigned_org_id"),           // default workspace
   assignedCompanyId: integer("assigned_company_id"),     // company grouping
