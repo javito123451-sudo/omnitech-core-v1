@@ -623,6 +623,7 @@ controlCenterRouter.get("/modules", async (_req, res) => {
     { slug: "omni_accounting",name: "Omni Accounting",         description: "Facturación, pagos y contabilidad",      alwaysOn: false },
     { slug: "omni_diagnostics",name: "Omni Diagnostics",      description: "Diagnóstico y salud del sistema",        alwaysOn: false },
     { slug: "omni_tax",         name: "OmniTax",                description: "Motor fiscal, calendario y simuladores", alwaysOn: false },
+    { slug: "omni_ads",         name: "OmniAds",                description: "Centro de publicidad con IA — campañas, creativos, analíticas", alwaysOn: false },
   ];
   const configs = await db.select().from(moduleConfigsTable);
   const orgs    = await db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable);
@@ -997,6 +998,7 @@ controlCenterRouter.get("/module-matrix", async (_req, res) => {
     { slug: "automations",    name: "Automations",        alwaysOn: false, layers: ["menu", "route"],                   frontendKey: "automations"   },
     { slug: "omni_diagnostics", name: "Omni Diagnostics", alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_diagnostics"},
     { slug: "omni_tax",         name: "OmniTax",          alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_tax"        },
+    { slug: "omni_ads",         name: "OmniAds",          alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_ads"        },
   ];
 
   const [allConfigs, orgs] = await Promise.all([
@@ -1146,7 +1148,7 @@ controlCenterRouter.post("/onboard-wizard/create", async (req, res) => {
     const MODULE_CATALOG_SLUGS = [
       "crm", "quotes", "omni_accounting", "omni_tax", "ai_agents", "automations",
       "analytics", "integrations", "whatsapp", "omni_import_ai", "knowledge_base",
-      "portal_cliente", "omni_docs",
+      "portal_cliente", "omni_docs", "omni_ads", "omni_marketing",
     ];
     const requestedModules = payload.modules ?? [];
     for (const modSlug of MODULE_CATALOG_SLUGS) {

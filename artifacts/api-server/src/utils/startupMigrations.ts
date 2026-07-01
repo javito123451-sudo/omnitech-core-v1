@@ -386,6 +386,55 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-O: users.platform_role column ensured + populated from platform_roles");
 
+    // ── FIX-P: OmniAds tables ─────────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ads_campaigns (
+        id              SERIAL PRIMARY KEY,
+        org_id          INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'draft',
+        business_name   TEXT,
+        business_type   TEXT,
+        product         TEXT,
+        target_audience TEXT,
+        goal            TEXT,
+        budget          NUMERIC(12,2),
+        platforms       JSONB NOT NULL DEFAULT '[]',
+        ai_content      JSONB,
+        impressions     INTEGER NOT NULL DEFAULT 0,
+        clicks          INTEGER NOT NULL DEFAULT 0,
+        leads           INTEGER NOT NULL DEFAULT 0,
+        conversions     INTEGER NOT NULL DEFAULT 0,
+        roi             NUMERIC(10,2) NOT NULL DEFAULT 0,
+        spend           NUMERIC(12,2) NOT NULL DEFAULT 0,
+        created_by      TEXT,
+        scheduled_at    TIMESTAMP,
+        launched_at     TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ads_campaigns_org_id_idx ON ads_campaigns(org_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ads_creatives (
+        id          SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES ads_campaigns(id) ON DELETE CASCADE,
+        org_id      INTEGER NOT NULL,
+        type        TEXT NOT NULL,
+        platform    TEXT,
+        title       TEXT,
+        content     JSONB NOT NULL DEFAULT '{}',
+        status      TEXT NOT NULL DEFAULT 'draft',
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ads_creatives_campaign_id_idx ON ads_creatives(campaign_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ads_creatives_org_id_idx     ON ads_creatives(org_id)`);
+
+    logger.info("[Migration] ✅ FIX-P: OmniAds tables (ads_campaigns, ads_creatives) ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
