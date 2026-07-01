@@ -83,6 +83,7 @@ function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, or
     // Use a sentinel when org is null so the slot is still written and the
     // pointer is not left pointing at a different workspace.
     const newOrgId = org ? String(org.id) : "no-org";
+    const newKey = getCacheKey(clerkId, newOrgId);
 
     const entry: SidebarCache = {
       modules,
@@ -90,7 +91,7 @@ function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, or
       expiresAt: Date.now() + MODULES_CACHE_TTL_MS,
       version,
     };
-    localStorage.setItem(getCacheKey(clerkId, newOrgId), JSON.stringify(entry));
+    localStorage.setItem(newKey, JSON.stringify(entry));
 
     // Only advance the pointer when NOT in support/override mode.
     // The pointer is the fallback `readSidebarCache` uses after `wsOverride`
@@ -101,6 +102,17 @@ function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, or
     if (!wsOverride) {
       localStorage.setItem(getPointerKey(clerkId), newOrgId);
     }
+
+    // Prune every other per-workspace entry for this user so that support-mode
+    // visits across many workspaces never accumulate orphan keys in localStorage.
+    // We keep only the entry we just wrote; the pointer key is left intact.
+    const prefix = `omni_sidebar_${clerkId}_`;
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix) && key !== newKey) keysToRemove.push(key);
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
 
     // Remove legacy keys from previous cache shape.
     localStorage.removeItem(`omni_sidebar_${clerkId}`);
