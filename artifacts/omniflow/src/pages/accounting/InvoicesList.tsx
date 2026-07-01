@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import {
   Plus, Download, Search, ChevronDown, Check, X, Clock,
-  AlertTriangle, FileText, Trash2, Eye, FileInput, Link2,
+  AlertTriangle, FileText, Trash2, Eye, FileInput, Link2, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import InvoiceModal from "./InvoiceModal";
@@ -25,6 +25,7 @@ interface Invoice {
   clientId: number | null;
   clientName: string | null;
   clientCompany: string | null;
+  paymentNotificationPending: boolean;
 }
 
 interface InvoicesResponse {
@@ -193,10 +194,21 @@ export default function InvoicesList() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border", sc.color)}>
-                        <Icon className="w-3 h-3" />
-                        {isOverdue && inv.status === "sent" ? "Vencida" : sc.label}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border", sc.color)}>
+                          <Icon className="w-3 h-3" />
+                          {isOverdue && inv.status === "sent" ? "Vencida" : sc.label}
+                        </span>
+                        {inv.paymentNotificationPending && inv.status !== "paid" && inv.status !== "cancelled" && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-400 border border-amber-500/25"
+                            title="El cliente ha notificado que realizó el pago — pendiente de confirmar"
+                          >
+                            <Bell className="w-2.5 h-2.5" />
+                            Pago notificado
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
                       {inv.dueDate

@@ -1,8 +1,9 @@
 /**
  * Public invoice viewer — accessible via /invoice/:token (no auth required)
  */
-import { useQuery } from "@tanstack/react-query";
-import { Download, FileText, CheckCircle, Clock, AlertTriangle, X } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Download, FileText, CheckCircle, Clock, AlertTriangle, X, Bell, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -45,6 +46,9 @@ function fmtDate(d: string | null) {
 
 export default function PublicInvoicePage() {
   const token = window.location.pathname.split("/invoice/")[1] ?? "";
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [reference, setReference]     = useState("");
+  const [notified, setNotified]       = useState(false);
 
   const { data: inv, isLoading, isError } = useQuery<PublicInvoice>({
     queryKey: ["public-invoice", token],
@@ -55,6 +59,21 @@ export default function PublicInvoicePage() {
     },
     enabled: !!token,
     retry: false,
+  });
+
+  const notifyMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${BASE}/api/accounting-public/invoices/${token}/notify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference: reference.trim() }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Error al enviar notificación");
+    },
+    onSuccess: () => {
+      setNotified(true);
+      setShowPayForm(false);
+    },
   });
 
   const downloadPdf = () => {
@@ -85,8 +104,10 @@ export default function PublicInvoicePage() {
 
   const sc = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG["draft"]!;
   const Icon = sc.icon;
-  const isOverdue = inv.status === "overdue";
-  const isPaid    = inv.status === "paid";
+  const isOverdue  = inv.status === "overdue";
+  const isPaid     = inv.status === "paid";
+  const isCancelled = inv.status === "cancelled";
+  const canNotify  = !isPaid && !isCancelled && !notified;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -122,6 +143,17 @@ export default function PublicInvoicePage() {
             )}
           </div>
         </div>
+
+        {/* Payment notification success banner */}
+        {notified && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+            <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            <div>
+              <p className="font-semibold">Notificación enviada</p>
+              <p className="text-xs opacity-70">Tu proveedor recibirá el aviso y confirmará el pago.</p>
+            </div>
+          </div>
+        )}
 
         {/* Client + dates */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -202,6 +234,71 @@ export default function PublicInvoicePage() {
           <div className="bg-slate-800/40 border border-white/5 rounded-xl p-4">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Notas</p>
             <p className="text-sm text-slate-300 whitespace-pre-wrap">{inv.notes}</p>
+          </div>
+        )}
+
+        {/* Notify payment section */}
+        {canNotify && (
+          <div className="bg-slate-800/40 border border-amber-500/20 rounded-xl p-5">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                <Bell className="w-4 h-4 text-amber-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-white">¿Ya has realizado el pago?</p>
+                <p className="text-sm text-slate-400 mt-0.5">
+                  Si has pagado por transferencia bancaria, notifica a tu proveedor para que confirme el cobro.
+                </p>
+              </div>
+            </div>
+
+            {!showPayForm ? (
+              <button
+                onClick={() => setShowPayForm(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-medium rounded-lg transition-colors"
+              >
+                <Bell className="w-4 h-4" /> He realizado el pago — notificar a mi proveedor
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    Referencia o localizador de transferencia <span className="text-slate-600">(opcional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={reference}
+                    onChange={e => setReference(e.target.value)}
+                    placeholder="Ej: REF-20240701-001, últimos 4 dígitos de la cuenta…"
+                    maxLength={500}
+                    className="w-full bg-slate-900/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+                  />
+                </div>
+                {notifyMut.isError && (
+                  <p className="text-xs text-rose-400">{(notifyMut.error as Error)?.message}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => notifyMut.mutate()}
+                    disabled={notifyMut.isPending}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {notifyMut.isPending ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                    Enviar notificación
+                  </button>
+                  <button
+                    onClick={() => setShowPayForm(false)}
+                    className="px-4 py-2.5 text-slate-400 hover:text-white text-sm rounded-lg transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

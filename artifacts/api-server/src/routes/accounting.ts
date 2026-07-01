@@ -178,6 +178,18 @@ accountingRouter.get("/invoices", requirePermission("accounting.read"), async (r
     .leftJoin(clientsTable, eq(invoicesTable.clientId, clientsTable.id))
     .where(countWhere);
 
+  // Fetch payment notification pending flags for these invoices in one query
+  const ids = rows.map(r => r.id);
+  let paymentPendingMap: Record<number, boolean> = {};
+  if (ids.length > 0) {
+    const flagRows = await db.execute(sql`
+      SELECT id, payment_notification_pending FROM invoices WHERE id = ANY(${ids})
+    `) as unknown as { rows: Array<{ id: number; payment_notification_pending: boolean }> };
+    for (const fr of flagRows.rows) {
+      paymentPendingMap[fr.id] = Boolean(fr.payment_notification_pending);
+    }
+  }
+
   res.json({
     invoices: rows.map(r => ({
       ...r,
@@ -185,6 +197,7 @@ accountingRouter.get("/invoices", requirePermission("accounting.read"), async (r
       taxRate:   parseFloat(String(r.taxRate)),
       taxAmount: parseFloat(String(r.taxAmount)),
       total:     parseFloat(String(r.total)),
+      paymentNotificationPending: paymentPendingMap[r.id] ?? false,
     })),
     total: Number(totalCount),
     limit,
@@ -1105,6 +1118,53 @@ publicAccountingRouter.get("/invoices/:token", async (req, res) => {
   const inv = await getInvoiceByToken(token);
   if (!inv) { res.status(404).json({ error: "Factura no encontrada o enlace expirado" }); return; }
   res.json(inv);
+});
+
+// POST /api/accounting-public/invoices/:token/notify-payment
+publicAccountingRouter.post("/invoices/:token/notify-payment", async (req, res) => {
+  const token = req.params["token"];
+  if (!token) { res.status(400).json({ error: "Token requerido" }); return; }
+  const inv = await getInvoiceByToken(token);
+  if (!inv) { res.status(404).json({ error: "Factura no encontrada o enlace expirado" }); return; }
+
+  if (inv.status === "paid") {
+    res.status(422).json({ error: "Esta factura ya está registrada como pagada" }); return;
+  }
+  if (inv.status === "cancelled") {
+    res.status(422).json({ error: "No se puede notificar el pago de una factura cancelada" }); return;
+  }
+
+  const reference = String(req.body?.reference ?? "").trim().slice(0, 500) || null;
+
+  await db.execute(sql`
+    UPDATE invoices
+    SET payment_notification_pending = TRUE,
+        payment_reference            = ${reference},
+        payment_notified_at          = NOW(),
+        updated_at                   = NOW()
+    WHERE id = ${inv.id}
+  `);
+
+  // Log in-app notification (audit log so staff can see it in Auditoría)
+  try {
+    await db.execute(sql`
+      INSERT INTO audit_logs (actor_clerk_id, action, resource, resource_id, org_id, severity, meta, created_at)
+      VALUES (
+        'client',
+        'payment_notification_received',
+        'invoice',
+        ${inv.id},
+        (SELECT org_id FROM invoices WHERE id = ${inv.id} LIMIT 1),
+        'info',
+        ${JSON.stringify({ invoiceNumber: inv.invoiceNumber, reference })},
+        NOW()
+      )
+    `);
+  } catch {
+    // non-fatal — audit log failure should not break the public flow
+  }
+
+  res.json({ ok: true });
 });
 
 // GET /api/accounting-public/invoices/:token/pdf

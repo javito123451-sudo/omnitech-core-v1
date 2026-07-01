@@ -456,6 +456,18 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info("[Migration] ✅ FIX-R: no share tokens needed backfill");
     }
 
+    // ── FIX-S: payment notification columns on invoices ───────────────────────
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_notification_pending BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_reference TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_notified_at TIMESTAMP
+    `);
+    logger.info("[Migration] ✅ FIX-S: invoices payment notification columns ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
