@@ -5,7 +5,7 @@ import {
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, ShieldCheck, Sparkles, Bot, BookOpen,
   Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
-  Ticket, Rocket, LogOut as LogOutIcon,
+  Ticket, Rocket, LogOut as LogOutIcon, Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -72,6 +72,12 @@ const sidebarGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Marketing",
+    items: [
+      { icon: Megaphone, label: "Omni Marketing Hub", href: "/marketing", moduleKey: "omni_marketing" },
+    ],
+  },
+  {
     label: "Sistema",
     items: [
       { icon: Zap,      label: "Ava Autopilot",  href: "/automations",   moduleKey: "automations" },
@@ -122,6 +128,7 @@ const moreItems: MoreItem[] = [
   { icon: Zap,             label: "Ava Autopilot",   href: "/automations",    group: "Sistema",    moduleKey: "automations" },
   { icon: Receipt,         label: "Contabilidad",    href: "/accounting",     group: "Finanzas",   moduleKey: "omni_accounting" },
   { icon: Target,          label: "Pipeline",        href: "/pipeline",       group: "Análisis",   moduleKey: "crm" },
+  { icon: Megaphone,       label: "Omni Marketing Hub", href: "/marketing",   group: "Marketing",  moduleKey: "omni_marketing" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

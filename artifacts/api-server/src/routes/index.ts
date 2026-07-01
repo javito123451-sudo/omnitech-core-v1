@@ -34,6 +34,7 @@ import { pipelineRouter } from "./pipeline";
 import { onboardingRouter } from "./onboarding";
 import { supportRouter } from "./support";
 import { taxRouter } from "./tax";
+import { marketingRouter } from "./marketing";
 
 const router: IRouter = Router();
 
@@ -101,5 +102,6 @@ router.use("/pipeline",       requireModule("crm"), pipelineRouter);
 router.use("/onboarding",     onboardingRouter);
 router.use("/support",        supportRouter);
 router.use("/tax",            requireModule("omni_tax"), taxRouter);
+router.use("/marketing",      requireModule("omni_marketing"), marketingRouter);
 
 export default router;

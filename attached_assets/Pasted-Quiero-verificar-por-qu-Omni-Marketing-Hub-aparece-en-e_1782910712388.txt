@@ -1,0 +1,160 @@
+Quiero verificar por qué **Omni Marketing Hub** aparece en el **Control Center** pero no está disponible en la aplicación para los usuarios.
+
+No quiero una explicación teórica. Quiero que inspecciones el proyecto, detectes el problema y lo soluciones automáticamente.
+
+## Verificaciones
+
+Comprueba los siguientes puntos:
+
+### 1. Registro del módulo
+
+Verifica que Omni Marketing Hub esté registrado correctamente dentro del sistema de módulos.
+
+Si no está registrado, regístralo.
+
+---
+
+### 2. Rutas
+
+Comprueba que exista una ruta para Marketing Hub.
+
+Ejemplo:
+
+* /marketing
+* /marketing-hub
+
+Si no existe, créala.
+
+La ruta debe cargar el componente principal del módulo.
+
+---
+
+### 3. Navegación
+
+Comprueba que el módulo aparezca en el menú lateral del Dashboard.
+
+Si falta, añádelo automáticamente.
+
+Debe mostrarse junto al resto de módulos principales.
+
+Icono recomendado:
+
+Megaphone o Bullhorn.
+
+Nombre:
+
+Omni Marketing Hub
+
+---
+
+### 4. Dashboard
+
+Verifica que el Dashboard pueda acceder al módulo.
+
+Si existen tarjetas de acceso rápido, añade Marketing Hub.
+
+---
+
+### 5. Permisos
+
+Comprueba los permisos.
+
+Debe ser visible para:
+
+* Super Admin
+* Owner
+* Administrador
+
+No debe aparecer oculto por error.
+
+---
+
+### 6. Feature Flags
+
+Comprueba si existe algún:
+
+* featureFlag
+* enabled
+* beta
+* hidden
+* experimental
+
+Si Marketing Hub está deshabilitado, actívalo.
+
+---
+
+### 7. Workspace
+
+Verifica que el módulo esté habilitado para el Workspace actual.
+
+Si no lo está, habilítalo automáticamente.
+
+---
+
+### 8. Lazy Loading
+
+Si la aplicación carga módulos dinámicamente, verifica que Marketing Hub esté incluido.
+
+Si falta la importación dinámica, añádela.
+
+---
+
+### 9. Sidebar
+
+Comprueba que el menú lateral incluya:
+
+Dashboard
+
+CRM
+
+Agenda
+
+Facturación
+
+Automatizaciones
+
+Omni Hub
+
+Omni Marketing Hub
+
+Configuración
+
+Si Marketing Hub no aparece, añádelo respetando el diseño actual.
+
+---
+
+### 10. Control Center
+
+Si el módulo ya existe y es accesible desde Control Center, reutiliza esa implementación.
+
+No crees un módulo nuevo.
+
+Debe usar el mismo componente.
+
+---
+
+## Reparación automática
+
+Si detectas cualquier problema:
+
+* Corrígelo automáticamente.
+* Actualiza rutas.
+* Actualiza navegación.
+* Actualiza permisos.
+* Actualiza registros del módulo.
+* Actualiza imports.
+
+No dejes cambios a medias.
+
+---
+
+## Al finalizar
+
+Devuélveme un informe indicando:
+
+* Qué problema encontraste.
+* Qué archivos modificaste.
+* Qué cambios realizaste.
+* Cómo acceder ahora a Omni Marketing Hub desde la aplicación.
+
+No elimines funcionalidad existente ni dupliques componentes. Reutiliza siempre el módulo ya implementado y deja la aplicación completamente funcional.

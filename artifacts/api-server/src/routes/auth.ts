@@ -135,8 +135,8 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     // Scale: all modules
     const planModules: Record<string, string[]> = {
       starter: ["crm"],
-      growth:  ["crm", "ai_agents", "analytics", "integrations", "automations"],
-      scale:   ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax"],
+      growth:  ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
+      scale:   ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax", "omni_marketing"],
       free:    ["crm"],
     };
     const plan = primaryMembership?.orgPlan ?? "starter";
