@@ -16,6 +16,7 @@ import { sql } from "drizzle-orm";
 import { requireAuth, resolveOrg } from "../middlewares/auth";
 import crypto from "node:crypto";
 import { logAudit } from "../utils/auditLogger";
+import { sendPortalEmail } from "../lib/email";
 
 export const portalRouter = Router();
 
@@ -139,15 +140,20 @@ portalRouter.get("/invoices/:id", async (req, res) => {
 });
 
 // ── POST /api/portal/token — internal, requires Clerk auth ───────────────────
-// Body: { clientId: number, expiresInDays?: number }
+// Body: { clientId: number, expiresInDays?: number, siteUrl?: string }
 portalRouter.post("/token", requireAuth, resolveOrg, async (req, res) => {
   const orgId    = (req as Request & { orgId?: number }).orgId;
-  const { clientId, expiresInDays = 30 } = req.body as { clientId: number; expiresInDays?: number };
+  const { clientId, expiresInDays = 30, siteUrl } = req.body as {
+    clientId: number;
+    expiresInDays?: number;
+    siteUrl?: string;
+  };
   if (!clientId) { res.status(400).json({ error: "clientId requerido" }); return; }
   if (!orgId)    { res.status(403).json({ error: "Sin organización" }); return; }
 
-  // Validate client belongs to this org
-  const [client] = await db.select({ id: clientsTable.id, name: clientsTable.name })
+  // Validate client belongs to this org — also fetch email for the portal email
+  const [client] = await db
+    .select({ id: clientsTable.id, name: clientsTable.name, email: clientsTable.email })
     .from(clientsTable)
     .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, orgId)));
   if (!client) { res.status(404).json({ error: "Cliente no encontrado" }); return; }
@@ -173,5 +179,26 @@ portalRouter.post("/token", requireAuth, resolveOrg, async (req, res) => {
     req,
   });
 
-  res.json({ token, expiresAt, clientId, orgId });
+  // Send portal email if client has an email and the caller supplied their site URL
+  let emailSent = false;
+  if (client.email && siteUrl) {
+    try {
+      const orgRow = await db.execute(sql`
+        SELECT name FROM organizations WHERE id = ${orgId} LIMIT 1
+      `) as unknown as { rows: Array<{ name: string }> };
+      const orgName = orgRow.rows[0]?.name ?? "Tu proveedor";
+      const portalUrl = `${siteUrl.replace(/\/$/, "")}/portal?token=${token}`;
+      emailSent = await sendPortalEmail({
+        to:         client.email,
+        clientName: client.name,
+        orgName,
+        portalUrl,
+        expiresAt,
+      });
+    } catch (err) {
+      console.error("[portal] sendPortalEmail failed (non-fatal):", err);
+    }
+  }
+
+  res.json({ token, expiresAt, clientId, orgId, emailSent });
 });

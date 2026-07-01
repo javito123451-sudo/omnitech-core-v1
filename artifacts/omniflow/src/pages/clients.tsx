@@ -443,7 +443,7 @@ function ClientProfileDialog({
   const [showQuote, setShowQuote]         = useState(false);
   const [showWhatsApp, setShowWhatsApp]   = useState(false);
   const [activeTab, setActiveTab]         = useState<"info" | "messages" | "finanzas">("info");
-  const [portalState, setPortalState]     = useState<"idle" | "loading" | "copied">("idle");
+  const [portalState, setPortalState] = useState<"idle" | "loading" | "copied" | "sent">("idle");
   const tags = parseTags(client.tags);
 
   const handlePortalLink = async () => {
@@ -452,14 +452,19 @@ function ClientProfileDialog({
       const r = await authFetch(`${import.meta.env.BASE_URL}api/portal/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: client.id }),
+        body: JSON.stringify({
+          clientId: client.id,
+          siteUrl:  window.location.origin,
+        }),
       });
       if (!r.ok) throw new Error("Error al generar el enlace");
-      const { token } = await r.json() as { token: string };
+      const { token, emailSent } = await r.json() as { token: string; emailSent: boolean };
       const url = `${window.location.origin}${import.meta.env.BASE_URL}portal?token=${token}`;
-      await navigator.clipboard.writeText(url);
-      setPortalState("copied");
-      setTimeout(() => setPortalState("idle"), 2500);
+      if (!emailSent) {
+        await navigator.clipboard.writeText(url);
+      }
+      setPortalState(emailSent ? "sent" : "copied");
+      setTimeout(() => setPortalState("idle"), 3000);
     } catch {
       setPortalState("idle");
     }
@@ -651,12 +656,14 @@ function ClientProfileDialog({
               variant="outline"
               className={cn(
                 "w-full h-9 text-sm font-medium transition-all",
-                portalState === "copied"
+                portalState === "copied" || portalState === "sent"
                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
                   : "border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-400"
               )}
             >
-              {portalState === "copied" ? (
+              {portalState === "sent" ? (
+                <><Check className="w-3.5 h-3.5 mr-1.5" /> ¡Enlace enviado por email!</>
+              ) : portalState === "copied" ? (
                 <><Check className="w-3.5 h-3.5 mr-1.5" /> ¡Enlace copiado!</>
               ) : portalState === "loading" ? (
                 <><div className="w-3.5 h-3.5 mr-1.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" /> Generando enlace...</>
