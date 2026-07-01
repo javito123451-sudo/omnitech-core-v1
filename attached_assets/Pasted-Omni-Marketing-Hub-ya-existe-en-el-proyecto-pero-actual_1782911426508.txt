@@ -1,0 +1,167 @@
+Omni Marketing Hub ya existe en el proyecto, pero actualmente no está completamente operativo.
+
+No quiero que lo vuelvas a crear.
+
+Quiero que hagas una auditoría completa del módulo y lo dejes 100 % funcional.
+
+## Objetivo
+
+Analiza toda la implementación existente y detecta qué partes están incompletas, desconectadas o pendientes.
+
+No sustituyas código que ya funciona. Reutiliza todo lo existente.
+
+---
+
+## Revisa los siguientes puntos
+
+### 1. Navegación
+
+* ¿Se puede acceder desde el Dashboard?
+* ¿Existe entrada en el menú lateral?
+* ¿La ruta funciona correctamente?
+
+---
+
+### 2. Pantalla principal
+
+Comprueba que carga correctamente.
+
+Debe mostrar:
+
+* Dashboard
+* Campañas
+* Automatizaciones
+* Audiencias
+* Plantillas
+* Analítica
+* Configuración
+
+Si alguna sección existe pero no está conectada, conéctala.
+
+---
+
+### 3. Campañas
+
+Verifica que se pueda:
+
+* Crear
+* Editar
+* Duplicar
+* Eliminar
+* Publicar
+* Pausar
+* Finalizar
+
+Si alguna acción está pendiente, impleméntala reutilizando la arquitectura existente.
+
+---
+
+### 4. Base de datos
+
+Comprueba que:
+
+* Las campañas se guardan correctamente.
+* Se recuperan al recargar.
+* Se actualizan.
+* Se eliminan correctamente.
+
+Si existen tablas incompletas o modelos pendientes, complétalos.
+
+---
+
+### 5. Integración con CRM
+
+Verifica que pueda utilizar:
+
+* Clientes
+* Leads
+* Contactos
+* Etiquetas
+* Segmentos
+
+No crear datos duplicados.
+
+---
+
+### 6. Automatizaciones
+
+Comprueba que Marketing Hub pueda lanzar automatizaciones existentes.
+
+No duplicar el motor.
+
+Reutilizar el actual.
+
+---
+
+### 7. Omni Hub
+
+Si existen integraciones (WhatsApp, Telegram, Email, etc.) verifica que Marketing Hub pueda utilizarlas.
+
+Si no están conectadas, conecta ambos módulos.
+
+---
+
+### 8. Permisos
+
+Comprobar que:
+
+* Super Admin
+* Owner
+* Administrador
+
+puedan acceder.
+
+---
+
+### 9. Errores
+
+Buscar:
+
+* TODO
+* FIXME
+* Not Implemented
+* Mock
+* Placeholder
+* Fake data
+
+Completar todo lo pendiente.
+
+---
+
+### 10. Componentes sin usar
+
+Buscar componentes relacionados con Marketing Hub que existan pero nunca se rendericen.
+
+Conectarlos si corresponde.
+
+---
+
+### 11. APIs
+
+Comprobar que todos los endpoints necesarios funcionan correctamente.
+
+Si existen endpoints sin implementar, terminarlos.
+
+---
+
+### 12. Estado del módulo
+
+Al finalizar, Marketing Hub debe poder utilizarse realmente, no solo mostrarse en pantalla.
+
+---
+
+## Informe final
+
+Cuando termines, genera un informe indicando:
+
+* Qué partes ya estaban implementadas.
+* Qué partes faltaban.
+* Qué has conectado.
+* Qué archivos modificaste.
+* Qué funcionalidades siguen pendientes (si existe alguna dependencia externa).
+
+No reinventes el módulo.
+
+No generes código duplicado.
+
+Completa y conecta la implementación existente hasta dejar Omni Marketing Hub completamente operativo.
