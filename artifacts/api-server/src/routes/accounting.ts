@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomBytes } from "crypto";
 import { db } from "@workspace/db";
 import {
   invoicesTable, invoiceItemsTable, paymentsTable,
@@ -971,4 +972,118 @@ accountingRouter.delete("/recurring/:id", requirePermission("accounting.write"),
   await db.execute(sql`DELETE FROM recurring_invoices WHERE id = ${id} AND org_id = ${orgId}`);
   await logAudit({ actorClerkId: req.clerkUserId!, action: "recurring_invoice_deleted", resource: "recurring_invoice", resourceId: id, orgId, details: {}, req });
   res.json({ ok: true });
+});
+
+// POST /api/accounting/invoices/:id/share — generate or return share token (authenticated)
+accountingRouter.post("/invoices/:id/share", requirePermission("accounting.read"), async (req, res) => {
+  const orgId = req.orgId!;
+  const id    = Number(req.params["id"]);
+
+  const [inv] = await db.select().from(invoicesTable)
+    .where(and(eq(invoicesTable.id, id), eq(invoicesTable.orgId, orgId)));
+  if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
+
+  let token = (inv as typeof inv & { shareToken?: string | null }).shareToken ?? null;
+
+  if (!token) {
+    token = randomBytes(32).toString("hex");
+    await db.execute(sql`UPDATE invoices SET share_token = ${token}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`);
+  }
+
+  res.json({ token });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PUBLIC INVOICE ROUTER — no auth required
+// Mounted at /api/accounting-public by routes/index.ts (before requireAuth)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const publicAccountingRouter = Router();
+
+async function getInvoiceByToken(token: string) {
+  const rows = await db.execute(sql`
+    SELECT i.*, c.name AS client_name, c.company AS client_company,
+           c.email AS client_email, c.phone AS client_phone,
+           o.name AS org_name
+    FROM invoices i
+    LEFT JOIN clients c ON c.id = i.client_id
+    JOIN organizations o ON o.id = i.org_id
+    WHERE i.share_token = ${token}
+    LIMIT 1
+  `) as unknown as { rows: Array<Record<string, unknown>> };
+  if (!rows.rows.length) return null;
+  const r = rows.rows[0]!;
+
+  const items = await db.execute(sql`
+    SELECT * FROM invoice_items WHERE invoice_id = ${r["id"]} ORDER BY order_index
+  `) as unknown as { rows: Array<Record<string, unknown>> };
+
+  return {
+    id:            r["id"] as number,
+    invoiceNumber: r["invoice_number"] as string,
+    status:        r["status"] as string,
+    currency:      r["currency"] as string,
+    subtotal:      parseFloat(String(r["subtotal"])),
+    taxRate:       parseFloat(String(r["tax_rate"])),
+    taxAmount:     parseFloat(String(r["tax_amount"])),
+    total:         parseFloat(String(r["total"])),
+    notes:         r["notes"] as string | null,
+    dueDate:       r["due_date"] as string | null,
+    paidAt:        r["paid_at"] as string | null,
+    createdAt:     r["created_at"] as string,
+    orgName:       r["org_name"] as string,
+    client: r["client_name"] ? {
+      name:    r["client_name"] as string,
+      company: r["client_company"] as string | null,
+      email:   r["client_email"] as string | null,
+      phone:   r["client_phone"] as string | null,
+    } : null,
+    items: items.rows.map(it => ({
+      id:          it["id"] as number,
+      description: it["description"] as string,
+      quantity:    parseFloat(String(it["quantity"])),
+      unitPrice:   parseFloat(String(it["unit_price"])),
+      total:       parseFloat(String(it["total"])),
+    })),
+  };
+}
+
+// GET /api/accounting-public/invoices/:token
+publicAccountingRouter.get("/invoices/:token", async (req, res) => {
+  const token = req.params["token"];
+  if (!token) { res.status(400).json({ error: "Token requerido" }); return; }
+  const inv = await getInvoiceByToken(token);
+  if (!inv) { res.status(404).json({ error: "Factura no encontrada o enlace expirado" }); return; }
+  res.json(inv);
+});
+
+// GET /api/accounting-public/invoices/:token/pdf
+publicAccountingRouter.get("/invoices/:token/pdf", async (req, res) => {
+  const token = req.params["token"];
+  if (!token) { res.status(400).json({ error: "Token requerido" }); return; }
+  const inv = await getInvoiceByToken(token);
+  if (!inv) { res.status(404).json({ error: "Factura no encontrada o enlace expirado" }); return; }
+
+  const pdfBuffer = await generateInvoicePdf({
+    invoice: {
+      id:            inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      status:        inv.status,
+      currency:      inv.currency,
+      subtotal:      inv.subtotal,
+      taxRate:       inv.taxRate,
+      taxAmount:     inv.taxAmount,
+      total:         inv.total,
+      notes:         inv.notes,
+      dueDate:       inv.dueDate  ? new Date(inv.dueDate)  : null,
+      paidAt:        inv.paidAt   ? new Date(inv.paidAt)   : null,
+      createdAt:     new Date(inv.createdAt),
+    },
+    client: inv.client ?? null,
+    items:  inv.items,
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="factura-${inv.invoiceNumber}.pdf"`);
+  res.end(pdfBuffer);
 });

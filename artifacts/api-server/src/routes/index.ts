@@ -26,7 +26,7 @@ import { backupRouter } from "./backup";
 import { knowledgeBaseRouter } from "./knowledge-base";
 import { docsRouter } from "./docs";
 import { autopilotRouter } from "./autopilot";
-import { accountingRouter } from "./accounting";
+import { accountingRouter, publicAccountingRouter } from "./accounting";
 import { portalRouter } from "./portal";
 import { diagnosticsRouter } from "./diagnostics";
 import { dashboardRouter } from "./dashboard";
@@ -44,6 +44,9 @@ router.use("/auth", authRouter);
 // ── Client portal — public GET endpoints (no Clerk auth on reads) ─────────────
 // POST /portal/token uses its own requireAuth internally
 router.use("/portal", portalRouter);
+
+// ── Public invoice viewer — no auth, token-gated ──────────────────────────────
+router.use("/accounting-public", publicAccountingRouter);
 
 // ── Control Center — uses its own requireSuperAdmin middleware ─────────────────
 router.use("/control-center", controlCenterRouter);

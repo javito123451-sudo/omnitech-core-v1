@@ -61,6 +61,7 @@ import TaxPage from "@/pages/tax/index";
 import MarketingHubPage from "@/pages/marketing";
 import OnboardWizardPage from "@/pages/control-center/onboard-wizard";
 import PortalPage from "@/pages/portal";
+import PublicInvoicePage from "@/pages/PublicInvoicePage";
 import PlansPage from "@/pages/plans";
 import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
@@ -245,6 +246,7 @@ function AppRoutes() {
     <Switch>
       <Route path="/" component={HomeRedirect} />
       <Route path="/portal" component={PortalPage} />
+      <Route path="/invoice/:token" component={PublicInvoicePage} />
       <Route path="/sign-in/*?" component={SignInPage} />
       <Route path="/sign-up/*?" component={SignUpPage} />
       <Route path="/setup">

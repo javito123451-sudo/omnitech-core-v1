@@ -330,6 +330,15 @@ export async function runStartupMigrations(): Promise<void> {
     }
     logger.info("[Migration] ✅ FIX-K: Onboard Wizard tables + org columns ensured");
 
+    // ── FIX-M: share_token column on invoices ─────────────────────────────────
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS share_token VARCHAR(128)
+    `);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS invoices_share_token_idx ON invoices(share_token) WHERE share_token IS NOT NULL
+    `);
+    logger.info("[Migration] ✅ FIX-M: invoices.share_token column ensured");
+
     // ── FIX-L: Marketing campaigns table ──────────────────────────────────────
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS marketing_campaigns (

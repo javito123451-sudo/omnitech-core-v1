@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import {
   ArrowLeft, Download, CreditCard, FileText, Check, Clock,
-  AlertTriangle, X, Plus, Trash2,
+  AlertTriangle, X, Plus, Trash2, Share2, Copy, CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -67,6 +67,7 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
   const [payMethod,   setPayMethod]   = useState("transfer");
   const [payRef,      setPayRef]      = useState("");
   const [payDate,     setPayDate]     = useState(new Date().toISOString().split("T")[0]);
+  const [copied,      setCopied]      = useState(false);
 
   const { data: inv, isLoading } = useQuery<InvoiceDetail>({
     queryKey: ["invoice", id],
@@ -129,6 +130,23 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
     URL.revokeObjectURL(url);
   };
 
+  const shareMut = useMutation({
+    mutationFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/accounting/invoices/${id}/share`, { method: "POST" });
+      if (!r.ok) throw new Error("Error generando enlace");
+      const { token } = await r.json() as { token: string };
+      const base = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, "");
+      return `${base}/invoice/${token}`;
+    },
+    onSuccess: async (link) => {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      toast({ title: "Enlace copiado al portapapeles" });
+      setTimeout(() => setCopied(false), 3000);
+    },
+    onError: () => toast({ title: "Error generando el enlace", variant: "destructive" }),
+  });
+
   if (isLoading || !inv) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -156,6 +174,14 @@ export default function InvoiceDetail({ id, onBack }: { id: number; onBack: () =
         <div className="flex gap-2">
           <button onClick={downloadPdf} className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors">
             <Download className="w-4 h-4" /> PDF
+          </button>
+          <button
+            onClick={() => shareMut.mutate()}
+            disabled={shareMut.isPending}
+            className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
+          >
+            {copied ? <CheckCheck className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+            {copied ? "¡Copiado!" : "Compartir"}
           </button>
           {inv.status !== "paid" && inv.status !== "cancelled" && (
             <button
