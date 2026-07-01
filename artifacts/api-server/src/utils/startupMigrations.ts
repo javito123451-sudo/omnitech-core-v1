@@ -468,6 +468,30 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-S: invoices payment notification columns ensured");
 
+    // ── FIX-T: creative studio columns on ads_creatives ───────────────────────
+    await db.execute(sql`
+      ALTER TABLE ads_creatives ADD COLUMN IF NOT EXISTS generation_status TEXT NOT NULL DEFAULT 'idle'
+    `);
+    await db.execute(sql`
+      ALTER TABLE ads_creatives ADD COLUMN IF NOT EXISTS preview_url TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE ads_creatives ADD COLUMN IF NOT EXISTS download_url TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE ads_creatives ADD COLUMN IF NOT EXISTS thumbnail TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE ads_creatives ADD COLUMN IF NOT EXISTS provider_name TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE ads_creatives ADD COLUMN IF NOT EXISTS request_params JSONB
+    `);
+    await db.execute(sql`
+      ALTER TABLE ads_creatives ADD COLUMN IF NOT EXISTS error_message TEXT
+    `);
+    logger.info("[Migration] ✅ FIX-T: ads_creatives creative studio columns ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

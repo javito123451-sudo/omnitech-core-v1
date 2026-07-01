@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CreativeGeneratorModal, CreativeHistory, CreativeType } from "./CreativeStudio";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
 import { useToast } from "@/hooks/use-toast";
@@ -826,17 +827,11 @@ function CreativesTab() {
   });
 
   const [selectedCampaign, setSelectedCampaign] = useState<number | null>(null);
+  const [openType, setOpenType]                 = useState<CreativeType | null>(null);
   const campaigns = campaignsData?.campaigns ?? [];
 
-  const { data: creativesData, isLoading } = useQuery({
-    queryKey: ["ads-creatives", selectedCampaign],
-    queryFn: () => authFetch(`${BASE}/api/ads/creatives${selectedCampaign ? `?campaignId=${selectedCampaign}` : ""}`).then(r => r.json()) as Promise<{ creatives: Creative[] }>,
-  });
-
-  const creatives = creativesData?.creatives ?? [];
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Campaign selector */}
       <div className="flex items-center gap-3">
         <label className="text-sm text-slate-400 shrink-0">Campaña:</label>
@@ -850,62 +845,52 @@ function CreativesTab() {
         </select>
       </div>
 
-      {/* Creative types grid */}
+      {/* Creative type cards — clicables */}
       <div>
-        <h3 className="text-sm font-medium text-slate-400 mb-3">Tipos de creativos</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-white">Estudio de creativos con IA</h3>
+          <span className="text-[11px] text-slate-500 flex items-center gap-1">
+            <Sparkles size={11} className="text-blue-400" /> Pulsa una tarjeta para crear
+          </span>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {CREATIVE_TYPES.map(ct => {
             const Icon = ct.icon;
-            const count = creatives.filter(c => c.type === ct.type).length;
             return (
-              <div key={ct.type} className="bg-[#111827] border border-[#1e2d40] rounded-xl p-4 hover:border-blue-500/30 transition-colors">
+              <button
+                key={ct.type}
+                onClick={() => setOpenType(ct.type as CreativeType)}
+                className="bg-[#111827] border border-[#1e2d40] rounded-xl p-4 text-left hover:border-blue-500/50 hover:bg-[#131d2e] active:scale-[0.98] transition-all group"
+              >
                 <div className="flex items-start justify-between mb-3">
-                  <div className="p-2 bg-blue-500/10 rounded-lg">
+                  <div className="p-2 bg-blue-500/10 group-hover:bg-blue-500/20 rounded-lg transition-colors">
                     <Icon size={18} className="text-blue-400" />
                   </div>
-                  {count > 0 && (
-                    <span className="text-[10px] bg-blue-500/15 text-blue-400 border border-blue-500/25 px-2 py-0.5 rounded-full">{count}</span>
-                  )}
+                  <Wand2 size={13} className="text-slate-600 group-hover:text-blue-400 transition-colors mt-0.5" />
                 </div>
                 <h4 className="font-semibold text-white text-sm">{ct.label}</h4>
                 <p className="text-[11px] text-slate-500 mt-0.5 mb-3">{ct.desc}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-500">{count} creativo{count !== 1 ? "s" : ""}</span>
-                  <span className="text-[10px] text-slate-600 bg-[#1e2d40] px-2 py-0.5 rounded">Próximamente</span>
+                <div className="flex items-center justify-end">
+                  <span className="text-[10px] bg-gradient-to-r from-blue-600/20 to-purple-600/20 text-blue-400 border border-blue-500/25 px-2 py-0.5 rounded-full group-hover:from-blue-600/40 group-hover:to-purple-600/40 transition-colors">
+                    Crear con IA
+                  </span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* Existing creatives */}
-      {creatives.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium text-slate-400 mb-3">Creativos existentes</h3>
-          <div className="space-y-2">
-            {isLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="animate-spin text-blue-400" size={20} /></div>
-            ) : creatives.map(cr => (
-              <div key={cr.id} className="bg-[#111827] border border-[#1e2d40] rounded-lg px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-1.5 bg-[#1e2d40] rounded-lg">
-                    {CREATIVE_TYPES.find(t => t.type === cr.type)?.icon ? (
-                      (() => { const Icon2 = CREATIVE_TYPES.find(t => t.type === cr.type)!.icon; return <Icon2 size={14} className="text-slate-400" />; })()
-                    ) : <Layout size={14} className="text-slate-400" />}
-                  </div>
-                  <div>
-                    <p className="text-sm text-white">{cr.title ?? cr.type}</p>
-                    <p className="text-xs text-slate-500">{cr.platform ?? "Todas las plataformas"}</p>
-                  </div>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full border ${cr.status === "ready" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" : cr.status === "published" ? "bg-blue-500/15 text-blue-400 border-blue-500/25" : "bg-slate-500/15 text-slate-400 border-slate-500/25"}`}>
-                  {cr.status === "ready" ? "Listo" : cr.status === "published" ? "Publicado" : "Borrador"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* History */}
+      <CreativeHistory campaignId={selectedCampaign} />
+
+      {/* Modal */}
+      {openType && (
+        <CreativeGeneratorModal
+          type={openType}
+          campaignId={selectedCampaign}
+          onClose={() => setOpenType(null)}
+        />
       )}
     </div>
   );

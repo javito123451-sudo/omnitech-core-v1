@@ -1,0 +1,266 @@
+Actúa como arquitecto senior de OmniTech Core.
+
+NO cambies el diseño visual existente.
+
+Queremos convertir la sección OmniAds > Creativos en un estudio de creación de anuncios con IA completamente integrado.
+
+## Objetivo
+
+Cada tarjeta (Imagen, Vídeo, Reel, Story, Carrusel y Email) debe dejar de mostrar "Próximamente" y abrir un asistente inteligente.
+
+Mantén el diseño oscuro de OmniTech.
+
+--------------------------------------------------
+
+### FLUJO
+
+Al pulsar cualquier tarjeta debe abrirse un Modal profesional.
+
+Ejemplo para Vídeo:
+
+Título:
+
+Crear vídeo con IA
+
+Campos:
+
+• Objetivo
+- Conseguir clientes
+- Generar ventas
+- Branding
+- Captar leads
+
+• Producto o servicio
+
+• Público objetivo
+
+• Plataforma
+- Facebook
+- Instagram
+- TikTok
+- Google Ads
+- LinkedIn
+- YouTube
+
+• Duración
+
+9 segundos
+15 segundos
+30 segundos
+60 segundos
+
+• Estilo
+
+UGC
+Influencer
+Cinemático
+Profesional
+Humor
+Viral
+Minimalista
+
+• Idioma
+
+• CTA
+
+Botón grande:
+
+Generar vídeo
+
+--------------------------------------------------
+
+Cuando el usuario pulse Generar:
+
+NO generar todavía el vídeo.
+
+Crear una estructura preparada para IA.
+
+Implementar estados:
+
+idle
+
+loading
+
+success
+
+error
+
+--------------------------------------------------
+
+Mientras carga:
+
+Mostrar barra de progreso animada
+
+Texto:
+
+Analizando negocio...
+
+Creando estrategia...
+
+Generando guion...
+
+Preparando prompts IA...
+
+Conectando con proveedor...
+
+--------------------------------------------------
+
+Cuando finalice:
+
+Mostrar una tarjeta elegante:
+
+Vídeo generado correctamente
+
+Botones:
+
+Ver
+
+Editar
+
+Descargar
+
+Publicar
+
+Duplicar
+
+Eliminar
+
+--------------------------------------------------
+
+Arquitectura
+
+Crear componentes reutilizables:
+
+CreativeGeneratorModal
+
+CreativeProgress
+
+CreativeResult
+
+CreativeHistory
+
+--------------------------------------------------
+
+Preparar interfaces TypeScript para futuras integraciones.
+
+Ejemplo:
+
+interface VideoGenerationRequest {
+
+objective
+
+product
+
+audience
+
+duration
+
+platform
+
+style
+
+language
+
+cta
+
+}
+
+interface VideoGenerationResult {
+
+id
+
+status
+
+previewUrl
+
+downloadUrl
+
+thumbnail
+
+provider
+
+createdAt
+
+}
+
+--------------------------------------------------
+
+NO conectar todavía con ninguna IA.
+
+Crear únicamente la arquitectura.
+
+Todo debe quedar preparado para conectar posteriormente con:
+
+OpenAI
+
+Google Veo
+
+Runway
+
+Luma
+
+Pika
+
+Kling
+
+Hailuo
+
+Minimax
+
+Fal AI
+
+Replicate
+
+mediante un único servicio llamado:
+
+AICreativeService
+
+Este servicio deberá ser intercambiable mediante adapters.
+
+--------------------------------------------------
+
+Crear también un historial de creativos.
+
+Cada creativo debe almacenar:
+
+id
+
+tipo
+
+estado
+
+fecha
+
+miniatura
+
+usuario
+
+campaña
+
+--------------------------------------------------
+
+El código debe seguir la arquitectura existente del proyecto.
+
+No romper ninguna funcionalidad.
+
+Mantener el diseño responsive.
+
+Usar componentes reutilizables.
+
+Código limpio.
+
+Escalable.
+
+Preparado para SaaS multiempresa.
+
+Preparado para futuras colas de generación.
+
+Preparado para múltiples proveedores IA.
+
+Preparado para generación en paralelo.
+
+No usar datos ficticios permanentes.
+
+Usar mocks fácilmente reemplazables.
+
+Documentar el código.

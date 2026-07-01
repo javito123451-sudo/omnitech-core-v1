@@ -298,6 +298,45 @@ adsRouter.delete("/creatives/:id", requirePermission("workspace.edit"), async (r
   }
 });
 
+// ── POST /api/ads/creatives/:id/generate ─────────────────────────────────────
+// Stub preparado para integrar: OpenAI DALL-E, Google Veo, Runway, Luma,
+// Pika, Kling, Hailuo, Minimax, Fal AI, Replicate mediante AICreativeService.
+adsRouter.post("/creatives/:id/generate", requirePermission("workspace.edit"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const id    = parseInt(req.params["id"]!, 10);
+
+    const rows = await db.execute(sql`
+      SELECT * FROM ads_creatives WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
+    `);
+    const creative = dbRows<Record<string, unknown>>(rows)[0];
+    if (!creative) { res.status(404).json({ error: "Creative not found" }); return; }
+
+    const { provider, previewUrl, downloadUrl, thumbnail } = req.body as {
+      provider?: string; previewUrl?: string; downloadUrl?: string; thumbnail?: string;
+    };
+
+    // Update with generation results (or mark as ready for mock)
+    const safeStr  = (v: unknown) => v ? `'${String(v).replace(/'/g, "''")}'` : "NULL";
+    const provName = safeStr(provider ?? "mock");
+    const pUrl     = safeStr(previewUrl);
+    const dUrl     = safeStr(downloadUrl);
+    const thumb    = safeStr(thumbnail);
+
+    const result = await db.execute(sql.raw(
+      `UPDATE ads_creatives
+       SET generation_status = 'done', status = 'ready',
+           provider_name = ${provName}, preview_url = ${pUrl},
+           download_url = ${dUrl}, thumbnail = ${thumb}, updated_at = NOW()
+       WHERE id = ${id} AND org_id = ${orgId} RETURNING *`
+    ));
+    const updated = dbRows(result)[0];
+    res.json({ ok: true, creative: updated });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // ── GET /api/ads/audience ─────────────────────────────────────────────────────
 adsRouter.get("/audience", requirePermission("workspace.view"), async (req, res) => {
   try {
