@@ -330,6 +330,29 @@ export async function runStartupMigrations(): Promise<void> {
     }
     logger.info("[Migration] ✅ FIX-K: Onboard Wizard tables + org columns ensured");
 
+    // ── FIX-L: Marketing campaigns table ──────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS marketing_campaigns (
+        id              SERIAL PRIMARY KEY,
+        org_id          INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'draft',
+        channel         TEXT NOT NULL DEFAULT 'email',
+        subject         TEXT,
+        body            TEXT,
+        audience_filter TEXT NOT NULL DEFAULT 'all',
+        sent_count      INTEGER NOT NULL DEFAULT 0,
+        opened_count    INTEGER NOT NULL DEFAULT 0,
+        clicked_count   INTEGER NOT NULL DEFAULT 0,
+        created_by      TEXT,
+        scheduled_at    TIMESTAMP,
+        sent_at         TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    logger.info("[Migration] ✅ FIX-L: marketing_campaigns table ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
