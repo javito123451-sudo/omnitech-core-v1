@@ -4,13 +4,15 @@ import { db } from "@workspace/db";
 import {
   platformRolesTable, moduleConfigsTable, licensePlansTable, auditLogsTable,
   organizationsTable, usersTable, orgMembersTable, clientsTable, messagesTable, quotesTable,
-  onboardTemplatesTable, onboardWizardDraftsTable,
+  orgInvitationsTable, onboardTemplatesTable, onboardWizardDraftsTable,
 } from "@workspace/db";
-import { eq, desc, count, and, sql, gte, lte, ilike, or, lt } from "drizzle-orm";
+import { eq, desc, count, and, sql, gte, lte, ilike, or, lt, isNull } from "drizzle-orm";
 import { requireSuperAdmin, hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
 import { aiCenterRouter } from "./ai-center-routes";
 import { clearModuleCache } from "../middlewares/requireModule";
 import { logAudit as _logAudit } from "../utils/auditLogger";
+import { sendInvitationEmail } from "../lib/email";
+import { randomUUID } from "crypto";
 
 export const controlCenterRouter = Router();
 
@@ -188,7 +190,40 @@ controlCenterRouter.post("/workspaces/:id/activate", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /workspaces/:id/search-user ───────────────────────────────────────────
+// One-Step User Assignment: search by email, returns existence + membership status
+controlCenterRouter.get("/workspaces/:id/search-user", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const orgId = Number(req.params["id"]);
+  const email = (req.query["email"] as string)?.trim().toLowerCase() ?? "";
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "Email inválido" }); return;
+  }
+
+  const [user] = await db.select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, clerkId: usersTable.clerkId, status: usersTable.status })
+    .from(usersTable).where(eq(usersTable.email, email));
+
+  if (!user) {
+    res.json({ exists: false, email });
+    return;
+  }
+
+  const [member] = await db.select({ id: orgMembersTable.id, role: orgMembersTable.role, isSuspended: orgMembersTable.isSuspended })
+    .from(orgMembersTable)
+    .where(and(eq(orgMembersTable.orgId, orgId), eq(orgMembersTable.userId, user.id)));
+
+  res.json({
+    exists: true,
+    email: user.email,
+    user: { id: user.id, name: user.name, clerkId: user.clerkId, status: user.status },
+    alreadyMember: !!member,
+    currentRole: member?.role ?? null,
+    isSuspended: member?.isSuspended ?? false,
+  });
+});
+
 // ── POST /workspaces/:id/assign-user ──────────────────────────────────────────
+// Enhanced: assign existing user (backward-compatible)
 controlCenterRouter.post("/workspaces/:id/assign-user", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede asignar usuarios" }); return; }
   const orgId = Number(req.params["id"]);
@@ -201,6 +236,14 @@ controlCenterRouter.post("/workspaces/:id/assign-user", async (req, res) => {
 
   const VALID = ["owner", "admin", "member", "read_only", "vendedor"];
   if (!VALID.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
+
+  // Check if already a member
+  const [existingMember] = await db.select({ id: orgMembersTable.id }).from(orgMembersTable)
+    .where(and(eq(orgMembersTable.orgId, orgId), eq(orgMembersTable.userId, user.id)));
+  if (existingMember) {
+    res.status(409).json({ error: "Este usuario ya está asignado a este Workspace.", alreadyMember: true });
+    return;
+  }
 
   if (role === "owner") {
     const [currentOwner] = await db.select({ userId: orgMembersTable.userId }).from(orgMembersTable)
@@ -220,6 +263,92 @@ controlCenterRouter.post("/workspaces/:id/assign-user", async (req, res) => {
 
   await logAudit({ actorClerkId: req.clerkUserId!, action: "workspace_user_assigned", resource: "workspace", resourceId: String(orgId), details: { userId: user.id, email: user.email, role }, severity: "info", req });
   res.json({ ok: true, userId: user.id, email: user.email, role });
+});
+
+// ── POST /workspaces/:id/invite-and-assign ───────────────────────────────────
+// One-Step: create invitation for new user + auto-assign on accept
+controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  const orgId = Number(req.params["id"]);
+  const { email, role = "member", name } = req.body as { email: string; role?: string; name?: string };
+
+  if (!email?.trim()) { res.status(400).json({ error: "Email requerido" }); return; }
+  const cleanEmail = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    res.status(400).json({ error: "Formato de email inválido" }); return;
+  }
+
+  const VALID = ["owner", "admin", "member", "read_only", "vendedor"];
+  if (!VALID.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
+
+  // Check if user already exists
+  const [existingUser] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, cleanEmail));
+  if (existingUser) {
+    res.status(409).json({ error: "Ya existe un usuario con este email. Usa \"Asignar\" en lugar de \"Crear\".", exists: true });
+    return;
+  }
+
+  // Check for pending invitation (acceptedAt IS NULL means still pending)
+  const [pendingInv] = await db.select({ id: orgInvitationsTable.id }).from(orgInvitationsTable)
+    .where(and(
+      eq(orgInvitationsTable.orgId, orgId),
+      eq(orgInvitationsTable.email, cleanEmail),
+      isNull(orgInvitationsTable.acceptedAt),
+    ));
+  if (pendingInv) {
+    res.status(409).json({ error: "Ya hay una invitación pendiente para este email.", hasPendingInvitation: true });
+    return;
+  }
+
+  const token = randomUUID();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const [inv] = await db.insert(orgInvitationsTable).values({
+    orgId,
+    invitedBy: req.userId!,
+    email: cleanEmail,
+    role,
+    token,
+    expiresAt,
+  }).returning();
+
+  // Fire invitation email asynchronously — non-blocking
+  const baseUrl  = req.get("origin") || `https://${req.get("host")}`;
+  const acceptUrl = `${baseUrl}/invite/${inv.token}`;
+  Promise.all([
+    db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId)),
+    db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, req.userId!)),
+  ]).then(([[org], [inviter]]) =>
+    sendInvitationEmail({
+      to:          inv.email,
+      inviterName: inviter?.name ?? null,
+      orgName:     org?.name ?? "Tu organización",
+      role:        inv.role,
+      acceptUrl,
+      expiresAt:   inv.expiresAt,
+    }),
+  ).catch(err => console.error("[Email] Invitation send failed:", String(err)));
+
+  await logAudit({
+    actorClerkId: req.clerkUserId!,
+    action:       "workspace_user_invited",
+    resource:     "workspace",
+    resourceId:   String(orgId),
+    details:      { email: cleanEmail, role, name, invitationId: inv.id },
+    severity:     "info",
+    req,
+  });
+
+  res.status(201).json({
+    ok: true,
+    invited: true,
+    email: cleanEmail,
+    role,
+    invitationId: inv.id,
+    token: inv.token,
+    expiresAt: inv.expiresAt.toISOString(),
+    message: "Invitación enviada. El usuario recibirá un email para unirse al Workspace.",
+  });
 });
 
 // ── POST /workspaces/:id/remove-user/:clerkId ─────────────────────────────────

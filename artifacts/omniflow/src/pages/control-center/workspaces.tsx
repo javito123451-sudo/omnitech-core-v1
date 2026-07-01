@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
 import {
   Building2, Plus, Edit2, Trash2, Users, UserCheck, Calendar, Loader2,
   CheckCircle2, AlertCircle, PauseCircle, PlayCircle, X, Save,
@@ -83,48 +84,224 @@ function Modal({ children, onClose, title, icon: Icon, accent = "violet" }: {
   );
 }
 
+type SearchState =
+  | { stage: "idle" }
+  | { stage: "searching" }
+  | { stage: "found"; user: { id: number; name: string | null; clerkId: string | null; status: string }; alreadyMember: boolean; currentRole: string | null; isSuspended: boolean }
+  | { stage: "not_found"; email: string }
+  | { stage: "error"; message: string };
+
 function AssignUserModal({ ws, onClose }: { ws: Workspace; onClose: () => void }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
+  const [search, setSearch] = useState<SearchState>({ stage: "idle" });
+  const [name, setName] = useState("");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const mut = useMutation({
+  const searchUser = useCallback(async (q: string) => {
+    const clean = q.trim().toLowerCase();
+    if (!clean || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+      setSearch({ stage: "idle" });
+      return;
+    }
+    setSearch({ stage: "searching" });
+    try {
+      const r = await authFetch(`${BASE}/api/control-center/workspaces/${ws.id}/search-user?email=${encodeURIComponent(clean)}`);
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({ error: "Error de búsqueda" }));
+        setSearch({ stage: "error", message: j.error ?? "Error de búsqueda" });
+        return;
+      }
+      const data = await r.json();
+      if (data.exists) {
+        setSearch({ stage: "found", user: data.user, alreadyMember: data.alreadyMember, currentRole: data.currentRole, isSuspended: data.isSuspended });
+      } else {
+        setSearch({ stage: "not_found", email: clean });
+      }
+    } catch (e) {
+      setSearch({ stage: "error", message: String(e) });
+    }
+  }, [ws.id]);
+
+  const onEmailChange = (val: string) => {
+    setEmail(val);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!val.trim()) { setSearch({ stage: "idle" }); return; }
+    searchTimer.current = setTimeout(() => searchUser(val), 400);
+  };
+
+  const assignMut = useMutation({
     mutationFn: () => authFetch(`${BASE}/api/control-center/workspaces/${ws.id}/assign-user`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, role }),
     }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-ws-members", ws.id] }); qc.invalidateQueries({ queryKey: ["cc-workspaces"] }); setEmail(""); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cc-ws-members", ws.id] });
+      qc.invalidateQueries({ queryKey: ["cc-workspaces"] });
+      toast({ title: "Usuario asignado correctamente", description: `${email} ahora es ${role} de ${ws.name}.` });
+      onClose();
+    },
+    onError: (e) => {
+      toast({ title: "Error al asignar", description: String(e), variant: "destructive" });
+    },
   });
+
+  const inviteMut = useMutation({
+    mutationFn: () => authFetch(`${BASE}/api/control-center/workspaces/${ws.id}/invite-and-assign`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role, name: name.trim() || null }),
+    }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["cc-ws-members", ws.id] });
+      qc.invalidateQueries({ queryKey: ["cc-workspaces"] });
+      toast({ title: "Invitación enviada", description: data.message ?? `Se ha enviado un email a ${email} para unirse a ${ws.name}.` });
+      onClose();
+    },
+    onError: (e) => {
+      toast({ title: "Error al invitar", description: String(e), variant: "destructive" });
+    },
+  });
+
+  const isAssigning = assignMut.isPending;
+  const isInviting = inviteMut.isPending;
 
   return (
     <Modal title="Asignar usuario" icon={UserPlus} onClose={onClose} accent="emerald">
-      <p className="text-slate-400 text-sm mb-4">Asigna un usuario existente al workspace <strong className="text-white">{ws.name}</strong>.</p>
-      <div className="space-y-3 mb-5">
-        <div>
-          <label className="text-xs text-slate-500 mb-1.5 block">Email del usuario *</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="usuario@empresa.com"
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-slate-500 mb-1.5 block">Rol</label>
-          <select value={role} onChange={e => setRole(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500">
-            <option value="member">Miembro</option>
-            <option value="admin">Administrador</option>
-            <option value="owner">Owner</option>
-            <option value="read_only">Solo lectura</option>
-            <option value="vendedor">Vendedor</option>
-          </select>
+      <p className="text-slate-400 text-sm mb-4">Busca por email y asigna o invita al workspace <strong className="text-white">{ws.name}</strong>.</p>
+
+      {/* Email input */}
+      <div className="mb-4">
+        <label className="text-xs text-slate-500 mb-1.5 block">Email del usuario *</label>
+        <div className="relative">
+          <input
+            type="email"
+            value={email}
+            onChange={e => onEmailChange(e.target.value)}
+            placeholder="usuario@empresa.com"
+            disabled={isAssigning || isInviting}
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 pr-10 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50"
+          />
+          {search.stage === "searching" && (
+            <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 animate-spin" />
+          )}
         </div>
       </div>
-      {mut.isError && <p className="text-red-400 text-xs mb-3">{String(mut.error)}</p>}
+
+      {/* Search results */}
+      {search.stage === "found" && (
+        <div className="mb-4">
+          {search.alreadyMember ? (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
+              <AlertCircle size={18} className="text-amber-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-amber-300 text-sm font-medium">Este usuario ya está asignado a este Workspace</p>
+                <p className="text-amber-400/70 text-xs mt-1">Rol actual: <span className="font-medium">{search.currentRole ?? "member"}</span>{search.isSuspended ? " (suspendido)" : ""}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-start gap-3">
+              <UserCheck size={18} className="text-emerald-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-emerald-300 text-sm font-medium">Usuario encontrado</p>
+                <p className="text-emerald-400/70 text-xs mt-1">{search.user.name ?? "Sin nombre"} • {email}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {search.stage === "not_found" && (
+        <div className="mb-4">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+            <p className="text-blue-300 text-sm">
+              No existe ningún usuario con este correo.
+            </p>
+            <p className="text-blue-400/70 text-xs mt-1">
+              Completa los datos para crearlo y enviarle una invitación automática.
+            </p>
+          </div>
+          {/* Create user form */}
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="text-xs text-slate-500 mb-1.5 block">Nombre completo</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Nombre y apellidos"
+                disabled={isInviting}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1.5 block">Email</label>
+              <input
+                type="email"
+                value={email}
+                readOnly
+                className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-slate-400 text-sm cursor-not-allowed"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {search.stage === "error" && (
+        <div className="mb-4 bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+          <p className="text-red-300 text-sm">{search.message}</p>
+        </div>
+      )}
+
+      {/* Role selector */}
+      <div className="mb-5">
+        <label className="text-xs text-slate-500 mb-1.5 block">Rol</label>
+        <select
+          value={role}
+          onChange={e => setRole(e.target.value)}
+          disabled={isAssigning || isInviting}
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 disabled:opacity-50"
+        >
+          <option value="member">Miembro</option>
+          <option value="admin">Administrador</option>
+          <option value="owner">Owner</option>
+          <option value="read_only">Solo lectura</option>
+          <option value="vendedor">Vendedor</option>
+        </select>
+      </div>
+
+      {/* Actions */}
       <div className="flex gap-3">
-        <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white transition-all">Cancelar</button>
-        <button onClick={() => mut.mutate()} disabled={!email.trim() || mut.isPending}
-          className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all">
-          {mut.isPending ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
-          Asignar
+        <button
+          onClick={onClose}
+          disabled={isAssigning || isInviting}
+          className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white transition-all disabled:opacity-50"
+        >
+          Cancelar
         </button>
+
+        {search.stage === "found" && !search.alreadyMember && (
+          <button
+            onClick={() => assignMut.mutate()}
+            disabled={isAssigning || !email.trim()}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all"
+          >
+            {isAssigning ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
+            Asignar al Workspace
+          </button>
+        )}
+
+        {search.stage === "not_found" && (
+          <button
+            onClick={() => inviteMut.mutate()}
+            disabled={isInviting || !email.trim()}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all"
+          >
+            {isInviting ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
+            Crear e invitar
+          </button>
+        )}
       </div>
     </Modal>
   );
