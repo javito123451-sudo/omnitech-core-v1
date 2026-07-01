@@ -81,14 +81,17 @@ export class OpenAIProvider implements AIProvider {
     const msg = choice.message;
 
     const toolCalls: ToolCall[] | undefined = msg.tool_calls
-      ? msg.tool_calls.map(tc => ({
-          id: tc.id,
-          type: "function",
-          function: {
-            name: tc.function.name,
-            arguments: tc.function.arguments,
-          },
-        }))
+      ? msg.tool_calls.map(tc => {
+          const tcAny = tc as unknown as { id: string; function: { name: string; arguments: string } };
+          return {
+            id: tcAny.id,
+            type: "function" as const,
+            function: {
+              name: tcAny.function.name,
+              arguments: tcAny.function.arguments,
+            },
+          };
+        })
       : undefined;
 
     return {
@@ -161,7 +164,10 @@ export class OpenAIProvider implements AIProvider {
       }
     }
 
-    const stream = await this.client.chat.completions.create(body);
+    const stream = await this.client.chat.completions.create(body) as unknown as AsyncIterable<{
+      choices: Array<{ delta?: { content?: string | null; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> } }>;
+      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+    }>;
     trackLLMDirectCall();
     for await (const chunk of stream) {
       const token = chunk.choices[0]?.delta?.content ?? "";

@@ -6,6 +6,10 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import type { DiagnosticAdapter, DiagnosticContext, ModuleDiagnosticResult } from "../types";
 
+function dbRows<T>(result: unknown): T[] {
+  return (result as { rows: T[] }).rows;
+}
+
 export const crmAdapter: DiagnosticAdapter = {
   name: "crm",
   priority: 40,
@@ -26,7 +30,7 @@ export const crmAdapter: DiagnosticAdapter = {
                COUNT(*) FILTER (WHERE name IS NULL OR name = '') as no_name
         FROM clients WHERE org_id = ${orgId}
       `);
-      const row = (r as { rows: Array<{ count: string; no_contact: string; no_name: string }> }).rows[0];
+      const row = dbRows<{ count: string; no_contact: string; no_name: string }>(r)[0];
       const count = Number(row?.count ?? 0);
       const noContact = Number(row?.no_contact ?? 0);
       const noName = Number(row?.no_name ?? 0);
@@ -70,7 +74,7 @@ export const crmAdapter: DiagnosticAdapter = {
         WHERE org_id = ${orgId} AND email IS NOT NULL
         GROUP BY email HAVING COUNT(*) > 1
       `);
-      const dups = (r as { rows: Array<{ email: string; cnt: string }> }).rows;
+      const dups = dbRows<{ email: string; cnt: string }>(r);
       checks.push({
         name: "crm_duplicate_emails",
         status: dups.length === 0 ? "pass" : "warn",
@@ -100,7 +104,7 @@ export const crmAdapter: DiagnosticAdapter = {
                COUNT(*) FILTER (WHERE client_id IS NULL) as orphan
         FROM appointments WHERE org_id = ${orgId}
       `);
-      const row = (r as { rows: Array<{ count: string; orphan: string }> }).rows[0];
+      const row = dbRows<{ count: string; orphan: string }>(r)[0];
       const count = Number(row?.count ?? 0);
       const orphan = Number(row?.orphan ?? 0);
       checks.push({
@@ -132,7 +136,7 @@ export const crmAdapter: DiagnosticAdapter = {
       const r = await db.execute(sql`
         SELECT COUNT(*) as count FROM quotes WHERE org_id = ${orgId}
       `);
-      const count = Number((r as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const count = Number(dbRows<{ count: string }>(r)[0]?.count ?? 0);
       checks.push({ name: "crm_quotes", status: "pass", message: `${count} presupuestos`, durationMs: Date.now() - quoteT0 });
     } catch (err) {
       checks.push({ name: "crm_quotes", status: "fail", message: `Error: ${(err as Error).message}`, durationMs: Date.now() - quoteT0 });
@@ -146,7 +150,7 @@ export const crmAdapter: DiagnosticAdapter = {
                COUNT(*) FILTER (WHERE status = 'pending') as pending
         FROM tasks WHERE org_id = ${orgId}
       `);
-      const row = (r as { rows: Array<{ count: string; pending: string }> }).rows[0];
+      const row = dbRows<{ count: string; pending: string }>(r)[0];
       const count = Number(row?.count ?? 0);
       const pending = Number(row?.pending ?? 0);
       checks.push({
@@ -176,7 +180,7 @@ export const crmAdapter: DiagnosticAdapter = {
         SELECT COUNT(*) as count FROM messages
         WHERE org_id = ${orgId} AND client_id IS NULL
       `);
-      const orphan = Number((r as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const orphan = Number(dbRows<{ count: string }>(r)[0]?.count ?? 0);
       checks.push({
         name: "crm_orphan_messages",
         status: orphan === 0 ? "pass" : "warn",

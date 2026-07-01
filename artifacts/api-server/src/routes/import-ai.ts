@@ -33,9 +33,28 @@ export const importAiRouter = Router();
 
 import { requirePermission } from "../middlewares/permissions";
 
+const ALLOWED_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+]);
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}. Se aceptan imágenes, PDF, Excel y CSV.`));
+    }
+  },
 });
 
 const IMAGE_EXTS       = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic"]);

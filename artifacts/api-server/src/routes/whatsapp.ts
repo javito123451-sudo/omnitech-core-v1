@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { createHmac, timingSafeEqual } from "crypto";
 import {
   db,
   clientsTable,
@@ -701,6 +702,33 @@ whatsappWebhookRouter.get("/webhook", async (req, res) => {
 
 // ── POST /whatsapp/webhook — Incoming messages (PUBLIC, no auth) ──────────────
 whatsappWebhookRouter.post("/webhook", (req, res) => {
+  // ── X-Hub-Signature-256 HMAC validation (Meta requirement) ────────────────
+  const appSecret = process.env["META_APP_SECRET"];
+  if (appSecret) {
+    const sigHeader = req.headers["x-hub-signature-256"] as string | undefined;
+    const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+    if (!sigHeader || !rawBody) {
+      console.warn("[WhatsApp Webhook] ❌ Missing signature or raw body — rejected");
+      res.sendStatus(403);
+      return;
+    }
+    const expected = "sha256=" + createHmac("sha256", appSecret).update(rawBody).digest("hex");
+    try {
+      const sigBuf = Buffer.from(sigHeader);
+      const expBuf = Buffer.from(expected);
+      if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+        console.warn("[WhatsApp Webhook] ❌ HMAC mismatch — rejected");
+        res.sendStatus(403);
+        return;
+      }
+    } catch {
+      res.sendStatus(403);
+      return;
+    }
+  } else {
+    console.warn("[WhatsApp Webhook] ⚠️  META_APP_SECRET not set — skipping HMAC validation");
+  }
+
   // Meta requires an immediate 200 — process asynchronously
   res.sendStatus(200);
 

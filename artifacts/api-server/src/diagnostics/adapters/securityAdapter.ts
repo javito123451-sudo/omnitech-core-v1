@@ -6,6 +6,10 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import type { DiagnosticAdapter, DiagnosticContext, ModuleDiagnosticResult } from "../types";
 
+function dbRows<T>(result: unknown): T[] {
+  return (result as { rows: T[] }).rows;
+}
+
 export const securityAdapter: DiagnosticAdapter = {
   name: "security",
   priority: 50,
@@ -23,7 +27,7 @@ export const securityAdapter: DiagnosticAdapter = {
       const r = await db.execute(sql`
         SELECT COUNT(*) as count FROM platform_roles WHERE role = 'SUPER_ADMIN' AND is_active = true
       `);
-      const count = Number((r as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const count = Number(dbRows<{ count: string }>(r)[0]?.count ?? 0);
       checks.push({
         name: "sec_super_admin",
         status: count > 0 ? "pass" : "fail",
@@ -50,7 +54,7 @@ export const securityAdapter: DiagnosticAdapter = {
       const r = await db.execute(sql`
         SELECT COUNT(*) as count FROM org_members WHERE org_id = ${orgId} AND is_suspended = false
       `);
-      const count = Number((r as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const count = Number(dbRows<{ count: string }>(r)[0]?.count ?? 0);
       checks.push({
         name: "sec_org_members",
         status: "pass",
@@ -68,7 +72,7 @@ export const securityAdapter: DiagnosticAdapter = {
         SELECT COUNT(*) as count FROM client_portal_tokens
         WHERE org_id = ${orgId} AND expires_at < NOW()
       `);
-      const expired = Number((r as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const expired = Number(dbRows<{ count: string }>(r)[0]?.count ?? 0);
       checks.push({
         name: "sec_expired_tokens",
         status: expired === 0 ? "pass" : "warn",

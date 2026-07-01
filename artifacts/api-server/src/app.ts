@@ -86,7 +86,12 @@ app.use(
   }),
 );
 
-app.use(express.json());
+app.use(express.json({
+  verify: (_req, _res, buf) => {
+    // Capture raw body buffer so POST /whatsapp/webhook can validate X-Hub-Signature-256
+    (_req as unknown as { rawBody: Buffer }).rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 app.use(

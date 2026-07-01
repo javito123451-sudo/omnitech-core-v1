@@ -7,6 +7,10 @@ import { sql } from "drizzle-orm";
 import type { DiagnosticAdapter, DiagnosticContext, ModuleDiagnosticResult } from "../types";
 import { logger } from "../../lib/logger";
 
+function dbRows<T>(result: unknown): T[] {
+  return (result as { rows: T[] }).rows;
+}
+
 const REQUIRED_ENV = [
   "DATABASE_URL",
   "CLERK_SECRET_KEY",
@@ -38,8 +42,8 @@ export const infrastructureAdapter: DiagnosticAdapter = {
     const dbT0 = Date.now();
     try {
       const r = await db.execute(sql`SELECT NOW() as now`);
-      const rows = r as { rows: Array<{ now: string }> };
-      const ok = rows.rows.length > 0 && rows.rows[0]!.now;
+      const rows = dbRows<{ now: string }>(r);
+      const ok = rows.length > 0 && rows[0]!.now;
       checks.push({
         name: "db_connection",
         status: ok ? "pass" : "fail",
@@ -185,7 +189,7 @@ export const infrastructureAdapter: DiagnosticAdapter = {
     const orgT0 = Date.now();
     try {
       const orgResult = await db.execute(sql`SELECT COUNT(*) as count FROM organizations WHERE id = ${ctx.orgId}`);
-      const orgCount = Number((orgResult as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const orgCount = Number(dbRows<{ count: string }>(orgResult)[0]?.count ?? 0);
       checks.push({
         name: "org_exists",
         status: orgCount > 0 ? "pass" : "fail",
@@ -217,7 +221,7 @@ export const infrastructureAdapter: DiagnosticAdapter = {
       const slowResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM pg_stat_activity WHERE state = 'active' AND query_start < NOW() - INTERVAL '5 seconds'
       `);
-      const slowCount = Number((slowResult as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const slowCount = Number(dbRows<{ count: string }>(slowResult)[0]?.count ?? 0);
       checks.push({
         name: "slow_queries",
         status: slowCount === 0 ? "pass" : "warn",

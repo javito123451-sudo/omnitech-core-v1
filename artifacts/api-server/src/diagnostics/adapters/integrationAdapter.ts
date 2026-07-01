@@ -11,6 +11,10 @@ import { IntegrationRegistry } from "../../hub/integrationRegistry";
 import type { DiagnosticAdapter, DiagnosticContext, ModuleDiagnosticResult } from "../types";
 import { logger } from "../../lib/logger";
 
+function dbRows<T>(result: unknown): T[] {
+  return (result as { rows: T[] }).rows;
+}
+
 export const integrationsAdapter: DiagnosticAdapter = {
   name: "integrations",
   priority: 20,
@@ -35,14 +39,21 @@ export const integrationsAdapter: DiagnosticAdapter = {
 
     // 2. Get org integrations
     const orgT0 = Date.now();
-    let orgIntegrations: Array<{ integration_slug: string; status: string; config: string | null; credentials_enc: string | null; error_message: string | null }> = [];
+    type OrgIntegrationRow = {
+      integration_slug: string;
+      status: string;
+      config: string | null;
+      credentials_enc: string | null;
+      error_message: string | null;
+    };
+    let orgIntegrations: OrgIntegrationRow[] = [];
     try {
       const result = await db.execute(sql`
         SELECT integration_slug, status, config, credentials_enc, error_message
         FROM org_integrations
         WHERE org_id = ${ctx.orgId}
       `);
-      orgIntegrations = (result as { rows: typeof orgIntegrations }).rows;
+      orgIntegrations = dbRows<OrgIntegrationRow>(result);
       checks.push({
         name: "org_integrations_loaded",
         status: "pass",
@@ -182,7 +193,7 @@ export const integrationsAdapter: DiagnosticAdapter = {
         SELECT COUNT(*) as count FROM integration_events
         WHERE org_id = ${ctx.orgId} AND status = 'error' AND created_at > NOW() - INTERVAL '24 hours'
       `);
-      const errorCount = Number((evResult as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+      const errorCount = Number(dbRows<{ count: string }>(evResult)[0]?.count ?? 0);
       checks.push({
         name: "integration_events_24h",
         status: errorCount === 0 ? "pass" : errorCount > 5 ? "fail" : "warn",
