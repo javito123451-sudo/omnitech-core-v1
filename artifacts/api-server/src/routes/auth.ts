@@ -152,8 +152,19 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       ? getPermissionsForRole(primaryMembership.role)
       : new Set<string>();
 
-    // ── Resolve platform role from platform_roles table ────────────────────
-    const resolvedPlatformRole = user.platformRole ?? "NONE";
+    // ── Resolve platform role — always read from platform_roles table (authoritative) ──
+    // users.platform_role is a denormalized cache; it can be stale if the user
+    // was inserted (first login) before FIX-O ran for their row, or if a role
+    // was granted after the last server restart. We always read the live value
+    // from platform_roles and sync users.platform_role back when it drifts.
+    const liveRole = await hasPlatformRole(clerkUserId);
+    const resolvedPlatformRole = liveRole ?? "NONE";
+    if (resolvedPlatformRole !== (user.platformRole ?? "NONE")) {
+      // Sync the denormalized column so FIX-O has less work on next restart
+      await db.execute(
+        sql`UPDATE users SET platform_role = ${resolvedPlatformRole} WHERE clerk_id = ${clerkUserId}`
+      );
+    }
 
     const responsePayload = {
       user: {
