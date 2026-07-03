@@ -36,6 +36,8 @@ interface SidebarCache {
   org: OrgInfo | null;
   expiresAt: number;
   version: number;
+  /** Platform role cached so HomeRedirect fires with the correct value even before the API responds */
+  platformRole?: string;
 }
 
 /** Points to the orgId whose cache entry is "current" for this user. */
@@ -56,7 +58,7 @@ function readCurrentOrgId(clerkId: string): string | null {
   }
 }
 
-function readSidebarCache(clerkId: string): { modules: Record<string, boolean>; org: OrgInfo | null; version: number } | null {
+function readSidebarCache(clerkId: string): { modules: Record<string, boolean>; org: OrgInfo | null; version: number; platformRole?: string } | null {
   try {
     // When a workspace override is active (support mode), use that org ID as
     // the cache key so the correct workspace's data is served immediately on
@@ -72,13 +74,13 @@ function readSidebarCache(clerkId: string): { modules: Record<string, boolean>; 
       localStorage.removeItem(getCacheKey(clerkId, orgId));
       return null;
     }
-    return { modules: parsed.modules, org: parsed.org ?? null, version: parsed.version ?? 0 };
+    return { modules: parsed.modules, org: parsed.org ?? null, version: parsed.version ?? 0, platformRole: parsed.platformRole };
   } catch {
     return null;
   }
 }
 
-function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, org: OrgInfo | null, version: number) {
+function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, org: OrgInfo | null, version: number, platformRole?: string) {
   try {
     // Use a sentinel when org is null so the slot is still written and the
     // pointer is not left pointing at a different workspace.
@@ -90,6 +92,7 @@ function writeSidebarCache(clerkId: string, modules: Record<string, boolean>, or
       org,
       expiresAt: Date.now() + MODULES_CACHE_TTL_MS,
       version,
+      platformRole,
     };
     localStorage.setItem(newKey, JSON.stringify(entry));
 
@@ -264,7 +267,19 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         Object.keys(prev).length === 0 ? { ...cached.modules, crm: true } : prev,
       );
       setOrg((prev) => (prev === null && cached.org ? cached.org : prev));
-      setLoading(false);
+
+      // Only unlock loading early when platformRole is in the cache.
+      // Old cache entries (written before this field was added) lack platformRole,
+      // so we keep loading=true and let the API response provide the authoritative
+      // value — this prevents HomeRedirect firing with a stale isSuperAdmin=false.
+      // Once the API responds it writes platformRole into the cache; all
+      // subsequent logins/refreshes will unlock loading immediately.
+      if (cached.platformRole !== undefined) {
+        setPlatformRole(cached.platformRole);
+        setLoading(false);
+      }
+      // If platformRole is absent from cache, loading stays true.
+      // The fetch effect below will set loading=false after the API responds.
     }
   }, [isLoaded, isSignedIn, clerkUser?.id]);
 
@@ -342,13 +357,14 @@ export function OrgProvider({ children }: { children: ReactNode }) {
         setNeedsSetup(!organization);
         setModules(freshModules);
         setPermissions(perms ?? []);
-        setPlatformRole(pRole ?? u?.platformRole ?? "NONE");
+        const resolvedRole = pRole ?? u?.platformRole ?? "NONE";
+        setPlatformRole(resolvedRole);
         if (u?.clerkId) {
           const cached = readSidebarCache(u.clerkId);
           if (!cached || cached.version < version) {
             clearSidebarCache(u.clerkId);
           }
-          writeSidebarCache(u.clerkId, freshModules, organization, version);
+          writeSidebarCache(u.clerkId, freshModules, organization, version, resolvedRole);
         }
       })
       .catch((err) => {
