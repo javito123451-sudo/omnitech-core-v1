@@ -158,6 +158,10 @@ interface OrgContextValue {
   org: OrgInfo | null;
   user: UserInfo | null;
   loading: boolean;
+  /** True until the API has responded at least once this session. Use this
+   *  (not `loading`) as the gate for platform-role-based routing decisions,
+   *  so a cached-but-stale platformRole never triggers a premature redirect. */
+  platformRoleLoading: boolean;
   needsSetup: boolean;
   modules: Record<string, boolean>;
   canAccessModule: (key: string) => boolean;
@@ -176,6 +180,7 @@ const OrgContext = createContext<OrgContextValue>({
   org: null,
   user: null,
   loading: true,
+  platformRoleLoading: true,
   needsSetup: false,
   modules: {},
   canAccessModule: () => true,
@@ -195,6 +200,11 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  // platformRoleLoading stays true until the API has responded at least once
+  // this session. Unlike `loading` it is NOT cleared by the cache-seeding
+  // effect, so HomeRedirect and SuperAdminRoute won't fire based on a
+  // potentially stale platformRole that was cached from a previous session.
+  const [platformRoleLoading, setPlatformRoleLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [organizations, setOrganizations] = useState<OrgInfo[]>([]);
@@ -268,18 +278,14 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       );
       setOrg((prev) => (prev === null && cached.org ? cached.org : prev));
 
-      // Only unlock loading early when platformRole is in the cache.
-      // Old cache entries (written before this field was added) lack platformRole,
-      // so we keep loading=true and let the API response provide the authoritative
-      // value — this prevents HomeRedirect firing with a stale isSuperAdmin=false.
-      // Once the API responds it writes platformRole into the cache; all
-      // subsequent logins/refreshes will unlock loading immediately.
+      // Restore platformRole optimistically from cache if present.
+      // The API response always overwrites this with the authoritative live
+      // value from platform_roles table. platformRoleLoading is intentionally
+      // NOT cleared here — only the API response clears it (see fetch effect).
       if (cached.platformRole !== undefined) {
         setPlatformRole(cached.platformRole);
-        setLoading(false);
       }
-      // If platformRole is absent from cache, loading stays true.
-      // The fetch effect below will set loading=false after the API responds.
+      setLoading(false);
     }
   }, [isLoaded, isSignedIn, clerkUser?.id]);
 
@@ -301,6 +307,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       setOrganizations([]);
       setPlatformRole("NONE");
       setLoading(false);
+      setPlatformRoleLoading(true); // Reset so next sign-in waits for API
       return;
     }
 
@@ -374,11 +381,12 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         setLoading(false);
+        setPlatformRoleLoading(false); // API has responded — platformRole is now authoritative
       });
   }, [isSignedIn, isLoaded, tick]);
 
   return (
-    <OrgContext.Provider value={{ org, user, loading, needsSetup, modules, canAccessModule, permissions, hasPermission, organizations, platformRole, refetch }}>
+    <OrgContext.Provider value={{ org, user, loading, platformRoleLoading, needsSetup, modules, canAccessModule, permissions, hasPermission, organizations, platformRole, refetch }}>
       {children}
     </OrgContext.Provider>
   );

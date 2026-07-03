@@ -171,14 +171,18 @@ function SignUpPage() {
 function HomeRedirect() {
   const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
-  const { isSuperAdmin, loading } = useSuperAdmin();
+  const { isSuperAdmin, loading, platformRoleLoading } = useSuperAdmin();
 
   useEffect(() => {
     if (isSignedIn === false) { setLocation("/sign-in"); return; }
-    if (isSignedIn === true && !loading) {
+    // Wait for BOTH loading (sidebar/org data) AND platformRoleLoading (API
+    // confirmation of role) before deciding the destination. This prevents a
+    // stale cached platformRole from routing a newly-promoted SUPER_ADMIN to
+    // /dashboard before the API responds with their true role.
+    if (isSignedIn === true && !loading && !platformRoleLoading) {
       setLocation(isSuperAdmin ? "/control-center" : "/dashboard");
     }
-  }, [isSignedIn, loading, isSuperAdmin, setLocation]);
+  }, [isSignedIn, loading, platformRoleLoading, isSuperAdmin, setLocation]);
 
   return (
     <div className="flex items-center justify-center h-screen bg-[#0a0b14]">
@@ -214,15 +218,20 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
-  const { isSuperAdmin, loading } = useSuperAdmin();
+  const { isSuperAdmin, loading, platformRoleLoading } = useSuperAdmin();
+
+  // Wait for API confirmation before redirecting away. This prevents a stale
+  // cached platformRole (NONE) from bouncing a newly-promoted SUPER_ADMIN back
+  // to /dashboard before the API responds with their true role.
+  const isWaiting = loading || (platformRoleLoading && !isSuperAdmin);
 
   useEffect(() => {
-    if (!loading && !isSuperAdmin) {
+    if (!isWaiting && !isSuperAdmin) {
       setLocation("/dashboard");
     }
-  }, [loading, isSuperAdmin, setLocation]);
+  }, [isWaiting, isSuperAdmin, setLocation]);
 
-  if (loading) {
+  if (isWaiting) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#0a0b14]">
         <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
