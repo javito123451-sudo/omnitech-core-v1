@@ -767,12 +767,41 @@ controlCenterRouter.post("/platform-roles", async (req, res) => {
 // ── DELETE /platform-roles/:clerkUserId ───────────────────────────────────────
 controlCenterRouter.delete("/platform-roles/:clerkUserId", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede revocar roles" }); return; }
-  const { clerkUserId } = req.params;
+  const { clerkUserId } = req.params as { clerkUserId: string };
+
+  // Guard: never allow demoting the last active SUPER_ADMIN
+  const [current] = await db
+    .select({ role: platformRolesTable.role, isActive: platformRolesTable.isActive })
+    .from(platformRolesTable)
+    .where(eq(platformRolesTable.clerkUserId, clerkUserId));
+
+  if (current?.role === "SUPER_ADMIN" && current?.isActive) {
+    const [{ cnt }] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM platform_roles
+      WHERE role = 'SUPER_ADMIN' AND is_active = true
+    `).then(r => (r as { rows: Array<{ cnt: number }> }).rows);
+    if ((cnt ?? 0) <= 1) {
+      res.status(409).json({
+        error: "last_super_admin",
+        message: "No puedes degradar el último SUPER_ADMIN del sistema. Promueve otro usuario primero.",
+      });
+      return;
+    }
+  }
+
   await db.update(platformRolesTable).set({ isActive: false, updatedAt: new Date() }).where(eq(platformRolesTable.clerkUserId, clerkUserId));
   // Sync users.platform_role back to NONE
   await db.execute(sql`UPDATE users SET platform_role = 'NONE' WHERE clerk_id = ${clerkUserId}`);
   clearRoleCache(clerkUserId);
-  await logAudit({ actorClerkId: req.clerkUserId!, action: "platform_role_revoked", resource: "platform_role", resourceId: clerkUserId, severity: "warning", req });
+  await logAudit({
+    actorClerkId: req.clerkUserId!,
+    action: "platform_role_revoked",
+    resource: "platform_role",
+    resourceId: clerkUserId,
+    details: { previousRole: current?.role ?? "unknown" },
+    severity: "warning",
+    req,
+  });
   res.json({ ok: true });
 });
 

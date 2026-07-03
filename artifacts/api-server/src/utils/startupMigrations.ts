@@ -492,6 +492,41 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-T: ads_creatives creative studio columns ensured");
 
+    // ── FIX-U: Guarantee at least 1 active SUPER_ADMIN ────────────────────────
+    // If none exist, bootstrap one from DEFAULT_SUPER_ADMIN_EMAIL env var.
+    {
+      const countResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM platform_roles
+        WHERE role = 'SUPER_ADMIN' AND is_active = true
+      `);
+      const activeCnt = Number((countResult as { rows: Array<{ cnt: number }> }).rows[0]?.cnt ?? 0);
+      if (activeCnt === 0) {
+        const defaultEmail = process.env["DEFAULT_SUPER_ADMIN_EMAIL"];
+        if (defaultEmail) {
+          const userResult = await db.execute(
+            sql`SELECT clerk_id FROM users WHERE email = ${defaultEmail} LIMIT 1`
+          );
+          const userRows = (userResult as { rows: Array<{ clerk_id: string }> }).rows;
+          if (userRows.length > 0) {
+            const clerkId = userRows[0]!.clerk_id;
+            await db.execute(sql`
+              INSERT INTO platform_roles (clerk_user_id, role, display_name, email, is_active, granted_by, notes, created_at, updated_at)
+              VALUES (${clerkId}, 'SUPER_ADMIN', 'Default Admin', ${defaultEmail}, true, 'startup-migration', 'Auto-seeded from DEFAULT_SUPER_ADMIN_EMAIL', NOW(), NOW())
+              ON CONFLICT (clerk_user_id) DO UPDATE SET role = 'SUPER_ADMIN', is_active = true, updated_at = NOW()
+            `);
+            await db.execute(sql`UPDATE users SET platform_role = 'SUPER_ADMIN' WHERE clerk_id = ${clerkId}`);
+            logger.info(`[Migration] ✅ FIX-U: SUPER_ADMIN created from DEFAULT_SUPER_ADMIN_EMAIL (${defaultEmail})`);
+          } else {
+            logger.warn(`[Migration] ⚠️ FIX-U: No active SUPER_ADMIN — user not found in DB for DEFAULT_SUPER_ADMIN_EMAIL=${defaultEmail}. User must log in first.`);
+          }
+        } else {
+          logger.warn("[Migration] ⚠️ FIX-U: No active SUPER_ADMIN and DEFAULT_SUPER_ADMIN_EMAIL is not set. Set this env var to auto-bootstrap an admin.");
+        }
+      } else {
+        logger.info(`[Migration] ✅ FIX-U: ${activeCnt} active SUPER_ADMIN(s) confirmed`);
+      }
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

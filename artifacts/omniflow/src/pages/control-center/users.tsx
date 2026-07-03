@@ -118,72 +118,246 @@ function SuspendUserModal({ user, onClose }: { user: PlatformUser; onClose: () =
 
 function GrantRoleModal({ user, onClose }: { user: PlatformUser; onClose: () => void }) {
   const qc = useQueryClient();
-  const [role, setRole] = useState<"STAFF_OMNITECH" | "SUPER_ADMIN">("STAFF_OMNITECH");
+  const [role, setRole] = useState<"STAFF_OMNITECH" | "SUPER_ADMIN">("SUPER_ADMIN");
+  const [step, setStep] = useState<"select" | "confirm">("select");
+  const [backendError, setBackendError] = useState<string | null>(null);
   const hasRole = !!user.platformRole;
+  const isSuperAdmin = user.platformRole === "SUPER_ADMIN";
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["cc-users"] });
+    qc.invalidateQueries({ queryKey: ["cc-platform-roles"] });
+  };
 
   const grantMut = useMutation({
-    mutationFn: () => authFetch(`${BASE}/api/control-center/platform-roles`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clerkUserId: user.clerkId, email: user.email, displayName: user.name ?? undefined, role }),
-    }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); qc.invalidateQueries({ queryKey: ["cc-platform-roles"] }); onClose(); },
+    mutationFn: () =>
+      authFetch(`${BASE}/api/control-center/platform-roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clerkUserId: user.clerkId, email: user.email, displayName: user.name ?? undefined, role }),
+      }).then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.message ?? data.error ?? "Error desconocido");
+        return data;
+      }),
+    onSuccess: () => { invalidate(); onClose(); },
+    onError: (err: Error) => setBackendError(err.message),
   });
 
   const revokeMut = useMutation({
-    mutationFn: () => authFetch(`${BASE}/api/control-center/platform-roles/${user.clerkId}`, { method: "DELETE" }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cc-users"] }); qc.invalidateQueries({ queryKey: ["cc-platform-roles"] }); onClose(); },
+    mutationFn: () =>
+      authFetch(`${BASE}/api/control-center/platform-roles/${user.clerkId}`, { method: "DELETE" }).then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.message ?? data.error ?? "Error desconocido");
+        return data;
+      }),
+    onSuccess: () => { invalidate(); onClose(); },
+    onError: (err: Error) => setBackendError(err.message),
   });
+
+  const userLabel = user.name ?? user.email;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#0d0e1e] border border-violet-500/20 rounded-2xl p-6 w-full max-w-md">
+
+        {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <Crown size={18} className="text-violet-400" />
-            <h2 className="text-white font-semibold">Rol de Plataforma</h2>
+            <h2 className="text-white font-semibold">
+              {hasRole ? "Gestionar rol de plataforma" : "Promocionar a SUPER_ADMIN"}
+            </h2>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
         </div>
-        <p className="text-slate-400 text-sm mb-5">{user.name ?? user.email}</p>
 
+        {/* User pill */}
+        <div className="flex items-center gap-3 bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 mb-5">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center text-white text-xs font-bold uppercase">
+            {userLabel.charAt(0)}
+          </div>
+          <div className="min-w-0">
+            <p className="text-white text-sm font-medium truncate">{userLabel}</p>
+            {user.name && <p className="text-slate-500 text-xs truncate">{user.email}</p>}
+          </div>
+          {user.platformRole && (
+            <span className={`ml-auto text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ${ROLE_COLORS[user.platformRole] ?? ROLE_COLORS.member}`}>
+              {user.platformRole}
+            </span>
+          )}
+        </div>
+
+        {/* Backend error */}
+        {backendError && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 flex items-start gap-2">
+            <AlertTriangle size={15} className="text-red-400 mt-0.5 shrink-0" />
+            <p className="text-red-400 text-sm">{backendError}</p>
+          </div>
+        )}
+
+        {/* ── Existing role: demote or upgrade ─────────────────── */}
         {hasRole ? (
           <>
-            <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-4 mb-5">
-              <p className="text-white text-sm font-medium">Rol actual: <span className="text-violet-400">{user.platformRole}</span></p>
-              <p className="text-slate-500 text-xs mt-1">Este usuario tiene acceso al Control Center</p>
-            </div>
-            <p className="text-slate-400 text-sm mb-4">¿Revocar acceso al Control Center?</p>
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">Cancelar</button>
-              <button onClick={() => revokeMut.mutate()} disabled={revokeMut.isPending}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium flex items-center justify-center gap-2">
-                {revokeMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Revocar
-              </button>
-            </div>
+            {isSuperAdmin ? (
+              /* SUPER_ADMIN → demote flow */
+              step === "select" ? (
+                <>
+                  <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-4 mb-5">
+                    <p className="text-white text-sm font-medium flex items-center gap-2">
+                      <Crown size={14} className="text-violet-400" /> SUPER_ADMIN activo
+                    </p>
+                    <p className="text-slate-500 text-xs mt-1">Este usuario tiene acceso total al Control Center</p>
+                  </div>
+                  <p className="text-slate-400 text-sm mb-5">
+                    ¿Quieres degradar a <strong className="text-white">{userLabel}</strong> eliminando su acceso al Control Center?
+                  </p>
+                  <div className="flex gap-3">
+                    <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => { setBackendError(null); setStep("confirm"); }}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-red-600/20 border border-red-500/30 hover:bg-red-600/30 text-red-400 text-sm font-medium flex items-center justify-center gap-2">
+                      <Trash2 size={14} /> Degradar rol
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Confirmation step */
+                <>
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-5">
+                    <p className="text-white text-sm font-semibold mb-1">⚠️ Confirmar degradación</p>
+                    <p className="text-slate-400 text-xs leading-relaxed">
+                      <strong className="text-white">{userLabel}</strong> perderá acceso inmediato al Control Center.
+                      Si es el único SUPER_ADMIN, la operación será bloqueada por el sistema.
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => setStep("select")} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">
+                      Atrás
+                    </button>
+                    <button
+                      onClick={() => revokeMut.mutate()}
+                      disabled={revokeMut.isPending}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium flex items-center justify-center gap-2">
+                      {revokeMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                      Confirmar degradación
+                    </button>
+                  </div>
+                </>
+              )
+            ) : (
+              /* Non-SUPER_ADMIN platform role → promote to SUPER_ADMIN or revoke */
+              step === "select" ? (
+                <>
+                  <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-5">
+                    <p className="text-white text-sm font-medium">Rol actual: <span className="text-pink-400">{user.platformRole}</span></p>
+                    <p className="text-slate-500 text-xs mt-1">Puedes promover a SUPER_ADMIN o revocar el acceso</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-5">
+                    <button
+                      onClick={() => { setRole("SUPER_ADMIN"); setBackendError(null); setStep("confirm"); }}
+                      className="px-4 py-2.5 rounded-xl border border-violet-500/40 bg-violet-600/10 text-violet-400 text-sm font-medium hover:bg-violet-600/20 flex items-center justify-center gap-1.5">
+                      <Crown size={13} /> Promover a SUPER_ADMIN
+                    </button>
+                    <button
+                      onClick={() => { setBackendError(null); revokeMut.mutate(); }}
+                      disabled={revokeMut.isPending}
+                      className="px-4 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 text-sm font-medium hover:bg-red-500/20 flex items-center justify-center gap-1.5">
+                      {revokeMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={13} />} Revocar
+                    </button>
+                  </div>
+                  <button onClick={onClose} className="w-full px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                /* Confirm promote from STAFF → SUPER_ADMIN */
+                <>
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-5">
+                    <p className="text-white text-sm font-semibold mb-1 flex items-center gap-1.5">
+                      <AlertTriangle size={14} className="text-amber-400" /> Promover a SUPER_ADMIN
+                    </p>
+                    <p className="text-slate-400 text-xs leading-relaxed">
+                      <strong className="text-white">{userLabel}</strong> tendrá <strong className="text-white">acceso total</strong> al Control Center, incluyendo gestión de usuarios, módulos, licencias, seguridad y auditoría.
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => setStep("select")} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">
+                      Atrás
+                    </button>
+                    <button
+                      onClick={() => grantMut.mutate()}
+                      disabled={grantMut.isPending}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium flex items-center justify-center gap-2">
+                      {grantMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Crown size={15} />}
+                      Confirmar promoción
+                    </button>
+                  </div>
+                </>
+              )
+            )}
           </>
         ) : (
-          <>
-            <div className="grid grid-cols-2 gap-2 mb-5">
-              {(["STAFF_OMNITECH", "SUPER_ADMIN"] as const).map(r => (
-                <button key={r} onClick={() => setRole(r)}
-                  className={`px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${role === r ? "bg-violet-600 border-violet-500 text-white" : "border-white/10 text-slate-400 hover:text-white"}`}>
-                  {r === "SUPER_ADMIN" ? "SUPER_ADMIN" : "STAFF"}
+          /* No platform role yet: select role → confirm */
+          step === "select" ? (
+            <>
+              <p className="text-slate-400 text-sm mb-4">Asignar rol de plataforma a <strong className="text-white">{userLabel}</strong>:</p>
+              <div className="grid grid-cols-2 gap-2 mb-5">
+                {(["SUPER_ADMIN", "STAFF_OMNITECH"] as const).map(r => (
+                  <button key={r} onClick={() => setRole(r)}
+                    className={`px-4 py-3 rounded-xl border text-sm font-medium transition-all flex flex-col items-center gap-1 ${
+                      role === r ? "bg-violet-600 border-violet-500 text-white" : "border-white/10 text-slate-400 hover:text-white hover:border-white/20"
+                    }`}>
+                    {r === "SUPER_ADMIN" ? <Crown size={16} /> : <Shield size={16} />}
+                    {r === "SUPER_ADMIN" ? "SUPER_ADMIN" : "STAFF"}
+                  </button>
+                ))}
+              </div>
+              {role === "SUPER_ADMIN" && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 mb-5 flex items-start gap-2">
+                  <AlertTriangle size={14} className="text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-amber-300 text-xs">SUPER_ADMIN otorga acceso total e irrestricto al Control Center de la plataforma.</p>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">Cancelar</button>
+                <button
+                  onClick={() => { setBackendError(null); setStep("confirm"); }}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium flex items-center justify-center gap-2">
+                  <Crown size={14} /> Continuar
                 </button>
-              ))}
-            </div>
-            {role === "SUPER_ADMIN" && (
-              <p className="text-amber-400 text-xs mb-4 flex items-center gap-1.5">
-                <AlertTriangle size={11} /> SUPER_ADMIN tiene acceso total a la plataforma
-              </p>
-            )}
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">Cancelar</button>
-              <button onClick={() => grantMut.mutate()} disabled={grantMut.isPending}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium flex items-center justify-center gap-2">
-                {grantMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Conceder
-              </button>
-            </div>
-          </>
+              </div>
+            </>
+          ) : (
+            /* Final confirmation */
+            <>
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-5">
+                <p className="text-white text-sm font-semibold mb-1 flex items-center gap-1.5">
+                  <AlertTriangle size={14} className="text-amber-400" />
+                  {role === "SUPER_ADMIN" ? "Promover a SUPER_ADMIN" : "Asignar STAFF_OMNITECH"}
+                </p>
+                <p className="text-slate-400 text-xs leading-relaxed">
+                  <strong className="text-white">{userLabel}</strong> recibirá el rol <strong className="text-white">{role}</strong>.
+                  {role === "SUPER_ADMIN" && " Tendrá acceso total al Control Center de la plataforma."}
+                  {" "}Esta acción queda registrada en Auditoría.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setStep("select")} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm hover:text-white">
+                  Atrás
+                </button>
+                <button
+                  onClick={() => grantMut.mutate()}
+                  disabled={grantMut.isPending}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium flex items-center justify-center gap-2">
+                  {grantMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Crown size={15} />}
+                  {role === "SUPER_ADMIN" ? "Promocionar" : "Asignar rol"}
+                </button>
+              </div>
+            </>
+          )
         )}
       </div>
     </div>
