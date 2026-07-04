@@ -199,7 +199,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading && !adminLoading && needsSetup) {
       if (isSuperAdmin) {
-        setLocation("/setup");
+        // SUPER_ADMINs without a workspace belong in the Control Center, not /setup
+        setLocation("/control-center");
       } else {
         setLocation("/no-access");
       }

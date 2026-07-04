@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { authFetch } from "@/lib/authFetch";
+import { useOrg } from "@/lib/orgContext";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -68,6 +69,7 @@ function NavItem({ icon: Icon, label, href, currentLocation, onClick }: {
 
 function Sidebar({ location, onClose }: { location: string; onClose?: () => void }) {
   const { signOut } = useClerk();
+  const { org } = useOrg();
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -99,12 +101,14 @@ function Sidebar({ location, onClose }: { location: string; onClose?: () => void
 
       {/* Footer */}
       <div className="px-3 py-4 border-t border-white/10 space-y-1">
-        <Link href={`${basePath}/executive-dashboard`} onClick={onClose}>
-          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer transition-all">
-            <Hexagon size={17} />
-            <span>Volver al CRM</span>
-          </div>
-        </Link>
+        {org && (
+          <Link href={`${basePath}/executive-dashboard`} onClick={onClose}>
+            <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer transition-all">
+              <Hexagon size={17} />
+              <span>Volver al CRM</span>
+            </div>
+          </Link>
+        )}
         <button
           onClick={async () => {
             try { await authFetch(`${import.meta.env.BASE_URL}api/auth/logout-event`, { method: "POST" }); } catch { /* non-critical */ }
