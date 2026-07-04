@@ -162,19 +162,26 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       try {
         const pendingKey   = `pending:${userEmail}`;
         const pendingRows  = await db.execute(
-          sql`SELECT id, clerk_user_id FROM platform_roles
+          sql`SELECT id, clerk_user_id, role FROM platform_roles
               WHERE (clerk_user_id = ${pendingKey} OR clerk_user_id = ${userEmail})
-                AND is_active = true LIMIT 1`
+              LIMIT 1`
         );
-        const rows = (pendingRows as { rows: { id: number; clerk_user_id: string }[] }).rows;
+        const rows = (pendingRows as { rows: { id: number; clerk_user_id: string; role: string }[] }).rows;
         if (rows.length > 0) {
-          const oldKey = rows[0]!.clerk_user_id;
-          await db.execute(
-            sql`UPDATE platform_roles SET clerk_user_id = ${clerkUserId}, updated_at = now()
-                WHERE clerk_user_id = ${oldKey}`
-          );
-          clearRoleCache(clerkUserId); // flush any stale entry for the real Clerk ID
-          console.info(`[Auth] Linked pending SUPER_ADMIN grant for ${userEmail} (was "${oldKey}") → ${clerkUserId}`);
+          const oldKey  = rows[0]!.clerk_user_id;
+          const grantedRole = rows[0]!.role ?? "SUPER_ADMIN";
+          // DELETE the pending/malformed row first, then UPSERT with the real
+          // Clerk user ID. This avoids a duplicate-key error when a (possibly
+          // inactive) row for the real clerkUserId already exists.
+          await db.execute(sql`DELETE FROM platform_roles WHERE clerk_user_id = ${oldKey}`);
+          await db.execute(sql`
+            INSERT INTO platform_roles (clerk_user_id, role, display_name, email, is_active, granted_by, notes, created_at, updated_at)
+            VALUES (${clerkUserId}, ${grantedRole}, ${userEmail}, ${userEmail}, true, 'email_link', 'Auto-linked from pending grant on first login', NOW(), NOW())
+            ON CONFLICT (clerk_user_id) DO UPDATE
+              SET role = ${grantedRole}, is_active = true, email = ${userEmail}, updated_at = NOW()
+          `);
+          clearRoleCache(clerkUserId);
+          console.info(`[Auth] Linked pending grant for ${userEmail} (was "${oldKey}") → ${clerkUserId} [${grantedRole}]`);
         }
       } catch (err) {
         console.error("[Auth] Failed to resolve pending platform role:", err);
