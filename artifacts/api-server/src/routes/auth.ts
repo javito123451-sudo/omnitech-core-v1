@@ -3,7 +3,7 @@ import { clerkClient } from "@clerk/express";
 import { db, usersTable, orgMembersTable, organizationsTable, moduleConfigsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { hasPlatformRole } from "../middlewares/superAdmin";
+import { hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
 import { logAudit, shouldLogLogin } from "../utils/auditLogger";
 import { getOrgModuleVersion } from "../lib/moduleVersion";
 
@@ -151,6 +151,31 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     const permissions = primaryMembership
       ? getPermissionsForRole(primaryMembership.role)
       : new Set<string>();
+
+    // ── Resolve pending platform role grants by email ─────────────────────
+    // A SUPER_ADMIN can be pre-granted before the user ever logs in. In that
+    // case the row has clerk_user_id = 'pending:<email>'. On their first (or
+    // any subsequent) login we detect it and link the real clerk_user_id so
+    // hasPlatformRole() starts returning the correct role immediately.
+    const userEmail = user.email ?? clerkProfile?.email ?? null;
+    if (userEmail) {
+      try {
+        const pendingKey = `pending:${userEmail}`;
+        const pendingRows = await db.execute(
+          sql`SELECT id FROM platform_roles WHERE clerk_user_id = ${pendingKey} AND is_active = true LIMIT 1`
+        );
+        const rows = (pendingRows as { rows: { id: number }[] }).rows;
+        if (rows.length > 0) {
+          await db.execute(
+            sql`UPDATE platform_roles SET clerk_user_id = ${clerkUserId}, updated_at = now() WHERE clerk_user_id = ${pendingKey}`
+          );
+          clearRoleCache(clerkUserId); // ensure no stale cache entry for real ID
+          console.info(`[Auth] Linked pending SUPER_ADMIN grant for ${userEmail} → ${clerkUserId}`);
+        }
+      } catch (err) {
+        console.error("[Auth] Failed to resolve pending platform role:", err);
+      }
+    }
 
     // ── Resolve platform role — always read from platform_roles table (authoritative) ──
     // users.platform_role is a denormalized cache; it can be stale if the user
