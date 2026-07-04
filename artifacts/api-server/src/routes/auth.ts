@@ -153,24 +153,28 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       : new Set<string>();
 
     // ── Resolve pending platform role grants by email ─────────────────────
-    // A SUPER_ADMIN can be pre-granted before the user ever logs in. In that
-    // case the row has clerk_user_id = 'pending:<email>'. On their first (or
-    // any subsequent) login we detect it and link the real clerk_user_id so
-    // hasPlatformRole() starts returning the correct role immediately.
+    // A SUPER_ADMIN can be pre-granted before the user ever logs in. The row
+    // may use clerk_user_id = 'pending:<email>' (canonical) or just '<email>'
+    // (legacy malformed rows — FIX-V normalises these on startup, but we also
+    // handle them here as a belt-and-suspenders guard).
     const userEmail = user.email ?? clerkProfile?.email ?? null;
     if (userEmail) {
       try {
-        const pendingKey = `pending:${userEmail}`;
-        const pendingRows = await db.execute(
-          sql`SELECT id FROM platform_roles WHERE clerk_user_id = ${pendingKey} AND is_active = true LIMIT 1`
+        const pendingKey   = `pending:${userEmail}`;
+        const pendingRows  = await db.execute(
+          sql`SELECT id, clerk_user_id FROM platform_roles
+              WHERE (clerk_user_id = ${pendingKey} OR clerk_user_id = ${userEmail})
+                AND is_active = true LIMIT 1`
         );
-        const rows = (pendingRows as { rows: { id: number }[] }).rows;
+        const rows = (pendingRows as { rows: { id: number; clerk_user_id: string }[] }).rows;
         if (rows.length > 0) {
+          const oldKey = rows[0]!.clerk_user_id;
           await db.execute(
-            sql`UPDATE platform_roles SET clerk_user_id = ${clerkUserId}, updated_at = now() WHERE clerk_user_id = ${pendingKey}`
+            sql`UPDATE platform_roles SET clerk_user_id = ${clerkUserId}, updated_at = now()
+                WHERE clerk_user_id = ${oldKey}`
           );
-          clearRoleCache(clerkUserId); // ensure no stale cache entry for real ID
-          console.info(`[Auth] Linked pending SUPER_ADMIN grant for ${userEmail} → ${clerkUserId}`);
+          clearRoleCache(clerkUserId); // flush any stale entry for the real Clerk ID
+          console.info(`[Auth] Linked pending SUPER_ADMIN grant for ${userEmail} (was "${oldKey}") → ${clerkUserId}`);
         }
       } catch (err) {
         console.error("[Auth] Failed to resolve pending platform role:", err);

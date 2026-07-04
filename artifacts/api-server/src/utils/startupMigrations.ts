@@ -527,6 +527,37 @@ export async function runStartupMigrations(): Promise<void> {
       }
     }
 
+    // ── FIX-V: Normalize malformed platform_roles rows ─────────────────────
+    // Rows where clerk_user_id is an email address directly (not a real Clerk
+    // user ID starting with "user_" and not our "pending:<email>" sentinel)
+    // are malformed — likely inserted by an older code path without the prefix.
+    // Normalize them to "pending:<email>" so the auth.ts auto-link logic works.
+    {
+      const malformed = await db.execute(sql`
+        SELECT id, clerk_user_id, email
+        FROM platform_roles
+        WHERE clerk_user_id LIKE '%@%'
+          AND clerk_user_id NOT LIKE 'pending:%'
+          AND clerk_user_id NOT LIKE 'user_%'
+      `);
+      const rows = (malformed as { rows: Array<{ id: number; clerk_user_id: string; email: string }> }).rows;
+      for (const row of rows) {
+        const emailVal = row.email || row.clerk_user_id;
+        const pendingKey = `pending:${emailVal}`;
+        await db.execute(sql`
+          UPDATE platform_roles
+          SET clerk_user_id = ${pendingKey},
+              email = ${emailVal},
+              updated_at = NOW()
+          WHERE id = ${row.id}
+        `);
+        logger.info(`[Migration] ✅ FIX-V: normalized platform_roles row ${row.id} → ${pendingKey}`);
+      }
+      if (rows.length === 0) {
+        logger.info("[Migration] ✅ FIX-V: no malformed platform_roles rows found");
+      }
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
