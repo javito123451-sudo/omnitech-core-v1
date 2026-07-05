@@ -12,10 +12,12 @@ export async function runStartupMigrations(): Promise<void> {
 
   try {
     // ── FIX A: Rename org 7 to OmniTech Core / omnitech-core ───────────────
+    // Condition: run if slug OR name don't match — catches prod where slug was already
+    // correct but name was still the original user name ("Felipe arango").
     const renamed = await db.execute(sql`
       UPDATE organizations
       SET name = 'OmniTech Core', slug = 'omnitech-core'
-      WHERE id = 7 AND slug != 'omnitech-core'
+      WHERE id = 7 AND (slug != 'omnitech-core' OR name != 'OmniTech Core')
     `);
     if ((renamed as { rowCount?: number }).rowCount ?? 0 > 0) {
       logger.info("[Migration] ✅ FIX-A: Org 7 renamed → OmniTech Core / omnitech-core");
@@ -38,11 +40,22 @@ export async function runStartupMigrations(): Promise<void> {
     }
 
     // ── FIX C: Missing membership — a3servicio@gmail.com → A3SERVICIOS ─────
-    // User registered but org_members record was never created by POST /workspaces
+    // User registered but org_members record was never created by POST /workspaces.
+    // IMPORTANT: guard against org_id not existing in this environment (e.g. production
+    // has different org IDs than development) to avoid FK violations that abort the
+    // entire migration chain and prevent subsequent fixes (FIX-D → FIX-Y) from running.
     const missingMemberships = [
-      { email: "a3servicio@gmail.com", orgId: 12, role: "owner" },
+      { email: "a3servicio@gmail.com", orgId: 13, role: "owner" },
     ];
     for (const { email, orgId, role } of missingMemberships) {
+      // Guard 1: org must exist in this environment
+      const orgExists = await db.execute(sql`SELECT 1 FROM organizations WHERE id = ${orgId} LIMIT 1`);
+      if ((orgExists as { rows: unknown[] }).rows.length === 0) {
+        logger.info(`[Migration] FIX-C: org_id=${orgId} not found in this environment — skipping`);
+        continue;
+      }
+
+      // Guard 2: user must exist
       const userResult = await db.execute(sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`);
       const userRows = (userResult as { rows: Array<{id: number}> }).rows;
       if (userRows.length === 0) continue;
