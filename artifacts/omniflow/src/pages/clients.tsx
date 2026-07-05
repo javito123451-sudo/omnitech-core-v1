@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Component, type ErrorInfo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { AIQuoteModal } from "@/components/ai-quote-modal";
@@ -23,11 +23,48 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// ── Error Boundary ──────────────────────────────────────────────────────────
+class ClientsErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[ClientsErrorBoundary]", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full py-20 text-muted-foreground gap-3">
+          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+            <span className="text-red-400 text-xl">!</span>
+          </div>
+          <p className="text-sm font-medium text-white">Error al cargar los clientes</p>
+          <p className="text-xs text-center max-w-xs">{this.state.error.message}</p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="mt-2 px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm hover:bg-primary/30 transition-colors"
+          >
+            Reintentar
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 type ClientStatus = "lead" | "active" | "inactive" | "churned";
 
 interface ClientRow {
-  id: number; name: string; email: string; phone?: string | null;
+  id: number; name: string; email: string | null; phone?: string | null;
   company?: string | null; status: string; tags?: string | null;
   notes?: string | null; value?: number | null; createdAt: string;
 }
@@ -563,6 +600,7 @@ function ClientProfileDialog({
 
         {/* Contact info */}
         <div className="space-y-2 mt-2">
+          {client.email && (
           <a href={`mailto:${client.email}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-background/40 hover:bg-white/5 transition-colors group">
             <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
               <Mail className="w-3.5 h-3.5 text-primary" />
@@ -572,6 +610,7 @@ function ClientProfileDialog({
               <p className="text-sm text-white truncate group-hover:text-primary transition-colors">{client.email}</p>
             </div>
           </a>
+          )}
 
           {client.phone && (
             <a href={`tel:${client.phone}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-background/40 hover:bg-white/5 transition-colors group">
@@ -737,8 +776,16 @@ function ClientProfileDialog({
   );
 }
 
-// ── Main Clients Page ───────────────────────────────────────────────────────
+// ── Main Clients Page (wrapped with Error Boundary) ─────────────────────────
 export default function Clients() {
+  return (
+    <ClientsErrorBoundary>
+      <ClientsInner />
+    </ClientsErrorBoundary>
+  );
+}
+
+function ClientsInner() {
   const { data: clients, isLoading } = useListClients();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -754,8 +801,9 @@ export default function Clients() {
     const q = search.toLowerCase();
     const matchesSearch =
       !search ||
-      c.name.toLowerCase().includes(q) ||
-      c.email.toLowerCase().includes(q) ||
+      (c.name ?? "").toLowerCase().includes(q) ||
+      (c.email ?? "").toLowerCase().includes(q) ||
+      (c.phone ?? "").toLowerCase().includes(q) ||
       (c.company ?? "").toLowerCase().includes(q) ||
       (c.tags ?? "").toLowerCase().includes(q);
     const matchesStatus = statusFilter === "all" || c.status === statusFilter;
@@ -918,10 +966,12 @@ function ClientCard({ client, onView }: { client: ClientRow; onView: () => void 
 
             {/* Contact row */}
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <Mail className="w-3 h-3 shrink-0" />
-                <span className="truncate max-w-[140px]">{client.email}</span>
-              </span>
+              {client.email && (
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Mail className="w-3 h-3 shrink-0" />
+                  <span className="truncate max-w-[140px]">{client.email}</span>
+                </span>
+              )}
               {client.phone && (
                 <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                   <Phone className="w-3 h-3 shrink-0" />

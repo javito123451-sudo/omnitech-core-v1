@@ -48,7 +48,7 @@ interface SavedQuote {
 export interface AIQuoteModalProps {
   clientId: number;
   clientName: string;
-  clientEmail: string;
+  clientEmail: string | null;
   clientPhone?: string | null;
   clientCompany?: string | null;
   defaultValue?: number | null;
@@ -360,9 +360,11 @@ export function AIQuoteModal({
         "\n\n" +
         "Quedo a su disposición para cualquier consulta.\n\nUn saludo.",
     );
-    window.open(
-      "mailto:" + clientEmail + "?subject=" + subject + "&body=" + body,
-    );
+    if (clientEmail) {
+      window.open(
+        "mailto:" + clientEmail + "?subject=" + subject + "&body=" + body,
+      );
+    }
   };
 
   const shareWhatsApp = () => {
@@ -479,9 +481,11 @@ export function AIQuoteModal({
                       <div className="text-sm font-semibold text-foreground">
                         {clientName}
                       </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {clientEmail}
-                      </div>
+                      {clientEmail && (
+                        <div className="text-[11px] text-muted-foreground">
+                          {clientEmail}
+                        </div>
+                      )}
                     </div>
                     {clientCompany && (
                       <div className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
