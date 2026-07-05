@@ -664,6 +664,28 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info(`[Migration] ✅ FIX-X: Module version bumped for ${orgRows.length} org(s) — sidebar cache will refresh`);
     }
 
+    // ── FIX-Y: Ensure omnitech-core org is on enterprise plan ─────────────────
+    // Production DB had plan='starter' for the main org, gating all non-CRM modules.
+    // The omnitech-core slug identifies the primary operator org — must be enterprise.
+    {
+      const updated = await db.execute(sql`
+        UPDATE organizations
+        SET plan = 'enterprise'
+        WHERE slug = 'omnitech-core'
+          AND plan != 'enterprise'
+      `);
+      const count = (updated as { rowCount?: number }).rowCount ?? 0;
+      if (count > 0) {
+        logger.info(`[Migration] ✅ FIX-Y: omnitech-core plan → enterprise (${count} row updated)`);
+        // bump version so sidebar cache clears immediately
+        const orgRow = await db.execute(sql`SELECT id FROM organizations WHERE slug = 'omnitech-core' LIMIT 1`);
+        const rows = (orgRow as { rows: { id: number }[] }).rows;
+        if (rows[0]) bumpOrgModuleVersion(rows[0].id);
+      } else {
+        logger.info("[Migration] ✅ FIX-Y: omnitech-core already on enterprise plan — no change");
+      }
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
