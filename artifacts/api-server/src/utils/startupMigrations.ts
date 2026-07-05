@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { bumpOrgModuleVersion } from "../lib/moduleVersion";
 
 /**
  * Idempotent startup migrations — run once per deploy.
@@ -648,6 +649,20 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS lead_messages_result_id_idx ON lead_messages(result_id)`);
     logger.info("[Migration] ✅ FIX-W: OmniLeads AI tables ensured");
+
+    // ── FIX-X: Bump module versions for all orgs — forces sidebar cache invalidation ──
+    // Root cause: planModules map was missing 'enterprise' and 'professional' keys,
+    // causing those orgs to fall back to starter (crm-only). All modules except crm
+    // were being set to false. Fix: added all plan tiers + fail-open fallback.
+    // Bumping versions here ensures any stale localStorage cache is cleared on next load.
+    {
+      const orgs = await db.execute(sql`SELECT id FROM organizations`);
+      const orgRows = (orgs as { rows: { id: number }[] }).rows;
+      for (const { id } of orgRows) {
+        bumpOrgModuleVersion(id);
+      }
+      logger.info(`[Migration] ✅ FIX-X: Module version bumped for ${orgRows.length} org(s) — sidebar cache will refresh`);
+    }
 
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {

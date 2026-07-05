@@ -131,17 +131,29 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     modules.crm = true;
 
     // ── Plan-based module gating ───────────────────────────────────────────
-    // Starter: crm only
-    // Growth: crm + ai_agents + analytics + integrations + automations
-    // Scale: all modules
+    // Starter / free: crm only
+    // Growth: crm + ai_agents + analytics + integrations + automations + omni_marketing
+    // Scale / professional / enterprise / business / unknown: all modules
+    // (unknown plans fail-open — trust module_configs rather than blocking everything)
+    const ALL_MODULES = [
+      "crm", "ai_agents", "analytics", "integrations", "automations",
+      "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
+      "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
+      "omni_security", "omni_docs", "quotes", "portal_cliente",
+      "knowledge_base",
+    ];
     const planModules: Record<string, string[]> = {
-      starter: ["crm"],
-      growth:  ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
-      scale:   ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax", "omni_marketing", "omni_ads", "omni_leads"],
-      free:    ["crm"],
+      starter:      ["crm"],
+      free:         ["crm"],
+      growth:       ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
+      scale:        ALL_MODULES,
+      professional: ALL_MODULES,
+      enterprise:   ALL_MODULES,
+      business:     ALL_MODULES,
     };
     const plan = primaryMembership?.orgPlan ?? "starter";
-    const allowedModules = planModules[plan] ?? planModules.starter;
+    // Unknown plans fail-open: never accidentally block a workspace
+    const allowedModules = planModules[plan] ?? ALL_MODULES;
     for (const key of Object.keys(modules)) {
       if (!allowedModules.includes(key)) modules[key] = false;
     }
