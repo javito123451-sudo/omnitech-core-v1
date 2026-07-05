@@ -17,3 +17,4 @@ export * from "./support-tickets";
 export * from "./pipeline";
 export * from "./tax";
 export * from "./onboard-wizard";
+export * from "./leads";

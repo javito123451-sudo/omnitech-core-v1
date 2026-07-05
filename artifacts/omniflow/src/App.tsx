@@ -60,6 +60,7 @@ import AccountingPage from "@/pages/accounting/index";
 import TaxPage from "@/pages/tax/index";
 import MarketingHubPage from "@/pages/marketing";
 import OmniAdsPage from "@/pages/ads/index";
+import LeadsPage from "@/pages/leads";
 import OnboardWizardPage from "@/pages/control-center/onboard-wizard";
 import PortalPage from "@/pages/portal";
 import PublicInvoicePage from "@/pages/PublicInvoicePage";
@@ -515,6 +516,15 @@ function AppRoutes() {
           <MainLayout>
             <ModuleGuard moduleKey="omni_ads">
               <OmniAdsPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/leads">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="omni_leads">
+              <LeadsPage />
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>

@@ -1,0 +1,307 @@
+# PROYECTO: OMNILEADS AI
+
+Quiero crear un nuevo módulo dentro de OmniTech Core llamado "OmniLeads AI".
+
+OBJETIVO
+
+Crear un sistema de prospección inteligente que permita encontrar empresas reales, analizarlas automáticamente con IA y convertirlas en oportunidades de venta dentro del CRM de OmniTech.
+
+IMPORTANTE
+
+Este módulo NO debe ser una aplicación independiente.
+
+Debe integrarse completamente dentro de OmniTech Core, utilizando el mismo sistema de autenticación, permisos, base de datos, workspaces, diseño, componentes y arquitectura existentes.
+
+--------------------------------------------------
+FASE 1 - BUSCADOR DE EMPRESAS
+--------------------------------------------------
+
+Crear una pantalla donde el usuario pueda buscar empresas mediante:
+
+- Sector
+- Ciudad
+- Código Postal (opcional)
+- Radio en kilómetros
+- Número máximo de resultados
+
+Ejemplo:
+
+Sector:
+Dentistas
+
+Ciudad:
+Madrid
+
+Radio:
+20 km
+
+Resultados:
+100
+
+Botón principal:
+
+"Buscar empresas"
+
+--------------------------------------------------
+RESULTADOS
+--------------------------------------------------
+
+Mostrar una tabla moderna con:
+
+□ Checkbox
+
+Nombre empresa
+
+Dirección
+
+Teléfono
+
+Página web
+
+Valoración Google
+
+Número de reseñas
+
+Estado
+
+Acciones
+
+Permitir seleccionar varias empresas.
+
+Añadir filtros.
+
+Añadir búsqueda rápida.
+
+Paginación.
+
+--------------------------------------------------
+FASE 2 - ANÁLISIS IA
+--------------------------------------------------
+
+Cada empresa tendrá un botón:
+
+"Analizar"
+
+La IA debe revisar automáticamente toda la información pública disponible.
+
+Analizar:
+
+✔ Tiene web
+
+✔ HTTPS
+
+✔ Formulario
+
+✔ WhatsApp
+
+✔ Facebook
+
+✔ Instagram
+
+✔ Google Business
+
+✔ CTA visibles
+
+✔ Optimización móvil
+
+✔ Velocidad de carga
+
+✔ Información de contacto
+
+✔ Posibles mejoras detectadas
+
+Generar automáticamente:
+
+Puntuación 0-100
+
+Clasificación:
+
+🟢 Alta oportunidad
+
+🟡 Media
+
+🔴 Baja
+
+Guardar el análisis en la base de datos.
+
+--------------------------------------------------
+FASE 3 - CRM
+--------------------------------------------------
+
+Botón:
+
+"Añadir al CRM"
+
+Crear automáticamente un Lead dentro del CRM de OmniTech.
+
+Guardar:
+
+Nombre
+
+Dirección
+
+Teléfono
+
+Email
+
+Web
+
+Notas
+
+Puntuación IA
+
+Fecha
+
+Estado = Nuevo
+
+Workspace correspondiente
+
+--------------------------------------------------
+FASE 4 - IA
+--------------------------------------------------
+
+Botón:
+
+"Generar propuesta"
+
+La IA redactará un mensaje totalmente personalizado utilizando únicamente la información pública obtenida durante el análisis.
+
+Debe sonar natural.
+
+Nada de plantillas genéricas.
+
+Debe parecer escrito por una persona.
+
+--------------------------------------------------
+FASE 5 - DASHBOARD
+--------------------------------------------------
+
+Crear un dashboard con:
+
+Empresas encontradas
+
+Empresas analizadas
+
+Leads creados
+
+Oportunidades altas
+
+Oportunidades medias
+
+Oportunidades bajas
+
+Conversiones
+
+Última búsqueda
+
+Gráficos
+
+--------------------------------------------------
+BASE DE DATOS
+--------------------------------------------------
+
+Crear las tablas:
+
+lead_searches
+
+lead_results
+
+lead_analysis
+
+lead_scores
+
+lead_messages
+
+Todas deben incluir:
+
+workspace_id
+
+created_at
+
+updated_at
+
+created_by
+
+Mantener aislamiento entre empresas.
+
+--------------------------------------------------
+DISEÑO
+--------------------------------------------------
+
+Usar exactamente el mismo diseño de OmniTech Core.
+
+No cambiar colores.
+
+No cambiar tipografía.
+
+No crear componentes duplicados.
+
+Reutilizar los existentes.
+
+Debe parecer un módulo nativo.
+
+--------------------------------------------------
+ARQUITECTURA
+--------------------------------------------------
+
+Código modular.
+
+Escalable.
+
+Preparado para añadir nuevos proveedores de datos mediante adaptadores.
+
+Separar:
+
+Frontend
+
+Backend
+
+Servicios
+
+Repositorio
+
+IA
+
+API
+
+Base de datos
+
+--------------------------------------------------
+PREPARADO PARA FUTURAS INTEGRACIONES
+--------------------------------------------------
+
+Diseñar la arquitectura para conectar posteriormente con:
+
+WhatsApp Business
+
+Email
+
+LinkedIn (cuando exista integración compatible)
+
+Calendario
+
+Automatizaciones
+
+OmniFlow
+
+CRM
+
+--------------------------------------------------
+CUMPLIMIENTO
+--------------------------------------------------
+
+No utilizar scraping que incumpla los términos de servicio de otras plataformas.
+
+Utilizar únicamente APIs oficiales, datos públicos o fuentes permitidas.
+
+Toda la arquitectura debe respetar la normativa aplicable en materia de privacidad y protección de datos.
+
+--------------------------------------------------
+OBJETIVO FINAL
+--------------------------------------------------
+
+Quiero que OmniLeads AI sea el mejor módulo de prospección comercial dentro de OmniTech Core.
+
+Debe ayudar al usuario a encontrar empresas, analizarlas, priorizar oportunidades y convertirlas en leads dentro del CRM con el menor número posible de clics.
+
+La implementación debe ser limpia, profesional, escalable y lista para seguir creciendo en futuras versiones.

@@ -558,6 +558,97 @@ export async function runStartupMigrations(): Promise<void> {
       }
     }
 
+    // ── FIX-W: OmniLeads AI tables ────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS lead_searches (
+        id           SERIAL PRIMARY KEY,
+        org_id       INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        created_by   INTEGER,
+        sector       TEXT NOT NULL,
+        city         TEXT NOT NULL,
+        postal_code  TEXT,
+        radius_km    INTEGER NOT NULL DEFAULT 20,
+        max_results  INTEGER NOT NULL DEFAULT 50,
+        status       TEXT NOT NULL DEFAULT 'pending',
+        total_found  INTEGER DEFAULT 0,
+        error_msg    TEXT,
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS lead_searches_org_id_idx ON lead_searches(org_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS lead_results (
+        id            SERIAL PRIMARY KEY,
+        org_id        INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        search_id     INTEGER REFERENCES lead_searches(id) ON DELETE SET NULL,
+        created_by    INTEGER,
+        place_id      TEXT,
+        name          TEXT NOT NULL,
+        address       TEXT,
+        phone         TEXT,
+        website       TEXT,
+        email         TEXT,
+        rating        DOUBLE PRECISION,
+        review_count  INTEGER,
+        lat           DOUBLE PRECISION,
+        lng           DOUBLE PRECISION,
+        sector        TEXT,
+        status        TEXT NOT NULL DEFAULT 'new',
+        crm_client_id INTEGER,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS lead_results_org_id_idx   ON lead_results(org_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS lead_results_search_id_idx ON lead_results(search_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS lead_analysis (
+        id                      SERIAL PRIMARY KEY,
+        org_id                  INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        result_id               INTEGER NOT NULL REFERENCES lead_results(id) ON DELETE CASCADE,
+        created_by              INTEGER,
+        has_website             BOOLEAN,
+        has_https               BOOLEAN,
+        has_form                BOOLEAN,
+        has_whatsapp            BOOLEAN,
+        has_facebook            BOOLEAN,
+        has_instagram           BOOLEAN,
+        has_google_business     BOOLEAN,
+        has_cta                 BOOLEAN,
+        has_mobile_optimization BOOLEAN,
+        has_load_speed          BOOLEAN,
+        has_contact_info        BOOLEAN,
+        score                   INTEGER,
+        opportunity             TEXT,
+        improvements            TEXT,
+        summary                 TEXT,
+        created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS lead_analysis_result_id_idx ON lead_analysis(result_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS lead_messages (
+        id         SERIAL PRIMARY KEY,
+        org_id     INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        result_id  INTEGER NOT NULL REFERENCES lead_results(id) ON DELETE CASCADE,
+        created_by INTEGER,
+        channel    TEXT NOT NULL DEFAULT 'email',
+        content    TEXT NOT NULL,
+        tone       TEXT,
+        status     TEXT NOT NULL DEFAULT 'draft',
+        sent_at    TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS lead_messages_result_id_idx ON lead_messages(result_id)`);
+    logger.info("[Migration] ✅ FIX-W: OmniLeads AI tables ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

@@ -36,6 +36,7 @@ import { supportRouter } from "./support";
 import { taxRouter } from "./tax";
 import { marketingRouter } from "./marketing";
 import { adsRouter } from "./ads";
+import { leadsRouter } from "./leads";
 
 const router: IRouter = Router();
 
@@ -108,5 +109,6 @@ router.use("/support",        supportRouter);
 router.use("/tax",            requireModule("omni_tax"), taxRouter);
 router.use("/marketing",      requireModule("omni_marketing"), marketingRouter);
 router.use("/ads",            requireModule("omni_ads"),       adsRouter);
+router.use("/leads",          requireModule("omni_leads"),     leadsRouter);
 
 export default router;

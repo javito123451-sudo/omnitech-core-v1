@@ -137,7 +137,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     const planModules: Record<string, string[]> = {
       starter: ["crm"],
       growth:  ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
-      scale:   ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax", "omni_marketing"],
+      scale:   ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax", "omni_marketing", "omni_ads", "omni_leads"],
       free:    ["crm"],
     };
     const plan = primaryMembership?.orgPlan ?? "starter";
