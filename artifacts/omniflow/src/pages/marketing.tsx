@@ -173,6 +173,31 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
     onError: (e) => toast({ title: "Error", description: String(e), variant: "destructive" }),
   });
 
+  const launchMut = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await authFetch(`${BASE}/api/marketing/campaigns/${id}/launch`, { method: "POST" });
+      const data = await r.json() as { ok?: boolean; sentCount?: number; failCount?: number; total?: number; error?: string };
+      if (!r.ok) throw new Error(data.error ?? await r.text());
+      return data;
+    },
+    onSuccess: (data, id) => {
+      qc.invalidateQueries({ queryKey: ["marketing-campaigns"] });
+      const { sentCount = 0, failCount = 0 } = data;
+      if (failCount === 0) {
+        toast({ title: `✅ Campaña enviada — ${sentCount} mensajes entregados` });
+      } else {
+        toast({
+          title:       `Campaña enviada con advertencias`,
+          description: `${sentCount} enviados · ${failCount} fallidos`,
+          variant:     "destructive",
+        });
+      }
+    },
+    onError: (e) => toast({ title: "Error al lanzar campaña", description: String(e), variant: "destructive" }),
+  });
+
+  const launchingId = launchMut.isPending ? (launchMut.variables as number) : null;
+
   const campaigns = data?.campaigns ?? [];
   const active    = campaigns.filter(c => c.status === "active").length;
   const totalSent = campaigns.reduce((s, c) => s + c.sent_count, 0);
@@ -269,13 +294,23 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
                   >
                     <PortalDropdownItem icon={<Eye size={13} />}         label="Ver / Editar" onClick={() => onEdit(c)} />
                     {c.status === "draft" && (
-                      <PortalDropdownItem icon={<Play size={13} />}      label="Publicar"  variant="default" onClick={() => patchMut.mutate({ id: c.id, body: { status: "active" } })} />
+                      <PortalDropdownItem
+                        icon={launchingId === c.id ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                        label={launchingId === c.id ? "Enviando…" : "Publicar y enviar"}
+                        variant="default"
+                        onClick={() => { if (launchingId !== c.id) launchMut.mutate(c.id); }}
+                      />
                     )}
                     {c.status === "active" && (
                       <PortalDropdownItem icon={<Pause size={13} />}     label="Pausar"    variant="warning" onClick={() => patchMut.mutate({ id: c.id, body: { status: "paused" } })} />
                     )}
                     {c.status === "paused" && (
-                      <PortalDropdownItem icon={<Play size={13} />}      label="Reanudar"  variant="default" onClick={() => patchMut.mutate({ id: c.id, body: { status: "active" } })} />
+                      <PortalDropdownItem
+                        icon={launchingId === c.id ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                        label={launchingId === c.id ? "Enviando…" : "Reanudar y enviar"}
+                        variant="default"
+                        onClick={() => { if (launchingId !== c.id) launchMut.mutate(c.id); }}
+                      />
                     )}
                     {(c.status === "active" || c.status === "paused") && (
                       <PortalDropdownItem icon={<CheckCircle2 size={13} />} label="Finalizar" variant="default" onClick={() => patchMut.mutate({ id: c.id, body: { status: "completed" } })} />

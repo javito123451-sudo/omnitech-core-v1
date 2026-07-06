@@ -1,9 +1,45 @@
 import { Router } from "express";
 import { db, clientsTable } from "@workspace/db";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { eq, desc, count, sql, and, inArray, isNotNull } from "drizzle-orm";
 import { requirePermission } from "../middlewares/permissions";
+import { getWhatsAppCreds, logIntegrationEvent } from "../utils/integrationCreds";
 
 export const marketingRouter = Router();
+
+// ── Internal: send a single WhatsApp message via Meta Graph API ──────────────
+async function sendWhatsAppTextMessage(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  body: string,
+): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  const phone = to.replace(/\D/g, "");
+  if (!phone) return { ok: false, error: "Número de teléfono inválido" };
+
+  try {
+    const r = await fetch(
+      `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`,
+      {
+        method:  "POST",
+        headers: {
+          Authorization:  `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to:   phone,
+          type: "text",
+          text: { body },
+        }),
+      },
+    );
+    const data = await r.json() as { messages?: { id: string }[]; error?: { message: string } };
+    if (!r.ok) return { ok: false, error: data.error?.message ?? `HTTP ${r.status}` };
+    return { ok: true, messageId: data.messages?.[0]?.id };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
 
 // ── GET /api/marketing/campaigns ────────────────────────────────────────────
 marketingRouter.get("/campaigns", requirePermission("workspace.view"), async (req, res) => {
@@ -115,6 +151,141 @@ marketingRouter.post("/campaigns/:id/duplicate", requirePermission("workspace.ed
     if (!copy) { res.status(404).json({ error: "Campaign not found" }); return; }
     res.status(201).json({ ok: true, campaign: copy });
   } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /api/marketing/campaigns/:id/launch ─────────────────────────────────
+// Sends messages to all matching recipients and updates sent_count + status.
+marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"), async (req, res) => {
+  const orgId = req.orgId!;
+  const id    = parseInt(req.params["id"]!, 10);
+
+  try {
+    // 1. Load campaign
+    const campRows = await db.execute(sql`
+      SELECT id, name, channel, body, audience_filter, status
+      FROM marketing_campaigns
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+    const camp = (campRows as { rows: Record<string, unknown>[] }).rows[0];
+    if (!camp) { res.status(404).json({ error: "Campaña no encontrada" }); return; }
+
+    if (camp["status"] === "completed") {
+      res.status(400).json({ error: "Esta campaña ya fue completada" }); return;
+    }
+    if (!camp["body"]) {
+      res.status(400).json({ error: "La campaña no tiene mensaje configurado" }); return;
+    }
+
+    const channel        = String(camp["channel"] ?? "whatsapp");
+    const messageBody    = String(camp["body"]);
+    const audienceFilter = String(camp["audience_filter"] ?? "all");
+
+    // 2. Mark as active immediately so UI shows correct state
+    await db.execute(sql`
+      UPDATE marketing_campaigns
+      SET status = 'active', sent_at = NOW(), updated_at = NOW()
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+
+    // 3. Build audience query
+    let audienceClients: { id: number; name: string; phone: string | null; email: string | null }[];
+    if (audienceFilter === "all") {
+      audienceClients = await db
+        .select({ id: clientsTable.id, name: clientsTable.name, phone: clientsTable.phone, email: clientsTable.email })
+        .from(clientsTable)
+        .where(eq(clientsTable.orgId, orgId));
+    } else {
+      // active = "active" or "client", leads = "lead", inactive = "inactive"
+      const statusMap: Record<string, string[]> = {
+        active:   ["active", "client"],
+        leads:    ["lead"],
+        inactive: ["inactive"],
+      };
+      const statuses = statusMap[audienceFilter] ?? [];
+      audienceClients = statuses.length > 0
+        ? await db
+            .select({ id: clientsTable.id, name: clientsTable.name, phone: clientsTable.phone, email: clientsTable.email })
+            .from(clientsTable)
+            .where(and(eq(clientsTable.orgId, orgId), inArray(clientsTable.status, statuses)))
+        : [];
+    }
+
+    // 4. Get WhatsApp credentials (same function used by chat)
+    let sentCount  = 0;
+    let failCount  = 0;
+    const results: { phone: string; ok: boolean; messageId?: string; error?: string }[] = [];
+
+    if (channel === "whatsapp" || channel === "both") {
+      const creds = await getWhatsAppCreds(orgId);
+      if (!creds) {
+        // Revert to draft — no credentials
+        await db.execute(sql`
+          UPDATE marketing_campaigns
+          SET status = 'draft', sent_at = NULL, updated_at = NOW()
+          WHERE id = ${id} AND org_id = ${orgId}
+        `);
+        res.status(400).json({
+          error: "WhatsApp no configurado. Conéctalo en Integraciones antes de lanzar una campaña.",
+        });
+        return;
+      }
+
+      // 5. Send to each recipient with a phone number
+      const recipients = audienceClients.filter(c => c.phone && c.phone.trim().length > 4);
+      console.info(`[Campaign ${id}] Launching to ${recipients.length} recipients via WhatsApp`);
+
+      for (const client of recipients) {
+        const result = await sendWhatsAppTextMessage(
+          creds.phoneNumberId,
+          creds.accessToken,
+          client.phone!,
+          messageBody,
+        );
+
+        if (result.ok) {
+          sentCount++;
+          console.info(`[Campaign ${id}] ✅ Sent to ${client.name} (${client.phone}) — msgId: ${result.messageId}`);
+        } else {
+          failCount++;
+          console.warn(`[Campaign ${id}] ❌ Failed for ${client.name} (${client.phone}): ${result.error}`);
+        }
+
+        results.push({ phone: client.phone!, ok: result.ok, messageId: result.messageId, error: result.error });
+
+        // Small delay between sends to respect Meta rate limits
+        await new Promise(r => setTimeout(r, 150));
+      }
+
+      logIntegrationEvent({
+        orgId,
+        integrationSlug: "whatsapp",
+        direction:       "outbound",
+        eventType:       "campaign_sent",
+        status:          failCount === 0 ? "processed" : "error",
+        summary:         `Campaña "${String(camp["name"])}" enviada: ${sentCount} ok, ${failCount} fallidos de ${recipients.length} destinatarios`,
+      });
+    }
+
+    // 6. Finalize: update sent_count, mark completed
+    await db.execute(sql`
+      UPDATE marketing_campaigns
+      SET status = 'completed',
+          sent_count  = ${sentCount},
+          updated_at  = NOW()
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+
+    res.json({
+      ok:        true,
+      sentCount,
+      failCount,
+      total:     audienceClients.length,
+      results,
+    });
+  } catch (err) {
+    console.error(`[Campaign ${id}] Launch error:`, err);
     res.status(500).json({ error: String(err) });
   }
 });
