@@ -782,11 +782,12 @@ accountingRouter.get("/summary", requirePermission("accounting.read"), async (re
   const overdueTotal = parseFloat(String(overdueRows[0]?.total ?? 0));
 
   // Pending quotes (draft / sent but not converted)
-  const [{ pendingQuotesCount }] = await db.execute(sql`
+  const pendingQuotesRows = await db.execute(sql`
     SELECT COUNT(*)::int AS "pendingQuotesCount"
     FROM quotes
     WHERE org_id = ${orgId} AND status IN ('draft','sent')
-  `) as unknown as [{ pendingQuotesCount: number }];
+  `);
+  const pendingQuotesCount: number = (pendingQuotesRows as unknown as { rows: { pendingQuotesCount: number }[] }).rows[0]?.pendingQuotesCount ?? 0;
 
   // Revenue this month/year (payments received)
   const [{ monthRevenue }] = await db

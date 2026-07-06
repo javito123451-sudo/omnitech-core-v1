@@ -97,7 +97,7 @@ router.use("/whatsapp",      requireModule("whatsapp"),        whatsappRouter);
 router.use("/telegram",      requireModule("ai_agents"),       telegramRouter);
 router.use("/integrations",  requireModule("integrations"),    integrationsRouter);
 router.use("/import",        requireModule("omni_import_ai"),  importAiRouter);
-router.use("/knowledge-base",requireModule("ai_agents"),       knowledgeBaseRouter);
+router.use("/knowledge-base",requireModule("knowledge_base"),   knowledgeBaseRouter);
 router.use("/docs",          requireModule("omni_docs"),       docsRouter);
 router.use("/autopilot",     requireModule("automations"),     autopilotRouter);
 router.use("/accounting",    requireModule("omni_accounting"), accountingRouter);
