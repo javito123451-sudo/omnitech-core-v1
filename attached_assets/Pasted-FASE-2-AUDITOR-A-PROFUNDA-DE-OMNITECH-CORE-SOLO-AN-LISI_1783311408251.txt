@@ -1,0 +1,357 @@
+FASE 2 – AUDITORÍA PROFUNDA DE OMNITECH CORE (SOLO ANÁLISIS)
+
+La primera auditoría ha finalizado. Ahora quiero una auditoría de nivel profesional.
+
+NO MODIFIQUES ABSOLUTAMENTE NADA DEL CÓDIGO.
+
+No hagas refactorizaciones, no elimines archivos, no instales paquetes y no corrijas errores.
+
+Tu trabajo es únicamente inspeccionar, analizar y documentar.
+
+⸻
+
+OBJETIVO
+
+Quiero conocer el estado REAL del proyecto antes de comenzar una gran refactorización.
+
+Necesito un informe completo que me permita decidir qué conservar, qué eliminar y qué reconstruir.
+
+⸻
+
+1. INVENTARIO GLOBAL
+
+Genera un inventario completo del proyecto.
+
+Incluye:
+
+* carpetas
+* módulos
+* servicios
+* componentes
+* páginas
+* APIs
+* middlewares
+* utilidades
+* scripts
+* modelos
+* tablas
+* integraciones
+
+Para cada elemento indica:
+
+* Para qué sirve.
+* Si realmente se utiliza.
+* Dónde se utiliza.
+* Qué dependencias tiene.
+* Si puede eliminarse.
+
+⸻
+
+2. CÓDIGO MUERTO
+
+Detecta todo el código que nunca se ejecuta.
+
+Incluye:
+
+* componentes sin uso
+* funciones sin llamadas
+* endpoints olvidados
+* hooks sin utilizar
+* utilidades obsoletas
+* páginas inaccesibles
+* imports innecesarios
+
+Indica exactamente por qué consideras que está muerto.
+
+⸻
+
+3. DUPLICIDADES
+
+Busca:
+
+* lógica repetida
+* componentes duplicados
+* consultas repetidas
+* validaciones repetidas
+* servicios repetidos
+* estilos repetidos
+
+Explica cuál debería ser la única versión.
+
+⸻
+
+4. BASE DE DATOS
+
+Analiza cada tabla.
+
+Para cada una indica:
+
+* utilidad
+* uso real
+* relaciones
+* tamaño
+* si contiene datos de prueba
+* si pertenece al SaaS
+* si sobra
+* si está incompleta
+
+Detecta:
+
+* tablas duplicadas
+* columnas sin uso
+* índices faltantes
+* claves incorrectas
+* relaciones rotas
+
+⸻
+
+5. WORKSPACES
+
+Haz una auditoría completa del sistema multiempresa.
+
+Necesito saber:
+
+* qué tablas están aisladas correctamente
+* cuáles NO
+* dónde falta workspace_id
+* dónde puede producirse fuga de datos
+* qué consultas rompen el aislamiento
+
+⸻
+
+6. ROLES
+
+Haz un mapa completo de permisos.
+
+Especial atención a:
+
+SUPER_ADMIN
+
+ADMIN
+
+USER
+
+CLIENTE
+
+Indica:
+
+* permisos actuales
+* permisos reales
+* permisos incorrectos
+* riesgos
+
+⸻
+
+7. MÓDULOS
+
+Clasifica todos los módulos.
+
+Para cada uno indica:
+
+✅ terminado
+
+🟡 parcial
+
+🔴 roto
+
+⚪ vacío
+
+⚫ abandonado
+
+Además indica:
+
+* porcentaje estimado de desarrollo
+* prioridad
+* dependencias
+
+⸻
+
+8. FRONTEND
+
+Revisa toda la interfaz.
+
+Busca:
+
+botones muertos
+
+formularios incompletos
+
+pantallas inaccesibles
+
+errores visuales
+
+componentes duplicados
+
+código legacy
+
+⸻
+
+9. BACKEND
+
+Analiza:
+
+API
+
+servicios
+
+middlewares
+
+autenticación
+
+autorización
+
+logs
+
+manejo de errores
+
+Detecta:
+
+errores críticos
+
+errores potenciales
+
+cuellos de botella
+
+código inseguro
+
+⸻
+
+10. SEGURIDAD
+
+Realiza una auditoría completa.
+
+Incluye:
+
+autenticación
+
+autorización
+
+JWT
+
+cookies
+
+CSRF
+
+XSS
+
+SQL Injection
+
+Rate Limiting
+
+Secrets
+
+Variables de entorno
+
+Logs sensibles
+
+Accesos administrativos
+
+Escalada de privilegios
+
+⸻
+
+11. RENDIMIENTO
+
+Analiza:
+
+consultas lentas
+
+renders innecesarios
+
+peticiones repetidas
+
+componentes pesados
+
+consumo de memoria
+
+consumo de CPU
+
+carga inicial
+
+⸻
+
+12. CALIDAD DEL PROYECTO
+
+Pon nota de 0 a 10 a:
+
+Arquitectura
+
+Backend
+
+Frontend
+
+Base de datos
+
+Seguridad
+
+Escalabilidad
+
+Código
+
+UX
+
+Mantenibilidad
+
+Preparación para producción
+
+⸻
+
+13. DEUDA TÉCNICA
+
+Haz una lista completa.
+
+Clasifica:
+
+Crítica
+
+Alta
+
+Media
+
+Baja
+
+⸻
+
+14. ESTIMACIÓN
+
+Indica aproximadamente:
+
+* porcentaje realmente terminado del proyecto
+* porcentaje de código reutilizable
+* porcentaje que conviene rehacer
+
+⸻
+
+15. PLAN MAESTRO
+
+Al final crea una hoja de ruta completa indicando:
+
+FASE 1
+
+FASE 2
+
+FASE 3
+
+FASE 4
+
+FASE 5
+
+No ejecutes ninguna fase.
+
+Solo descríbelas.
+
+⸻
+
+16. CONCLUSIÓN EJECUTIVA
+
+Respóndeme finalmente:
+
+1. ¿Es viable conservar esta base de código?
+2. ¿Es mejor refactorizar o reconstruir?
+3. ¿Qué porcentaje conservarías?
+4. ¿Qué eliminarías?
+5. ¿Está preparada para convertirse en un SaaS profesional con dos SUPER_ADMIN y workspaces completamente aislados?
+
+No hagas ningún cambio.
+
+Solo genera el informe técnico más completo posible.
