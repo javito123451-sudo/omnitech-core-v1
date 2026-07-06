@@ -1,0 +1,239 @@
+AUDITORÍA COMPLETA DE OMNITECH CORE (SOLO ANÁLISIS - NO MODIFICAR CÓDIGO)
+
+OBJETIVO
+
+Quiero realizar una auditoría técnica completa de OmniTech Core antes de hacer cualquier cambio importante.
+
+IMPORTANTE:
+NO debes modificar archivos, eliminar código, refactorizar ni corregir errores. Tu única misión es inspeccionar el proyecto y generar un informe detallado.
+
+⸻
+
+1. ARQUITECTURA GENERAL
+
+Analiza:
+
+* Estructura completa del proyecto.
+* Frameworks y librerías utilizadas.
+* Dependencias instaladas.
+* Variables de entorno requeridas.
+* Flujo de autenticación.
+* Flujo de autorización.
+* Organización de carpetas.
+* Calidad de la arquitectura.
+
+Indica puntos fuertes y puntos débiles.
+
+⸻
+
+2. BASE DE DATOS
+
+Realiza un inventario completo.
+
+Para cada tabla indica:
+
+* Nombre.
+* Finalidad.
+* Relaciones.
+* Claves.
+* Índices.
+* Si está siendo utilizada.
+* Si contiene datos de prueba.
+* Si parece obsoleta.
+* Si puede eliminarse.
+* Si necesita cambios.
+
+Detecta:
+
+* Tablas duplicadas.
+* Campos duplicados.
+* Relaciones incorrectas.
+* Datos huérfanos.
+* Problemas de integridad.
+
+⸻
+
+3. MULTIEMPRESA
+
+Comprueba:
+
+* Cómo está implementado el sistema de workspaces.
+* Qué tablas usan workspace_id.
+* Qué tablas deberían usarlo y no lo hacen.
+* Qué consultas NO filtran por workspace.
+* Riesgos de mezcla de datos.
+
+Marca todas las fugas de aislamiento entre empresas.
+
+⸻
+
+4. ROLES Y PERMISOS
+
+Lista todos los roles existentes.
+
+Indica:
+
+* Qué puede hacer cada rol.
+* Qué no debería poder hacer.
+* Riesgos de seguridad.
+* Inconsistencias.
+
+Verifica especialmente SUPER_ADMIN.
+
+⸻
+
+5. MÓDULOS
+
+Haz un inventario completo.
+
+Para cada módulo indica:
+
+* Nombre.
+* Estado.
+
+Clasifícalo como:
+
+* Funciona correctamente.
+* Funciona parcialmente.
+* Está roto.
+* No se usa.
+* Está incompleto.
+
+⸻
+
+6. FRONTEND
+
+Revisa:
+
+* Todas las páginas.
+* Componentes.
+* Formularios.
+* Navegación.
+* Botones.
+* Menús.
+* Dashboard.
+
+Detecta:
+
+* Botones sin función.
+* Rutas rotas.
+* Errores visuales.
+* Componentes duplicados.
+* Código muerto.
+
+⸻
+
+7. BACKEND
+
+Analiza:
+
+* API.
+* Controladores.
+* Servicios.
+* Middleware.
+* Validaciones.
+
+Detecta:
+
+* Código duplicado.
+* Funciones sin usar.
+* Endpoints rotos.
+* Errores potenciales.
+* Manejo incorrecto de excepciones.
+
+⸻
+
+8. INTEGRACIONES
+
+Comprueba:
+
+* WhatsApp.
+* Telegram.
+* Email.
+* Google.
+* APIs externas.
+* IA.
+* OCR.
+* Calendario.
+* Cualquier otra integración.
+
+Indica:
+
+* Funciona.
+* Parcial.
+* Rota.
+* Sin configurar.
+
+⸻
+
+9. SEGURIDAD
+
+Busca:
+
+* Permisos incorrectos.
+* Rutas públicas peligrosas.
+* Variables expuestas.
+* Claves inseguras.
+* Riesgos de escalada de privilegios.
+* Problemas de autenticación.
+
+⸻
+
+10. RENDIMIENTO
+
+Detecta:
+
+* Consultas lentas.
+* Código innecesario.
+* Procesos repetidos.
+* Cargas excesivas.
+* Posibles optimizaciones.
+
+⸻
+
+11. CALIDAD DEL CÓDIGO
+
+Evalúa:
+
+* Organización.
+* Legibilidad.
+* Escalabilidad.
+* Mantenibilidad.
+* Complejidad.
+
+Asigna una nota de 0 a 10.
+
+⸻
+
+12. INFORME FINAL
+
+Genera un informe con:
+
+✅ Lo que funciona correctamente
+
+⚠ Lo que necesita revisión
+
+❌ Lo que está roto
+
+🗑 Lo que puede eliminarse
+
+🔧 Lo que debe repararse
+
+⭐ Mejoras recomendadas
+
+📊 Estado general del proyecto (porcentaje estimado de avance)
+
+🚀 Hoja de ruta priorizada
+
+Ordena todas las tareas por prioridad:
+
+* Prioridad crítica.
+* Prioridad alta.
+* Prioridad media.
+* Prioridad baja.
+
+Finalmente, indica si el proyecto está preparado para convertirse en un SaaS multiempresa con dos SUPER_ADMIN y workspaces completamente aislados, y especifica exactamente qué falta para conseguirlo.
+
+NO HAGAS NINGÚN CAMBIO EN EL CÓDIGO.
+
+SOLO AUDITA Y ENTREGA EL INFORME.
