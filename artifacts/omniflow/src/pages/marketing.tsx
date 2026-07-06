@@ -8,6 +8,7 @@ import {
   Target, Zap, Eye, MousePointerClick, CalendarDays, ChevronDown,
   AlertCircle,
 } from "lucide-react";
+import { PortalDropdown, PortalDropdownItem } from "@/components/ui/PortalDropdown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -127,8 +128,6 @@ export default function MarketingHubPage() {
 function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campaign) => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [openMenu, setOpenMenu] = useState<number | null>(null);
-
   const { data, isLoading, isError } = useQuery({
     queryKey: ["marketing-campaigns"],
     queryFn: async () => {
@@ -260,73 +259,31 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
                     {STATUS_LABEL[c.status]}
                   </span>
 
-                  {/* Actions menu */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setOpenMenu(openMenu === c.id ? null : c.id)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <MoreHorizontal size={15} />
-                    </button>
-                    {openMenu === c.id && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
-                        <div className="absolute right-0 top-8 z-20 w-44 bg-[#1a1b2e] border border-white/10 rounded-xl shadow-xl overflow-hidden">
-                          <button
-                            onClick={() => { onEdit(c); setOpenMenu(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
-                          >
-                            <Eye size={13} /> Ver / Editar
-                          </button>
-                          {c.status === "draft" && (
-                            <button
-                              onClick={() => { patchMut.mutate({ id: c.id, body: { status: "active" } }); setOpenMenu(null); }}
-                              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-emerald-400 hover:bg-white/5 transition-colors"
-                            >
-                              <Play size={13} /> Publicar
-                            </button>
-                          )}
-                          {c.status === "active" && (
-                            <button
-                              onClick={() => { patchMut.mutate({ id: c.id, body: { status: "paused" } }); setOpenMenu(null); }}
-                              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-amber-400 hover:bg-white/5 transition-colors"
-                            >
-                              <Pause size={13} /> Pausar
-                            </button>
-                          )}
-                          {c.status === "paused" && (
-                            <button
-                              onClick={() => { patchMut.mutate({ id: c.id, body: { status: "active" } }); setOpenMenu(null); }}
-                              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-emerald-400 hover:bg-white/5 transition-colors"
-                            >
-                              <Play size={13} /> Reanudar
-                            </button>
-                          )}
-                          {(c.status === "active" || c.status === "paused") && (
-                            <button
-                              onClick={() => { patchMut.mutate({ id: c.id, body: { status: "completed" } }); setOpenMenu(null); }}
-                              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-blue-400 hover:bg-white/5 transition-colors"
-                            >
-                              <CheckCircle2 size={13} /> Finalizar
-                            </button>
-                          )}
-                          <button
-                            onClick={() => { dupMut.mutate(c.id); setOpenMenu(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
-                          >
-                            <Copy size={13} /> Duplicar
-                          </button>
-                          <div className="border-t border-white/10" />
-                          <button
-                            onClick={() => { if (confirm("¿Eliminar esta campaña?")) { deleteMut.mutate(c.id); } setOpenMenu(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-rose-400 hover:bg-white/5 transition-colors"
-                          >
-                            <Trash2 size={13} /> Eliminar
-                          </button>
-                        </div>
-                      </>
+                  {/* Actions menu — rendered via portal to escape overflow:hidden */}
+                  <PortalDropdown
+                    trigger={
+                      <button className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100">
+                        <MoreHorizontal size={15} />
+                      </button>
+                    }
+                  >
+                    <PortalDropdownItem icon={<Eye size={13} />}         label="Ver / Editar" onClick={() => onEdit(c)} />
+                    {c.status === "draft" && (
+                      <PortalDropdownItem icon={<Play size={13} />}      label="Publicar"  variant="default" onClick={() => patchMut.mutate({ id: c.id, body: { status: "active" } })} />
                     )}
-                  </div>
+                    {c.status === "active" && (
+                      <PortalDropdownItem icon={<Pause size={13} />}     label="Pausar"    variant="warning" onClick={() => patchMut.mutate({ id: c.id, body: { status: "paused" } })} />
+                    )}
+                    {c.status === "paused" && (
+                      <PortalDropdownItem icon={<Play size={13} />}      label="Reanudar"  variant="default" onClick={() => patchMut.mutate({ id: c.id, body: { status: "active" } })} />
+                    )}
+                    {(c.status === "active" || c.status === "paused") && (
+                      <PortalDropdownItem icon={<CheckCircle2 size={13} />} label="Finalizar" variant="default" onClick={() => patchMut.mutate({ id: c.id, body: { status: "completed" } })} />
+                    )}
+                    <PortalDropdownItem icon={<Copy size={13} />}        label="Duplicar"  onClick={() => dupMut.mutate(c.id)} />
+                    <div className="border-t border-white/10 my-0.5" />
+                    <PortalDropdownItem icon={<Trash2 size={13} />}      label="Eliminar"  variant="danger"  onClick={() => { if (confirm("¿Eliminar esta campaña?")) deleteMut.mutate(c.id); }} />
+                  </PortalDropdown>
                 </div>
               </div>
             ))}

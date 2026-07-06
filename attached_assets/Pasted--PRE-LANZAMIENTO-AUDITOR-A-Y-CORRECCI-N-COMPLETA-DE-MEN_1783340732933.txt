@@ -1,0 +1,116 @@
+# 🚨 PRE-LANZAMIENTO - AUDITORÍA Y CORRECCIÓN COMPLETA DE MENÚS DE ACCIONES
+
+Hay un fallo crítico detectado en OmniTech que debe corregirse antes del lanzamiento.
+
+## BUG DETECTADO
+
+Módulo: Marketing Hub
+
+Al pulsar el botón de acciones (⋯) de una campaña no se despliega el menú contextual.
+
+La campaña se crea correctamente, pero el botón de acciones no responde.
+
+No quiero una solución puntual. Quiero encontrar la causa raíz y corregir cualquier problema similar en toda la aplicación.
+
+----------------------------------------------------
+
+## OBJETIVO
+
+Realizar una auditoría completa de todos los componentes que utilicen:
+
+- DropdownMenu
+- Popover
+- ContextMenu
+- Menús de acciones
+- Botones de tres puntos
+- Botones con iconos
+- Menús contextuales
+- Acciones rápidas
+- Menús de tablas
+- Menús de tarjetas
+
+Revisar TODOS los módulos del sistema.
+
+Incluyendo como mínimo:
+
+- Dashboard
+- CRM
+- Clientes
+- Leads
+- Marketing Hub
+- Conversaciones
+- Calendario
+- Automatizaciones
+- Facturación
+- Proyectos
+- Tickets
+- Usuarios
+- Configuración
+- Control Center
+- Super Admin
+
+----------------------------------------------------
+
+## COMPROBACIONES OBLIGATORIAS
+
+Buscar problemas relacionados con:
+
+✔ onClick
+✔ onSelect
+✔ onOpenChange
+✔ estados open
+✔ DropdownMenuTrigger
+✔ DropdownMenuContent
+✔ Portal
+✔ Z-Index
+✔ Overflow hidden
+✔ Pointer Events
+✔ Focus
+✔ Eventos bloqueados
+✔ Componentes deshabilitados
+✔ Renderizado condicional
+✔ React Keys
+✔ IDs incorrectos
+✔ Portales de Radix UI
+✔ Errores en consola
+✔ Advertencias de React
+
+----------------------------------------------------
+
+## SI SE ENCUENTRA EL PROBLEMA
+
+NO aplicar un parche únicamente en Marketing Hub.
+
+Crear una solución reutilizable para toda la aplicación.
+
+Si existen varios componentes distintos para realizar la misma función, unificarlos.
+
+----------------------------------------------------
+
+## QA AUTOMÁTICO
+
+Después de corregirlo, realizar una revisión completa del proyecto.
+
+Comprobar que TODOS los botones de acciones:
+
+- abren correctamente
+- muestran el menú
+- ejecutan las acciones
+- funcionan en escritorio
+- funcionan en móvil
+- no generan errores en consola
+
+----------------------------------------------------
+
+## ENTREGAR INFORME
+
+Al finalizar indicar:
+
+1. Qué provocaba el fallo.
+2. Qué componentes fueron modificados.
+3. Qué archivos se tocaron.
+4. Qué errores similares se encontraron.
+5. Qué se corrigió en cada uno.
+6. Confirmar que todos los menús desplegables del sistema han sido probados y funcionan correctamente.
+
+No des la tarea por finalizada hasta verificar manualmente que todos los menús de acciones del sistema funcionan correctamente.
