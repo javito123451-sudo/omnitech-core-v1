@@ -1,20 +1,48 @@
 import { Router } from "express";
 import { db, clientsTable } from "@workspace/db";
-import { eq, desc, count, sql, and, inArray, isNotNull } from "drizzle-orm";
+import { eq, desc, count, sql, and, inArray } from "drizzle-orm";
 import { requirePermission } from "../middlewares/permissions";
 import { getWhatsAppCreds, logIntegrationEvent } from "../utils/integrationCreds";
 
 export const marketingRouter = Router();
 
-// ── Internal: send a single WhatsApp message via Meta Graph API ──────────────
-async function sendWhatsAppTextMessage(
+// ── Phone normalisation ──────────────────────────────────────────────────────
+// WhatsApp/Meta expects the number in E.164 format without the leading "+".
+// Examples of what we accept and what we produce:
+//   "+34 612 345 678"  → "34612345678"
+//   "0034612345678"    → "34612345678"
+//   "612345678"        → "34612345678" (9-digit Spain local → prepend 34)
+//   "34612345678"      → "34612345678" (already correct)
+//   "+1 415 555 0100"  → "14155550100"
+function normalizePhone(raw: string): { normalized: string; valid: boolean; reason?: string } {
+  let d = raw.replace(/\D/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  // 9-digit numbers without country code → assume Spain (+34)
+  if (d.length === 9) d = "34" + d;
+  if (d.length < 7)  return { normalized: d, valid: false, reason: `Número demasiado corto: "${raw}"` };
+  if (d.length > 15) return { normalized: d, valid: false, reason: `Número demasiado largo: "${raw}"` };
+  return { normalized: d, valid: true };
+}
+
+// ── Send a single WhatsApp message via Meta Graph API ───────────────────────
+interface SendResult {
+  ok:           boolean;
+  messageId?:   string;
+  httpStatus:   number;
+  rawResponse:  string;
+  error?:       string;
+}
+
+async function sendWhatsAppMessage(
   phoneNumberId: string,
-  accessToken: string,
-  to: string,
-  body: string,
-): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  const phone = to.replace(/\D/g, "");
-  if (!phone) return { ok: false, error: "Número de teléfono inválido" };
+  accessToken:   string,
+  to:            string,
+  body:          string,
+): Promise<SendResult> {
+  const { normalized, valid, reason } = normalizePhone(to);
+  if (!valid) {
+    return { ok: false, httpStatus: 0, rawResponse: "", error: reason };
+  }
 
   try {
     const r = await fetch(
@@ -27,17 +55,32 @@ async function sendWhatsAppTextMessage(
         },
         body: JSON.stringify({
           messaging_product: "whatsapp",
-          to:   phone,
+          to:   normalized,
           type: "text",
           text: { body },
         }),
       },
     );
-    const data = await r.json() as { messages?: { id: string }[]; error?: { message: string } };
-    if (!r.ok) return { ok: false, error: data.error?.message ?? `HTTP ${r.status}` };
-    return { ok: true, messageId: data.messages?.[0]?.id };
+    const raw     = await r.text();
+    let parsed: { messages?: { id: string }[]; error?: { message: string; code?: number } } = {};
+    try { parsed = JSON.parse(raw) as typeof parsed; } catch { /* raw text stays */ }
+
+    if (!r.ok) {
+      return {
+        ok:          false,
+        httpStatus:  r.status,
+        rawResponse: raw,
+        error:       parsed.error?.message ?? `HTTP ${r.status}`,
+      };
+    }
+    return {
+      ok:          true,
+      httpStatus:  r.status,
+      rawResponse: raw,
+      messageId:   parsed.messages?.[0]?.id,
+    };
   } catch (err) {
-    return { ok: false, error: String(err) };
+    return { ok: false, httpStatus: 0, rawResponse: "", error: String(err) };
   }
 }
 
@@ -47,7 +90,7 @@ marketingRouter.get("/campaigns", requirePermission("workspace.view"), async (re
     const orgId = req.orgId!;
     const rows = await db.execute(sql`
       SELECT id, org_id, name, status, channel, subject, body, audience_filter,
-             sent_count, opened_count, clicked_count, created_by,
+             sent_count, failed_count, opened_count, clicked_count, created_by,
              scheduled_at, sent_at, created_at, updated_at
       FROM marketing_campaigns
       WHERE org_id = ${orgId}
@@ -89,12 +132,11 @@ marketingRouter.patch("/campaigns/:id", requirePermission("workspace.edit"), asy
     const id = parseInt(req.params["id"]!, 10);
     const { name, channel, subject, body, audience_filter, status } = req.body as Record<string, string>;
 
-    const VALID_STATUSES = ["draft", "active", "paused", "completed"];
+    const VALID_STATUSES = ["draft", "active", "paused", "sending", "sent", "sent_with_errors", "completed", "error"];
     if (status && !VALID_STATUSES.includes(status)) {
       res.status(400).json({ error: "Invalid status" }); return;
     }
 
-    // Build update parts safely
     const updates: string[] = [];
     if (name            !== undefined) updates.push(`name = '${name.replace(/'/g, "''")}'`);
     if (channel         !== undefined) updates.push(`channel = '${channel.replace(/'/g, "''")}'`);
@@ -103,7 +145,9 @@ marketingRouter.patch("/campaigns/:id", requirePermission("workspace.edit"), asy
     if (audience_filter !== undefined) updates.push(`audience_filter = '${audience_filter.replace(/'/g, "''")}'`);
     if (status          !== undefined) {
       updates.push(`status = '${status}'`);
-      if (status === "active") updates.push(`sent_at = NOW()`);
+      if (status === "active" || status === "sent" || status === "sent_with_errors") {
+        updates.push(`sent_at = NOW()`);
+      }
     }
 
     if (updates.length === 0) { res.status(400).json({ error: "Nothing to update" }); return; }
@@ -125,9 +169,7 @@ marketingRouter.delete("/campaigns/:id", requirePermission("workspace.edit"), as
   try {
     const orgId = req.orgId!;
     const id = parseInt(req.params["id"]!, 10);
-    await db.execute(sql`
-      DELETE FROM marketing_campaigns WHERE id = ${id} AND org_id = ${orgId}
-    `);
+    await db.execute(sql`DELETE FROM marketing_campaigns WHERE id = ${id} AND org_id = ${orgId}`);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -155,11 +197,13 @@ marketingRouter.post("/campaigns/:id/duplicate", requirePermission("workspace.ed
   }
 });
 
-// ── POST /api/marketing/campaigns/:id/launch ─────────────────────────────────
-// Sends messages to all matching recipients and updates sent_count + status.
+// ── POST /api/marketing/campaigns/:id/launch ────────────────────────────────
+// Full send engine: per-recipient logging, correct status transitions,
+// phone normalisation, raw API response capture.
 marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"), async (req, res) => {
   const orgId = req.orgId!;
   const id    = parseInt(req.params["id"]!, 10);
+  const startedAt = Date.now();
 
   try {
     // 1. Load campaign
@@ -170,9 +214,8 @@ marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"
     `);
     const camp = (campRows as { rows: Record<string, unknown>[] }).rows[0];
     if (!camp) { res.status(404).json({ error: "Campaña no encontrada" }); return; }
-
-    if (camp["status"] === "completed") {
-      res.status(400).json({ error: "Esta campaña ya fue completada" }); return;
+    if (camp["status"] === "sending") {
+      res.status(400).json({ error: "Esta campaña ya se está enviando" }); return;
     }
     if (!camp["body"]) {
       res.status(400).json({ error: "La campaña no tiene mensaje configurado" }); return;
@@ -181,15 +224,20 @@ marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"
     const channel        = String(camp["channel"] ?? "whatsapp");
     const messageBody    = String(camp["body"]);
     const audienceFilter = String(camp["audience_filter"] ?? "all");
+    const campName       = String(camp["name"]);
 
-    // 2. Mark as active immediately so UI shows correct state
+    // 2. Mark as "sending" immediately
     await db.execute(sql`
       UPDATE marketing_campaigns
-      SET status = 'active', sent_at = NOW(), updated_at = NOW()
+      SET status = 'sending', sent_at = NOW(), updated_at = NOW()
       WHERE id = ${id} AND org_id = ${orgId}
     `);
 
-    // 3. Build audience query
+    // Respond early so the UI sees the "sending" state right away
+    // (we keep processing asynchronously)
+    res.json({ ok: true, queued: true, message: "Campaña en proceso de envío" });
+
+    // 3. Build audience
     let audienceClients: { id: number; name: string; phone: string | null; email: string | null }[];
     if (audienceFilter === "all") {
       audienceClients = await db
@@ -197,7 +245,6 @@ marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"
         .from(clientsTable)
         .where(eq(clientsTable.orgId, orgId));
     } else {
-      // active = "active" or "client", leads = "lead", inactive = "inactive"
       const statusMap: Record<string, string[]> = {
         active:   ["active", "client"],
         leads:    ["lead"],
@@ -212,49 +259,73 @@ marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"
         : [];
     }
 
-    // 4. Get WhatsApp credentials (same function used by chat)
+    // 4. WhatsApp send loop
     let sentCount  = 0;
     let failCount  = 0;
-    const results: { phone: string; ok: boolean; messageId?: string; error?: string }[] = [];
+    let skipCount  = 0;
 
     if (channel === "whatsapp" || channel === "both") {
       const creds = await getWhatsAppCreds(orgId);
       if (!creds) {
-        // Revert to draft — no credentials
         await db.execute(sql`
           UPDATE marketing_campaigns
-          SET status = 'draft', sent_at = NULL, updated_at = NOW()
+          SET status = 'error', updated_at = NOW(),
+              send_report = ${JSON.stringify({ error: "WhatsApp no configurado", sentCount: 0, failCount: 0, skipCount: audienceClients.length })}
           WHERE id = ${id} AND org_id = ${orgId}
         `);
-        res.status(400).json({
-          error: "WhatsApp no configurado. Conéctalo en Integraciones antes de lanzar una campaña.",
-        });
+        console.error(`[Campaign ${id}] ❌ No WhatsApp credentials found`);
         return;
       }
 
-      // 5. Send to each recipient with a phone number
-      const recipients = audienceClients.filter(c => c.phone && c.phone.trim().length > 4);
-      console.info(`[Campaign ${id}] Launching to ${recipients.length} recipients via WhatsApp`);
+      // Dedup by normalised phone
+      const seen = new Set<string>();
+      const recipients = audienceClients.filter(c => {
+        if (!c.phone || c.phone.trim().length < 4) return false;
+        const { normalized, valid } = normalizePhone(c.phone);
+        if (!valid) return false;
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      });
+
+      console.info(`[Campaign ${id}] Launching "${campName}" → ${recipients.length} recipients (${audienceClients.length - recipients.length} skipped/deduped)`);
+      skipCount = audienceClients.length - recipients.length;
 
       for (const client of recipients) {
-        const result = await sendWhatsAppTextMessage(
+        const result = await sendWhatsAppMessage(
           creds.phoneNumberId,
           creds.accessToken,
           client.phone!,
           messageBody,
         );
 
-        if (result.ok) {
-          sentCount++;
-          console.info(`[Campaign ${id}] ✅ Sent to ${client.name} (${client.phone}) — msgId: ${result.messageId}`);
-        } else {
-          failCount++;
-          console.warn(`[Campaign ${id}] ❌ Failed for ${client.name} (${client.phone}): ${result.error}`);
+        const { normalized } = normalizePhone(client.phone!);
+        const logStatus = result.ok ? "sent" : "failed";
+
+        // Insert per-recipient log
+        try {
+          await db.execute(sql`
+            INSERT INTO campaign_send_logs
+              (campaign_id, org_id, client_id, client_name, phone_raw, phone_normalized,
+               status, message_id, error_message, meta_http_status, meta_response, sent_at)
+            VALUES
+              (${id}, ${orgId}, ${client.id}, ${client.name}, ${client.phone}, ${normalized},
+               ${logStatus}, ${result.messageId ?? null}, ${result.error ?? null},
+               ${result.httpStatus}, ${result.rawResponse.slice(0, 2000)}, NOW())
+          `);
+        } catch (logErr) {
+          console.error(`[Campaign ${id}] Failed to insert log for ${client.name}:`, logErr);
         }
 
-        results.push({ phone: client.phone!, ok: result.ok, messageId: result.messageId, error: result.error });
+        if (result.ok) {
+          sentCount++;
+          console.info(`[Campaign ${id}] ✅ ${client.name} (${normalized}) — msgId: ${result.messageId}`);
+        } else {
+          failCount++;
+          console.warn(`[Campaign ${id}] ❌ ${client.name} (${normalized}) — ${result.error} [HTTP ${result.httpStatus}]`);
+          console.warn(`[Campaign ${id}]    Raw: ${result.rawResponse.slice(0, 300)}`);
+        }
 
-        // Small delay between sends to respect Meta rate limits
         await new Promise(r => setTimeout(r, 150));
       }
 
@@ -264,28 +335,147 @@ marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"
         direction:       "outbound",
         eventType:       "campaign_sent",
         status:          failCount === 0 ? "processed" : "error",
-        summary:         `Campaña "${String(camp["name"])}" enviada: ${sentCount} ok, ${failCount} fallidos de ${recipients.length} destinatarios`,
+        summary:         `Campaña "${campName}": ${sentCount} ok, ${failCount} fallidos, ${skipCount} sin teléfono`,
       });
     }
 
-    // 6. Finalize: update sent_count, mark completed
+    // 5. Determine final status
+    let finalStatus: string;
+    if (sentCount > 0 && failCount === 0) {
+      finalStatus = "sent";
+    } else if (sentCount > 0 && failCount > 0) {
+      finalStatus = "sent_with_errors";
+    } else if (sentCount === 0 && failCount > 0) {
+      finalStatus = "error";
+    } else {
+      // No recipients with valid phones
+      finalStatus = "error";
+    }
+
+    const elapsed = Math.round((Date.now() - startedAt) / 1000);
+    const report = {
+      sentCount, failCount, skipCount,
+      total:      sentCount + failCount + skipCount,
+      elapsedSec: elapsed,
+      finishedAt: new Date().toISOString(),
+    };
+
     await db.execute(sql`
       UPDATE marketing_campaigns
-      SET status = 'completed',
-          sent_count  = ${sentCount},
-          updated_at  = NOW()
+      SET status       = ${finalStatus},
+          sent_count   = ${sentCount},
+          failed_count = ${failCount},
+          send_report  = ${JSON.stringify(report)},
+          updated_at   = NOW()
       WHERE id = ${id} AND org_id = ${orgId}
     `);
 
-    res.json({
-      ok:        true,
-      sentCount,
-      failCount,
-      total:     audienceClients.length,
-      results,
-    });
+    console.info(`[Campaign ${id}] Done — status=${finalStatus} sent=${sentCount} failed=${failCount} skip=${skipCount} ${elapsed}s`);
+
   } catch (err) {
     console.error(`[Campaign ${id}] Launch error:`, err);
+    // Best-effort status update to "error"
+    try {
+      await db.execute(sql`
+        UPDATE marketing_campaigns
+        SET status = 'error', updated_at = NOW(),
+            send_report = ${JSON.stringify({ error: String(err) })}
+        WHERE id = ${id} AND org_id = ${orgId}
+      `);
+    } catch { /* ignore */ }
+  }
+});
+
+// ── POST /api/marketing/campaigns/:id/test-send ─────────────────────────────
+// Sends exactly ONE message to the provided phone using the same engine as
+// the real launch — useful for verifying credentials + message format.
+marketingRouter.post("/campaigns/:id/test-send", requirePermission("workspace.edit"), async (req, res) => {
+  const orgId = req.orgId!;
+  const id    = parseInt(req.params["id"]!, 10);
+  const { phone } = req.body as { phone?: string };
+
+  if (!phone?.trim()) {
+    res.status(400).json({ error: "phone es obligatorio" }); return;
+  }
+
+  try {
+    // Load campaign body
+    const campRows = await db.execute(sql`
+      SELECT body, name FROM marketing_campaigns
+      WHERE id = ${id} AND org_id = ${orgId}
+    `);
+    const camp = (campRows as { rows: Record<string, unknown>[] }).rows[0];
+    if (!camp) { res.status(404).json({ error: "Campaña no encontrada" }); return; }
+    if (!camp["body"]) { res.status(400).json({ error: "La campaña no tiene mensaje" }); return; }
+
+    const creds = await getWhatsAppCreds(orgId);
+    if (!creds) {
+      res.status(400).json({
+        ok: false,
+        error: "WhatsApp no configurado. Conéctalo en Integraciones → WhatsApp Business.",
+      });
+      return;
+    }
+
+    const { normalized, valid, reason } = normalizePhone(phone.trim());
+    if (!valid) {
+      res.status(400).json({ ok: false, error: reason }); return;
+    }
+
+    const testBody = `🧪 [MENSAJE DE PRUEBA]\n\n${String(camp["body"])}`;
+    const result   = await sendWhatsAppMessage(creds.phoneNumberId, creds.accessToken, phone, testBody);
+
+    // Log the test send
+    logIntegrationEvent({
+      orgId,
+      integrationSlug: "whatsapp",
+      direction:       "outbound",
+      eventType:       result.ok ? "test_send_ok" : "test_send_failed",
+      status:          result.ok ? "processed" : "error",
+      summary:         `Test campaña "${String(camp["name"])}" → +${normalized}: ${result.ok ? "ok" : result.error}`,
+    });
+
+    res.json({
+      ok:          result.ok,
+      messageId:   result.messageId,
+      normalized,
+      httpStatus:  result.httpStatus,
+      rawResponse: result.rawResponse,
+      error:       result.error,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// ── GET /api/marketing/campaigns/:id/report ─────────────────────────────────
+marketingRouter.get("/campaigns/:id/report", requirePermission("workspace.view"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const id    = parseInt(req.params["id"]!, 10);
+
+    const [campRows, logRows] = await Promise.all([
+      db.execute(sql`
+        SELECT id, name, status, channel, body, audience_filter,
+               sent_count, failed_count, send_report, sent_at, created_at
+        FROM marketing_campaigns
+        WHERE id = ${id} AND org_id = ${orgId}
+      `),
+      db.execute(sql`
+        SELECT id, client_id, client_name, phone_raw, phone_normalized,
+               status, message_id, error_message, meta_http_status, sent_at
+        FROM campaign_send_logs
+        WHERE campaign_id = ${id}
+        ORDER BY sent_at ASC
+      `),
+    ]);
+
+    const campaign = (campRows as { rows: unknown[] }).rows[0];
+    if (!campaign) { res.status(404).json({ error: "Campaña no encontrada" }); return; }
+
+    const logs = (logRows as { rows: unknown[] }).rows;
+    res.json({ ok: true, campaign, logs });
+  } catch (err) {
     res.status(500).json({ error: String(err) });
   }
 });
@@ -338,14 +528,14 @@ marketingRouter.get("/analytics", requirePermission("workspace.view"), async (re
     const [agg, monthly] = await Promise.all([
       db.execute(sql`
         SELECT
-          COALESCE(SUM(sent_count), 0)    AS total_sent,
-          COALESCE(SUM(opened_count), 0)  AS total_opened,
-          COALESCE(SUM(clicked_count), 0) AS total_clicked,
-          COUNT(*) FILTER (WHERE status = 'active')    AS active_campaigns,
-          COUNT(*) FILTER (WHERE status = 'draft')     AS draft_campaigns,
-          COUNT(*) FILTER (WHERE status = 'paused')    AS paused_campaigns,
-          COUNT(*) FILTER (WHERE status = 'completed') AS completed_campaigns,
-          COUNT(*) AS total_campaigns
+          COALESCE(SUM(sent_count), 0)                                                     AS total_sent,
+          COALESCE(SUM(opened_count), 0)                                                   AS total_opened,
+          COALESCE(SUM(clicked_count), 0)                                                  AS total_clicked,
+          COUNT(*) FILTER (WHERE status IN ('active','sending'))                           AS active_campaigns,
+          COUNT(*) FILTER (WHERE status = 'draft')                                        AS draft_campaigns,
+          COUNT(*) FILTER (WHERE status = 'paused')                                       AS paused_campaigns,
+          COUNT(*) FILTER (WHERE status IN ('sent','sent_with_errors','completed','error')) AS completed_campaigns,
+          COUNT(*)                                                                          AS total_campaigns
         FROM marketing_campaigns WHERE org_id = ${orgId}
       `),
       db.execute(sql`
@@ -394,12 +584,12 @@ marketingRouter.get("/summary", requirePermission("workspace.view"), async (req,
       db.select({ count: count() }).from(clientsTable).where(eq(clientsTable.orgId, orgId)),
       db.execute(sql`
         SELECT
-          COUNT(*) FILTER (WHERE status = 'active') AS active,
-          COUNT(*) FILTER (WHERE status = 'draft')  AS draft,
-          COUNT(*)                                  AS total,
-          COALESCE(SUM(sent_count), 0)              AS sent,
-          COALESCE(SUM(opened_count), 0)            AS opened,
-          COALESCE(SUM(clicked_count), 0)           AS clicked
+          COUNT(*) FILTER (WHERE status IN ('active','sending')) AS active,
+          COUNT(*) FILTER (WHERE status = 'draft')              AS draft,
+          COUNT(*)                                              AS total,
+          COALESCE(SUM(sent_count), 0)                         AS sent,
+          COALESCE(SUM(opened_count), 0)                       AS opened,
+          COALESCE(SUM(clicked_count), 0)                      AS clicked
         FROM marketing_campaigns WHERE org_id = ${orgId}
       `),
     ]);

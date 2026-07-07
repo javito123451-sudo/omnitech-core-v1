@@ -1,0 +1,169 @@
+# AUDITORÍA Y REPARACIÓN DEL MÓDULO OMNI MARKETING HUB
+
+Hay un error en Omni Marketing Hub que debe solucionarse.
+
+## Problema
+
+Las campañas aparecen como "Completadas" y el contador de mensajes enviados aumenta, pero los mensajes de WhatsApp nunca llegan a los destinatarios.
+
+La integración de WhatsApp funciona correctamente porque Ava puede enviar y recibir mensajes sin problemas.
+
+Por tanto, el fallo está en el flujo de envío del Marketing Hub.
+
+---
+
+## OBJETIVO
+
+Encontrar el origen del problema, corregirlo y verificar con un envío real que los mensajes llegan correctamente.
+
+---
+
+## TAREAS
+
+### 1. Analizar el flujo completo
+
+Localiza todo el recorrido del envío de campañas:
+
+- Botón "Enviar campaña"
+- Frontend
+- Endpoint/API
+- Servicio de envío
+- Cola de procesamiento (si existe)
+- Función que cambia el estado de la campaña
+
+Identifica exactamente dónde se rompe el proceso.
+
+---
+
+### 2. Comparar con Ava
+
+Comprueba que Marketing Hub utiliza exactamente el mismo servicio de envío que utiliza Ava.
+
+Si existen dos servicios diferentes, elimina la duplicidad y crea un único servicio centralizado para enviar mensajes de WhatsApp.
+
+Todas las campañas deberán utilizar ese mismo servicio.
+
+---
+
+### 3. Revisar errores
+
+Buscar y registrar cualquier error:
+
+- 400
+- 401
+- 403
+- 404
+- 429
+- 500
+
+No ocultar excepciones.
+
+Todo error debe quedar registrado.
+
+---
+
+### 4. Corregir los estados
+
+Una campaña NO puede marcarse como "Completada" únicamente porque termine el proceso.
+
+Solo podrá marcarse como completada cuando la API confirme que todos los mensajes fueron enviados correctamente.
+
+Estados permitidos:
+
+- Borrador
+- Programada
+- Enviando
+- Enviada
+- Completada
+- Completada con errores
+- Error
+
+---
+
+### 5. Crear logs completos
+
+Registrar por cada destinatario:
+
+- Nombre
+- Teléfono
+- Fecha
+- Estado
+- Respuesta completa de la API
+- ID del mensaje
+- Error si existe
+
+---
+
+### 6. Crear informe final del envío
+
+Después de cada campaña mostrar:
+
+Campaña
+
+Destinatarios
+
+Mensajes enviados
+
+Mensajes entregados
+
+Mensajes fallidos
+
+Mensajes pendientes
+
+Errores detectados
+
+Tiempo total de envío
+
+---
+
+### 7. Revisar la audiencia
+
+Verificar que:
+
+- Se cargan todos los contactos seleccionados.
+- Los teléfonos tienen formato internacional.
+- Se eliminan duplicados.
+- Se ignoran teléfonos vacíos.
+- No se intenta enviar a contactos sin WhatsApp.
+
+---
+
+### 8. Añadir botón "Enviar prueba"
+
+Crear un botón llamado:
+
+Enviar mensaje de prueba
+
+Debe enviar un WhatsApp únicamente al administrador utilizando exactamente el mismo flujo que utilizan las campañas.
+
+Si este envío falla, mostrar el error completo.
+
+---
+
+### 9. No romper el resto del sistema
+
+No modificar el funcionamiento de:
+
+- Ava
+- CRM
+- Conversaciones
+- Automatizaciones
+- WhatsApp
+- Integraciones
+
+Solo corregir Marketing Hub.
+
+---
+
+## INFORME FINAL
+
+Al terminar, genera un informe indicando:
+
+- Dónde estaba el fallo.
+- Qué archivos fueron modificados.
+- Qué funciones fueron corregidas.
+- Qué código duplicado fue eliminado.
+- Qué pruebas se realizaron.
+- Confirmación de que las campañas envían mensajes reales utilizando el mismo servicio que Ava.
+
+No des el trabajo por finalizado hasta realizar un envío real y verificar que el mensaje llega correctamente al destinatario.

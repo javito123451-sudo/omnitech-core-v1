@@ -699,6 +699,31 @@ export async function runStartupMigrations(): Promise<void> {
       }
     }
 
+    // ── FIX-AA: Campaign send logs + extended campaign columns ───────────────
+    {
+      await db.execute(sql`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS failed_count INTEGER DEFAULT 0`);
+      await db.execute(sql`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS send_report  TEXT`);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS campaign_send_logs (
+          id               SERIAL PRIMARY KEY,
+          campaign_id      INTEGER NOT NULL REFERENCES marketing_campaigns(id) ON DELETE CASCADE,
+          org_id           INTEGER NOT NULL,
+          client_id        INTEGER,
+          client_name      TEXT,
+          phone_raw        TEXT,
+          phone_normalized TEXT,
+          status           TEXT NOT NULL DEFAULT 'pending',
+          message_id       TEXT,
+          error_message    TEXT,
+          meta_http_status INTEGER,
+          meta_response    TEXT,
+          sent_at          TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_csl_campaign ON campaign_send_logs(campaign_id)`);
+      logger.info("[Migration] ✅ FIX-AA: campaign_send_logs table + campaign columns ensured");
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

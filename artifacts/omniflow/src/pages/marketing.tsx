@@ -4,21 +4,28 @@ import { authFetch } from "@/lib/authFetch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Megaphone, Send, Users, BarChart3, TrendingUp, Mail, Plus, Loader2,
-  MoreHorizontal, Copy, Trash2, Play, Pause, CheckCircle2, X,
-  Target, Zap, Eye, MousePointerClick, CalendarDays, ChevronDown,
-  AlertCircle,
+  MoreHorizontal, Copy, Trash2, Play, CheckCircle2, X,
+  Target, Zap, Eye, MousePointerClick, CalendarDays,
+  AlertCircle, AlertTriangle, Clock, FileText, Phone,
+  CheckCheck, XCircle,
 } from "lucide-react";
 import { PortalDropdown, PortalDropdownItem } from "@/components/ui/PortalDropdown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+type CampaignStatus =
+  | "draft" | "active" | "paused" | "sending"
+  | "sent"  | "sent_with_errors" | "completed" | "error";
+
 interface Campaign {
   id: number; org_id: number; name: string;
-  status: "draft" | "active" | "paused" | "completed";
+  status: CampaignStatus;
   channel: string; subject: string | null; body: string | null;
-  audience_filter: string; sent_count: number; opened_count: number;
-  clicked_count: number; created_at: string; updated_at: string;
+  audience_filter: string;
+  sent_count: number; failed_count: number;
+  opened_count: number; clicked_count: number;
+  created_at: string; updated_at: string;
   sent_at: string | null;
 }
 
@@ -30,18 +37,43 @@ interface AudienceClient {
 
 interface Segment { id: string; name: string; count: number; }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+interface SendLog {
+  id: number; client_id: number | null; client_name: string | null;
+  phone_raw: string | null; phone_normalized: string | null;
+  status: "sent" | "failed" | "skipped";
+  message_id: string | null; error_message: string | null;
+  meta_http_status: number | null; sent_at: string;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
-  draft: "Borrador", active: "Activa", paused: "Pausada", completed: "Completada",
+  draft:            "Borrador",
+  active:           "Activa",
+  paused:           "Pausada",
+  sending:          "Enviando…",
+  sent:             "Enviada",
+  sent_with_errors: "Con errores",
+  completed:        "Completada",
+  error:            "Error",
 };
 const STATUS_COLOR: Record<string, string> = {
-  draft:     "bg-slate-500/15 text-slate-300 border-slate-500/25",
-  active:    "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
-  paused:    "bg-amber-500/15 text-amber-400 border-amber-500/25",
-  completed: "bg-blue-500/15 text-blue-400 border-blue-500/25",
+  draft:            "bg-slate-500/15 text-slate-300 border-slate-500/25",
+  active:           "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
+  paused:           "bg-amber-500/15 text-amber-400 border-amber-500/25",
+  sending:          "bg-blue-500/15 text-blue-300 border-blue-500/25",
+  sent:             "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
+  sent_with_errors: "bg-amber-500/15 text-amber-400 border-amber-500/25",
+  completed:        "bg-blue-500/15 text-blue-400 border-blue-500/25",
+  error:            "bg-rose-500/15 text-rose-400 border-rose-500/25",
 };
 const CHANNEL_LABEL: Record<string, string> = {
   email: "Email", whatsapp: "WhatsApp", both: "Email + WhatsApp", sms: "SMS",
+};
+const STATUS_CLIENT_COLOR: Record<string, string> = {
+  active:   "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+  client:   "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  lead:     "bg-amber-500/15 text-amber-400 border-amber-500/20",
+  inactive: "bg-slate-500/15 text-slate-400 border-slate-500/20",
 };
 
 function pct(num: number, den: number) {
@@ -49,11 +81,16 @@ function pct(num: number, den: number) {
   return (num / den * 100).toFixed(1) + "%";
 }
 
+function isSendingStatus(s: CampaignStatus) {
+  return s === "sending";
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function MarketingHubPage() {
   const [tab, setTab] = useState<"campaigns" | "audience" | "analytics">("campaigns");
-  const [showModal, setShowModal] = useState(false);
+  const [showModal,    setShowModal]    = useState(false);
   const [editCampaign, setEditCampaign] = useState<Campaign | null>(null);
+  const [reportCampaign, setReportCampaign] = useState<Campaign | null>(null);
 
   return (
     <div className="min-h-screen bg-[#0a0b14]">
@@ -106,18 +143,25 @@ export default function MarketingHubPage() {
         {tab === "campaigns" && (
           <CampaignsTab
             onNew={() => { setEditCampaign(null); setShowModal(true); }}
-            onEdit={(c) => { setEditCampaign(c); setShowModal(true); }}
+            onEdit={c  => { setEditCampaign(c);   setShowModal(true); }}
+            onReport={c => setReportCampaign(c)}
           />
         )}
         {tab === "audience"  && <AudienceTab />}
         {tab === "analytics" && <AnalyticsTab />}
       </div>
 
-      {/* Campaign Modal */}
+      {/* Modals */}
       {showModal && (
         <CampaignModal
           existing={editCampaign}
           onClose={() => setShowModal(false)}
+        />
+      )}
+      {reportCampaign && (
+        <ReportModal
+          campaign={reportCampaign}
+          onClose={() => setReportCampaign(null)}
         />
       )}
     </div>
@@ -125,9 +169,16 @@ export default function MarketingHubPage() {
 }
 
 // ── Campaigns Tab ─────────────────────────────────────────────────────────────
-function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campaign) => void }) {
+function CampaignsTab({
+  onNew, onEdit, onReport,
+}: {
+  onNew: () => void;
+  onEdit: (c: Campaign) => void;
+  onReport: (c: Campaign) => void;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ["marketing-campaigns"],
     queryFn: async () => {
@@ -135,18 +186,11 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
       if (!r.ok) throw new Error(await r.text());
       return (await r.json()) as { campaigns: Campaign[] };
     },
-  });
-
-  const patchMut = useMutation({
-    mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
-      const r = await authFetch(`${BASE}/api/marketing/campaigns/${id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!r.ok) throw new Error(await r.text());
+    // Auto-refresh while any campaign is in "sending" state
+    refetchInterval: (query) => {
+      const campaigns = (query.state.data as { campaigns: Campaign[] } | undefined)?.campaigns ?? [];
+      return campaigns.some(c => isSendingStatus(c.status)) ? 3000 : false;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["marketing-campaigns"] }),
-    onError: (e) => toast({ title: "Error", description: String(e), variant: "destructive" }),
   });
 
   const deleteMut = useMutation({
@@ -154,11 +198,8 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
       const r = await authFetch(`${BASE}/api/marketing/campaigns/${id}`, { method: "DELETE" });
       if (!r.ok) throw new Error(await r.text());
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["marketing-campaigns"] });
-      toast({ title: "Campaña eliminada" });
-    },
-    onError: (e) => toast({ title: "Error", description: String(e), variant: "destructive" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["marketing-campaigns"] }); toast({ title: "Campaña eliminada" }); },
+    onError:   e  => toast({ title: "Error", description: String(e), variant: "destructive" }),
   });
 
   const dupMut = useMutation({
@@ -166,42 +207,30 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
       const r = await authFetch(`${BASE}/api/marketing/campaigns/${id}/duplicate`, { method: "POST" });
       if (!r.ok) throw new Error(await r.text());
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["marketing-campaigns"] });
-      toast({ title: "Campaña duplicada" });
-    },
-    onError: (e) => toast({ title: "Error", description: String(e), variant: "destructive" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["marketing-campaigns"] }); toast({ title: "Campaña duplicada" }); },
+    onError:   e  => toast({ title: "Error", description: String(e), variant: "destructive" }),
   });
 
   const launchMut = useMutation({
     mutationFn: async (id: number) => {
       const r = await authFetch(`${BASE}/api/marketing/campaigns/${id}/launch`, { method: "POST" });
-      const data = await r.json() as { ok?: boolean; sentCount?: number; failCount?: number; total?: number; error?: string };
-      if (!r.ok) throw new Error(data.error ?? await r.text());
-      return data;
+      const d = await r.json() as { ok?: boolean; queued?: boolean; error?: string };
+      if (!r.ok) throw new Error(d.error ?? "Error desconocido");
+      return d;
     },
-    onSuccess: (data, id) => {
+    onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ["marketing-campaigns"] });
-      const { sentCount = 0, failCount = 0 } = data;
-      if (failCount === 0) {
-        toast({ title: `✅ Campaña enviada — ${sentCount} mensajes entregados` });
-      } else {
-        toast({
-          title:       `Campaña enviada con advertencias`,
-          description: `${sentCount} enviados · ${failCount} fallidos`,
-          variant:     "destructive",
-        });
-      }
+      toast({ title: "📤 Campaña en proceso de envío", description: "El estado se actualizará automáticamente" });
+      void id;
     },
-    onError: (e) => toast({ title: "Error al lanzar campaña", description: String(e), variant: "destructive" }),
+    onError: e => toast({ title: "Error al lanzar campaña", description: String(e), variant: "destructive" }),
   });
 
   const launchingId = launchMut.isPending ? (launchMut.variables as number) : null;
-
-  const campaigns = data?.campaigns ?? [];
-  const active    = campaigns.filter(c => c.status === "active").length;
-  const totalSent = campaigns.reduce((s, c) => s + c.sent_count, 0);
-  const avgOpen   = campaigns.length > 0
+  const campaigns   = data?.campaigns ?? [];
+  const active      = campaigns.filter(c => c.status === "active" || c.status === "sending").length;
+  const totalSent   = campaigns.reduce((s, c) => s + c.sent_count, 0);
+  const avgOpen     = campaigns.length > 0
     ? pct(campaigns.reduce((s, c) => s + c.opened_count, 0), totalSent || 1)
     : "—";
 
@@ -209,9 +238,9 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
     <div className="space-y-4">
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard icon={Send}      label="Campañas activas"   value={String(active)}         trend={`${campaigns.length} en total`}   color="pink" />
-        <MetricCard icon={Mail}      label="Mensajes enviados"  value={totalSent.toLocaleString()} trend="acumulado"                     color="blue" />
-        <MetricCard icon={TrendingUp} label="Tasa de apertura"  value={avgOpen}                trend="promedio campañas"               color="emerald" />
+        <MetricCard icon={Send}      label="Campañas activas"  value={String(active)}              trend={`${campaigns.length} en total`} color="pink" />
+        <MetricCard icon={Mail}      label="Mensajes enviados" value={totalSent.toLocaleString()}   trend="acumulado"                      color="blue" />
+        <MetricCard icon={TrendingUp} label="Tasa de apertura" value={avgOpen}                     trend="promedio campañas"              color="emerald" />
       </div>
 
       {/* Table */}
@@ -242,21 +271,22 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
               <Megaphone size={22} className="text-pink-500" />
             </div>
             <p className="text-slate-400 text-sm">Aún no hay campañas</p>
-            <button
-              onClick={onNew}
-              className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium transition-all"
-            >
+            <button onClick={onNew} className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium transition-all">
               Crear primera campaña
             </button>
           </div>
         )}
+
         {!isLoading && campaigns.length > 0 && (
           <div className="divide-y divide-white/[0.04]">
             {campaigns.map(c => (
               <div key={c.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors group">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-pink-500/10 border border-pink-500/20 flex items-center justify-center flex-shrink-0">
-                    <Send size={13} className="text-pink-400" />
+                    {c.status === "sending"
+                      ? <Loader2 size={13} className="text-blue-400 animate-spin" />
+                      : <Send size={13} className="text-pink-400" />
+                    }
                   </div>
                   <div className="min-w-0">
                     <p className="text-white text-sm font-medium truncate">{c.name}</p>
@@ -267,24 +297,26 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
                 </div>
 
                 <div className="flex items-center gap-4 flex-shrink-0">
+                  {/* Sent / failed counts */}
                   <div className="text-right hidden md:block">
                     <p className="text-white text-xs font-medium">{c.sent_count.toLocaleString()}</p>
                     <p className="text-slate-500 text-[10px]">enviados</p>
                   </div>
+                  {(c.failed_count ?? 0) > 0 && (
+                    <div className="text-right hidden md:block">
+                      <p className="text-rose-400 text-xs font-medium">{c.failed_count.toLocaleString()}</p>
+                      <p className="text-slate-500 text-[10px]">fallidos</p>
+                    </div>
+                  )}
                   <div className="text-right hidden md:block">
                     <p className="text-white text-xs font-medium">{pct(c.opened_count, c.sent_count)}</p>
                     <p className="text-slate-500 text-[10px]">abiertos</p>
                   </div>
-                  <div className="text-right hidden lg:block">
-                    <p className="text-white text-xs font-medium">{pct(c.clicked_count, c.sent_count)}</p>
-                    <p className="text-slate-500 text-[10px]">clics</p>
-                  </div>
 
-                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-lg border ${STATUS_COLOR[c.status]}`}>
-                    {STATUS_LABEL[c.status]}
+                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-lg border ${STATUS_COLOR[c.status] ?? STATUS_COLOR["draft"]}`}>
+                    {STATUS_LABEL[c.status] ?? c.status}
                   </span>
 
-                  {/* Actions menu — rendered via portal to escape overflow:hidden */}
                   <PortalDropdown
                     trigger={
                       <button className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100">
@@ -292,32 +324,48 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
                       </button>
                     }
                   >
-                    <PortalDropdownItem icon={<Eye size={13} />}         label="Ver / Editar" onClick={() => onEdit(c)} />
+                    <PortalDropdownItem icon={<Eye size={13} />} label="Ver / Editar" onClick={() => onEdit(c)} />
+
+                    {/* Launch: only for draft campaigns */}
                     {c.status === "draft" && (
                       <PortalDropdownItem
                         icon={launchingId === c.id ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                         label={launchingId === c.id ? "Enviando…" : "Publicar y enviar"}
-                        variant="default"
-                        onClick={() => { if (launchingId !== c.id) launchMut.mutate(c.id); }}
+                        onClick={() => launchMut.mutate(c.id)}
+                        disabled={launchingId === c.id}
                       />
                     )}
-                    {c.status === "active" && (
-                      <PortalDropdownItem icon={<Pause size={13} />}     label="Pausar"    variant="warning" onClick={() => patchMut.mutate({ id: c.id, body: { status: "paused" } })} />
-                    )}
-                    {c.status === "paused" && (
+
+                    {/* Sending in progress */}
+                    {c.status === "sending" && (
                       <PortalDropdownItem
-                        icon={launchingId === c.id ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                        label={launchingId === c.id ? "Enviando…" : "Reanudar y enviar"}
-                        variant="default"
-                        onClick={() => { if (launchingId !== c.id) launchMut.mutate(c.id); }}
+                        icon={<Loader2 size={13} className="animate-spin" />}
+                        label="Enviando…"
+                        onClick={() => {}}
+                        disabled
                       />
                     )}
-                    {(c.status === "active" || c.status === "paused") && (
-                      <PortalDropdownItem icon={<CheckCircle2 size={13} />} label="Finalizar" variant="default" onClick={() => patchMut.mutate({ id: c.id, body: { status: "completed" } })} />
+
+                    {/* Report for terminal states */}
+                    {["sent", "sent_with_errors", "error", "completed"].includes(c.status) && (
+                      <PortalDropdownItem
+                        icon={<FileText size={13} />}
+                        label="Ver informe"
+                        onClick={() => onReport(c)}
+                      />
                     )}
-                    <PortalDropdownItem icon={<Copy size={13} />}        label="Duplicar"  onClick={() => dupMut.mutate(c.id)} />
-                    <div className="border-t border-white/10 my-0.5" />
-                    <PortalDropdownItem icon={<Trash2 size={13} />}      label="Eliminar"  variant="danger"  onClick={() => { if (confirm("¿Eliminar esta campaña?")) deleteMut.mutate(c.id); }} />
+
+                    <PortalDropdownItem
+                      icon={<Copy size={13} />}
+                      label="Duplicar"
+                      onClick={() => dupMut.mutate(c.id)}
+                    />
+                    <PortalDropdownItem
+                      icon={<Trash2 size={13} />}
+                      label="Eliminar"
+                      onClick={() => { if (confirm("¿Eliminar campaña?")) deleteMut.mutate(c.id); }}
+                      danger
+                    />
                   </PortalDropdown>
                 </div>
               </div>
@@ -329,10 +377,132 @@ function CampaignsTab({ onNew, onEdit }: { onNew: () => void; onEdit: (c: Campai
   );
 }
 
+// ── Report Modal ───────────────────────────────────────────────────────────────
+function ReportModal({ campaign, onClose }: { campaign: Campaign; onClose: () => void }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["campaign-report", campaign.id],
+    queryFn: async () => {
+      const r = await authFetch(`${BASE}/api/marketing/campaigns/${campaign.id}/report`);
+      if (!r.ok) throw new Error(await r.text());
+      return (await r.json()) as {
+        campaign: Record<string, unknown>;
+        logs: SendLog[];
+      };
+    },
+  });
+
+  const logs    = data?.logs ?? [];
+  const sent    = logs.filter(l => l.status === "sent").length;
+  const failed  = logs.filter(l => l.status === "failed").length;
+  const total   = logs.length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-2xl bg-[#10111e] border border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <FileText size={17} className="text-pink-400" />
+            <div>
+              <h2 className="text-white font-semibold text-sm">{campaign.name}</h2>
+              <p className="text-slate-500 text-xs">Informe de envío</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Stats row */}
+        {!isLoading && !isError && (
+          <div className="grid grid-cols-3 gap-3 px-6 py-4 border-b border-white/[0.06] flex-shrink-0">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-emerald-400">{sent}</p>
+              <p className="text-slate-400 text-xs mt-0.5">Enviados</p>
+            </div>
+            <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-rose-400">{failed}</p>
+              <p className="text-slate-400 text-xs mt-0.5">Fallidos</p>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-white">{total}</p>
+              <p className="text-slate-400 text-xs mt-0.5">Total</p>
+            </div>
+          </div>
+        )}
+
+        {/* Log list */}
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-1.5">
+          {isLoading && (
+            <div className="flex items-center justify-center gap-2 py-12 text-slate-500">
+              <Loader2 size={16} className="animate-spin" /> Cargando informe…
+            </div>
+          )}
+          {isError && (
+            <div className="flex items-center justify-center gap-2 py-12 text-rose-400">
+              <AlertCircle size={15} /> Error al cargar el informe
+            </div>
+          )}
+          {!isLoading && !isError && logs.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 gap-2 text-slate-500">
+              <FileText size={28} />
+              <p className="text-sm">Sin registros de envío</p>
+              <p className="text-xs text-slate-600">Los logs aparecen después de lanzar la campaña</p>
+            </div>
+          )}
+          {logs.map(log => (
+            <div
+              key={log.id}
+              className={`flex items-start gap-3 px-4 py-3 rounded-xl border ${
+                log.status === "sent"
+                  ? "bg-emerald-500/5 border-emerald-500/15"
+                  : "bg-rose-500/5 border-rose-500/15"
+              }`}
+            >
+              <div className="mt-0.5 flex-shrink-0">
+                {log.status === "sent"
+                  ? <CheckCheck size={14} className="text-emerald-400" />
+                  : <XCircle   size={14} className="text-rose-400" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-white text-xs font-medium">{log.client_name ?? "Desconocido"}</p>
+                  <span className="text-slate-500 text-[10px] flex items-center gap-1">
+                    <Phone size={9} />
+                    {log.phone_normalized ?? log.phone_raw ?? "—"}
+                  </span>
+                  {log.message_id && (
+                    <span className="text-slate-600 text-[10px] font-mono hidden sm:inline truncate max-w-[160px]">
+                      {log.message_id}
+                    </span>
+                  )}
+                </div>
+                {log.error_message && (
+                  <p className="text-rose-400 text-[11px] mt-0.5 leading-snug">{log.error_message}</p>
+                )}
+              </div>
+              <div className="flex-shrink-0 text-right">
+                <p className="text-slate-500 text-[10px]">
+                  {new Date(log.sent_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </p>
+                {log.meta_http_status != null && log.meta_http_status !== 200 && (
+                  <p className="text-rose-400 text-[10px]">HTTP {log.meta_http_status}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Audience Tab ──────────────────────────────────────────────────────────────
 function AudienceTab() {
-  const [activeSegment, setActiveSegment] = useState("all");
-  const [search, setSearch] = useState("");
+  const [search,  setSearch]  = useState("");
+  const [segment, setSegment] = useState("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["marketing-audience"],
@@ -343,24 +513,17 @@ function AudienceTab() {
     },
   });
 
-  const clients  = data?.clients  ?? [];
   const segments = data?.segments ?? [];
-
-  const STATUS_CLIENT_COLOR: Record<string, string> = {
-    lead:     "bg-amber-500/15 text-amber-400 border-amber-500/20",
-    active:   "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-    client:   "bg-blue-500/15 text-blue-400 border-blue-500/20",
-    inactive: "bg-slate-500/15 text-slate-400 border-slate-500/20",
-  };
-
-  const filtered = clients.filter(c => {
-    const matchSeg = activeSegment === "all" ||
-      (activeSegment === "active"   && (c.status === "active" || c.status === "client")) ||
-      (activeSegment === "leads"    && c.status === "lead") ||
-      (activeSegment === "inactive" && c.status === "inactive");
+  const filtered = (data?.clients ?? []).filter(c => {
+    const matchSeg = segment === "all"
+      ? true
+      : segment === "active"   ? (c.status === "active" || c.status === "client")
+      : segment === "leads"    ? c.status === "lead"
+      : segment === "inactive" ? c.status === "inactive"
+      : true;
     const q = search.toLowerCase();
-    const matchSearch = !q || (c.name?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q) || c.company?.toLowerCase().includes(q));
-    return matchSeg && matchSearch;
+    const matchQ = !q || c.name.toLowerCase().includes(q) || (c.email ?? "").toLowerCase().includes(q);
+    return matchSeg && matchQ;
   });
 
   return (
@@ -370,35 +533,33 @@ function AudienceTab() {
         {segments.map(s => (
           <button
             key={s.id}
-            onClick={() => setActiveSegment(s.id)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
-              activeSegment === s.id
+            onClick={() => setSegment(s.id)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+              segment === s.id
                 ? "bg-pink-600/20 text-pink-300 border-pink-500/30"
                 : "bg-white/5 text-slate-400 border-white/10 hover:text-white"
             }`}
           >
-            <Target size={11} />
             {s.name}
-            <span className="bg-white/10 px-1.5 py-0.5 rounded-md">{s.count}</span>
+            <span className="bg-white/10 px-1.5 py-0.5 rounded-md text-[10px]">{s.count}</span>
           </button>
         ))}
       </div>
 
       {/* Search */}
-      <input
-        type="text"
-        placeholder="Buscar contacto..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/40"
-      />
-
-      {/* Table */}
       <div className="bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between">
-          <h3 className="text-white font-medium text-sm">Contactos</h3>
+        <div className="px-5 py-3 border-b border-white/[0.06] flex items-center gap-3">
+          <Target size={14} className="text-slate-500" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar contacto…"
+            className="flex-1 bg-transparent text-sm text-white placeholder-slate-600 focus:outline-none"
+          />
           <span className="text-slate-500 text-xs">{filtered.length} registros</span>
         </div>
+
         {isLoading && (
           <div className="flex items-center justify-center gap-2 py-12 text-slate-500">
             <Loader2 size={18} className="animate-spin" /> Cargando audiencia…
@@ -426,8 +587,10 @@ function AudienceTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {c.tags && (
-                    <span className="text-[10px] text-slate-500 hidden sm:block">{c.tags}</span>
+                  {c.phone && (
+                    <span className="text-slate-500 text-[10px] flex items-center gap-1 hidden sm:flex">
+                      <Phone size={9} /> {c.phone}
+                    </span>
                   )}
                   <span className={`text-[11px] font-medium px-2 py-0.5 rounded-lg border ${STATUS_CLIENT_COLOR[c.status] ?? STATUS_CLIENT_COLOR["inactive"]}`}>
                     {c.status}
@@ -469,7 +632,7 @@ function AnalyticsTab() {
     );
   }
 
-  const o = data?.overview;
+  const o       = data?.overview;
   const monthly = data?.monthly ?? [];
 
   if (!o || o.totalCampaigns === 0) {
@@ -485,23 +648,21 @@ function AnalyticsTab() {
 
   return (
     <div className="space-y-4">
-      {/* KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatBox icon={Send}             label="Enviados"     value={o.totalSent.toLocaleString()}   color="pink" />
-        <StatBox icon={Eye}              label="Abiertos"     value={o.totalOpened.toLocaleString()}  color="blue" />
-        <StatBox icon={MousePointerClick} label="Clics"       value={o.totalClicked.toLocaleString()} color="violet" />
-        <StatBox icon={TrendingUp}       label="Tasa apertura" value={`${o.openRate}%`}              color="emerald" />
+        <StatBox icon={Send}              label="Enviados"      value={o.totalSent.toLocaleString()}   color="pink" />
+        <StatBox icon={Eye}               label="Abiertos"      value={o.totalOpened.toLocaleString()}  color="blue" />
+        <StatBox icon={MousePointerClick} label="Clics"         value={o.totalClicked.toLocaleString()} color="violet" />
+        <StatBox icon={TrendingUp}        label="Tasa apertura" value={`${o.openRate}%`}               color="emerald" />
       </div>
 
-      {/* Campaign status summary */}
       <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
         <h3 className="text-white font-medium text-sm mb-4">Estado de campañas</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: "Activas",    count: o.activeCampaigns,    color: "text-emerald-400" },
-            { label: "Borradores", count: o.draftCampaigns,     color: "text-slate-400"   },
-            { label: "Pausadas",   count: o.pausedCampaigns,    color: "text-amber-400"   },
-            { label: "Finalizadas",count: o.completedCampaigns, color: "text-blue-400"    },
+            { label: "Activas/Enviando", count: o.activeCampaigns,    color: "text-emerald-400" },
+            { label: "Borradores",       count: o.draftCampaigns,     color: "text-slate-400"   },
+            { label: "Pausadas",         count: o.pausedCampaigns,    color: "text-amber-400"   },
+            { label: "Finalizadas",      count: o.completedCampaigns, color: "text-blue-400"    },
           ].map(s => (
             <div key={s.label} className="bg-white/5 rounded-xl p-3 text-center">
               <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
@@ -511,7 +672,6 @@ function AnalyticsTab() {
         </div>
       </div>
 
-      {/* Monthly chart (bar) */}
       {monthly.length > 0 && (
         <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
           <h3 className="text-white font-medium text-sm mb-4">Envíos por mes</h3>
@@ -525,7 +685,6 @@ function AnalyticsTab() {
                     style={{ height: `${height}%` }}
                   />
                   <span className="text-slate-600 text-[10px]">{m.month.slice(5)}</span>
-                  {/* tooltip */}
                   <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-[#1a1b2e] border border-white/10 rounded-lg px-2 py-1 text-xs text-white whitespace-nowrap z-10">
                     {Number(m.sent).toLocaleString()} enviados
                   </div>
@@ -536,27 +695,31 @@ function AnalyticsTab() {
         </div>
       )}
 
-      {/* Rate cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <RateCard label="Tasa de apertura" rate={o.openRate} icon={Eye} color="blue" desc={`${o.totalOpened.toLocaleString()} de ${o.totalSent.toLocaleString()} mensajes abiertos`} />
+        <RateCard label="Tasa de apertura" rate={o.openRate} icon={Eye}               color="blue"   desc={`${o.totalOpened.toLocaleString()} de ${o.totalSent.toLocaleString()} mensajes abiertos`} />
         <RateCard label="Tasa de clics"    rate={o.clickRate} icon={MousePointerClick} color="violet" desc={`${o.totalClicked.toLocaleString()} clics sobre ${o.totalSent.toLocaleString()} enviados`} />
       </div>
     </div>
   );
 }
 
-// ── Campaign Modal ────────────────────────────────────────────────────────────
+// ── Campaign Modal ─────────────────────────────────────────────────────────────
 function CampaignModal({ existing, onClose }: { existing: Campaign | null; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const isEdit = !!existing;
 
-  const [name,      setName]      = useState(existing?.name      ?? "");
-  const [channel,   setChannel]   = useState(existing?.channel   ?? "email");
-  const [subject,   setSubject]   = useState(existing?.subject   ?? "");
-  const [body,      setBody]      = useState(existing?.body      ?? "");
-  const [audience,  setAudience]  = useState(existing?.audience_filter ?? "all");
-  const [saving,    setSaving]    = useState(false);
+  const [name,     setName]     = useState(existing?.name      ?? "");
+  const [channel,  setChannel]  = useState(existing?.channel   ?? "email");
+  const [subject,  setSubject]  = useState(existing?.subject   ?? "");
+  const [body,     setBody]     = useState(existing?.body      ?? "");
+  const [audience, setAudience] = useState(existing?.audience_filter ?? "all");
+  const [saving,   setSaving]   = useState(false);
+
+  // Test-send state
+  const [testPhone,   setTestPhone]   = useState("");
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult,  setTestResult]  = useState<{ ok: boolean; messageId?: string; normalized?: string; error?: string; rawResponse?: string } | null>(null);
 
   const audienceOptions = [
     { id: "all",      label: "Todos los contactos" },
@@ -589,12 +752,40 @@ function CampaignModal({ existing, onClose }: { existing: Campaign | null; onClo
     }
   }
 
+  async function handleTestSend() {
+    if (!testPhone.trim()) { toast({ title: "Introduce un teléfono", variant: "destructive" }); return; }
+    if (!existing?.id)     { toast({ title: "Guarda la campaña antes de enviar la prueba", variant: "destructive" }); return; }
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const r = await authFetch(`${BASE}/api/marketing/campaigns/${existing.id}/test-send`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ phone: testPhone }),
+      });
+      const d = await r.json() as { ok: boolean; messageId?: string; normalized?: string; error?: string; rawResponse?: string };
+      setTestResult(d);
+      if (d.ok) {
+        toast({ title: `✅ Prueba enviada a +${d.normalized}`, description: `ID: ${d.messageId ?? "?"}` });
+      } else {
+        toast({ title: "❌ Envío de prueba fallido", description: d.error, variant: "destructive" });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, error: String(e) });
+      toast({ title: "Error", description: String(e), variant: "destructive" });
+    } finally {
+      setTestLoading(false);
+    }
+  }
+
+  const showTestSend = isEdit && (channel === "whatsapp" || channel === "both");
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-[#10111e] border border-white/10 rounded-2xl shadow-2xl">
+      <div className="relative w-full max-w-lg bg-[#10111e] border border-white/10 rounded-2xl shadow-2xl max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Megaphone size={18} className="text-pink-400" />
             <h2 className="text-white font-semibold">{isEdit ? "Editar campaña" : "Nueva campaña"}</h2>
@@ -605,7 +796,7 @@ function CampaignModal({ existing, onClose }: { existing: Campaign | null; onClo
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
           <Field label="Nombre *">
             <input
               type="text"
@@ -661,10 +852,75 @@ function CampaignModal({ existing, onClose }: { existing: Campaign | null; onClo
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/40 resize-none"
             />
           </Field>
+
+          {/* ── Test-send section ── */}
+          {showTestSend && (
+            <div className="border border-white/[0.08] rounded-xl p-4 space-y-3">
+              <p className="text-slate-400 text-xs font-medium flex items-center gap-1.5">
+                <Phone size={11} />
+                Enviar mensaje de prueba
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="tel"
+                  value={testPhone}
+                  onChange={e => setTestPhone(e.target.value)}
+                  placeholder="+34 612 345 678"
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-pink-500/40"
+                />
+                <button
+                  onClick={handleTestSend}
+                  disabled={testLoading}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/20 text-pink-400 text-xs font-medium transition-all disabled:opacity-50 flex-shrink-0"
+                >
+                  {testLoading
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <Send size={12} />
+                  }
+                  Enviar prueba
+                </button>
+              </div>
+              {/* Test result feedback */}
+              {testResult && (
+                <div className={`rounded-xl px-3 py-2.5 text-xs space-y-1 ${
+                  testResult.ok
+                    ? "bg-emerald-500/10 border border-emerald-500/20"
+                    : "bg-rose-500/10 border border-rose-500/20"
+                }`}>
+                  {testResult.ok ? (
+                    <>
+                      <p className="text-emerald-400 font-medium flex items-center gap-1">
+                        <CheckCheck size={11} /> Mensaje enviado correctamente
+                      </p>
+                      {testResult.normalized && (
+                        <p className="text-slate-400">Número normalizado: +{testResult.normalized}</p>
+                      )}
+                      {testResult.messageId && (
+                        <p className="text-slate-400 font-mono break-all">ID: {testResult.messageId}</p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-rose-400 font-medium flex items-center gap-1">
+                        <XCircle size={11} /> Error en el envío
+                      </p>
+                      <p className="text-slate-400">{testResult.error}</p>
+                      {testResult.rawResponse && (
+                        <details className="mt-1">
+                          <summary className="text-slate-500 cursor-pointer">Respuesta completa de Meta API</summary>
+                          <pre className="text-slate-500 text-[10px] mt-1 break-all whitespace-pre-wrap">{testResult.rawResponse}</pre>
+                        </details>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-xl text-slate-400 hover:text-white text-sm transition-colors"
@@ -686,6 +942,15 @@ function CampaignModal({ existing, onClose }: { existing: Campaign | null; onClo
 }
 
 // ── Small components ──────────────────────────────────────────────────────────
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-slate-400 text-xs font-medium">{label}</label>
+      {children}
+    </div>
+  );
+}
+
 function MetricCard({ icon: Icon, label, value, trend, color }: {
   icon: React.ElementType; label: string; value: string; trend: string; color: string;
 }) {
@@ -698,13 +963,15 @@ function MetricCard({ icon: Icon, label, value, trend, color }: {
   };
   const c = cm[color] ?? cm["pink"]!;
   return (
-    <div className={`${c.bg} border ${c.border} rounded-2xl p-4`}>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={14} className={c.text} />
-        <span className="text-slate-400 text-xs">{label}</span>
+    <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 flex items-center gap-4">
+      <div className={`w-10 h-10 rounded-xl ${c.bg} border ${c.border} flex items-center justify-center flex-shrink-0`}>
+        <Icon size={18} className={c.text} />
       </div>
-      <p className="text-white text-xl font-semibold">{value}</p>
-      <p className="text-slate-500 text-[11px] mt-1">{trend}</p>
+      <div>
+        <p className="text-2xl font-bold text-white">{value}</p>
+        <p className="text-slate-400 text-xs">{label}</p>
+        <p className="text-slate-600 text-[10px]">{trend}</p>
+      </div>
     </div>
   );
 }
@@ -712,14 +979,22 @@ function MetricCard({ icon: Icon, label, value, trend, color }: {
 function StatBox({ icon: Icon, label, value, color }: {
   icon: React.ElementType; label: string; value: string; color: string;
 }) {
-  const cm: Record<string, string> = {
-    pink: "text-pink-400", blue: "text-blue-400", emerald: "text-emerald-400", violet: "text-violet-400",
+  const cm: Record<string, { bg: string; text: string; border: string }> = {
+    pink:    { bg: "bg-pink-500/10",    text: "text-pink-400",    border: "border-pink-500/20"    },
+    blue:    { bg: "bg-blue-500/10",    text: "text-blue-400",    border: "border-blue-500/20"    },
+    emerald: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/20" },
+    violet:  { bg: "bg-violet-500/10",  text: "text-violet-400",  border: "border-violet-500/20"  },
   };
+  const c = cm[color] ?? cm["blue"]!;
   return (
-    <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4">
-      <Icon size={14} className={`${cm[color] ?? "text-pink-400"} mb-2`} />
-      <p className="text-white text-xl font-bold">{value}</p>
-      <p className="text-slate-500 text-xs mt-1">{label}</p>
+    <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4 flex items-center gap-3">
+      <div className={`w-8 h-8 rounded-lg ${c.bg} border ${c.border} flex items-center justify-center flex-shrink-0`}>
+        <Icon size={15} className={c.text} />
+      </div>
+      <div>
+        <p className="text-white font-bold">{value}</p>
+        <p className="text-slate-500 text-[11px]">{label}</p>
+      </div>
     </div>
   );
 }
@@ -727,33 +1002,24 @@ function StatBox({ icon: Icon, label, value, color }: {
 function RateCard({ label, rate, icon: Icon, color, desc }: {
   label: string; rate: number; icon: React.ElementType; color: string; desc: string;
 }) {
-  const cm: Record<string, string> = { blue: "text-blue-400 bg-blue-500/10 border-blue-500/20", violet: "text-violet-400 bg-violet-500/10 border-violet-500/20" };
+  const cm: Record<string, { bg: string; text: string; border: string; bar: string }> = {
+    blue:   { bg: "bg-blue-500/10",   text: "text-blue-400",   border: "border-blue-500/20",   bar: "bg-blue-500" },
+    violet: { bg: "bg-violet-500/10", text: "text-violet-400", border: "border-violet-500/20", bar: "bg-violet-500" },
+  };
   const c = cm[color] ?? cm["blue"]!;
   return (
     <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-slate-400 text-sm">{label}</span>
-        <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${c}`}>
-          <Icon size={14} />
+      <div className="flex items-center gap-2 mb-3">
+        <div className={`w-8 h-8 rounded-lg ${c.bg} border ${c.border} flex items-center justify-center`}>
+          <Icon size={15} className={c.text} />
         </div>
+        <p className="text-white text-sm font-medium">{label}</p>
       </div>
-      <p className="text-white text-3xl font-bold mb-1">{rate}%</p>
-      <div className="w-full bg-white/5 rounded-full h-1.5 mt-3">
-        <div
-          className={`h-1.5 rounded-full ${color === "blue" ? "bg-blue-500" : "bg-violet-500"}`}
-          style={{ width: `${Math.min(rate, 100)}%` }}
-        />
+      <p className={`text-3xl font-bold ${c.text} mb-2`}>{rate}%</p>
+      <div className="w-full bg-white/5 rounded-full h-1.5 mb-2">
+        <div className={`h-1.5 rounded-full ${c.bar}`} style={{ width: `${Math.min(rate, 100)}%` }} />
       </div>
-      <p className="text-slate-500 text-xs mt-2">{desc}</p>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-slate-400 text-xs font-medium">{label}</label>
-      {children}
+      <p className="text-slate-500 text-xs">{desc}</p>
     </div>
   );
 }
