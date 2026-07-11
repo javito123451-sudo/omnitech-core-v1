@@ -61,6 +61,37 @@ Frontend: `format(parseISO(iso), "HH:mm")` used local browser TZ — correct in 
 
 Appointments created before this fix have "wall-clock stored as UTC" (e.g., user said "10:00", stored as 10:00 UTC = 12:00 Madrid). These display shifted by +2h with the new display helpers. New appointments are stored and displayed correctly.
 
+## Canonical source
+
+`artifacts/api-server/src/utils/timezone.ts` — single definition of `madridLocalToUTC`, `apptTimeDisplay`, `apptDateDisplay`, `getMadridDayBounds`.
+- `appointmentSkills.ts`: re-exports from timezone.ts (authoritative).
+- `chat.ts`, `telegram.ts`: local copies (annotated with "CANONICAL SOURCE" comment). Keep identical. Update timezone.ts first when changing.
+- Frontend `calendar.tsx`: `madridLocalToUTCFE` and `getMadridHM` defined locally (no frontend import from api-server).
+
+## Display bug (recurring — fixed)
+
+Root cause: `format(parseISO(iso), "HH:mm")` from date-fns uses **runtime/browser TZ**. In Replit dev (UTC), this shows UTC time (13:00) instead of Madrid time (15:00).
+Fix: ALWAYS use `toTimeStr(iso)` for any time display in calendar.tsx. It calls `getMadridHM` which uses `Intl.DateTimeFormat Europe/Madrid`.
+
+Affected locations fixed:
+- Week card compact badge, week card time range
+- Copy-details text, detail drawer time range
+- AI panel summary time, AI panel date+time string
+- Day/agenda list start + end time
+- Month/other view time list
+
+Drag-and-drop also fixed:
+- `handleDropOnTimeSlot`: `setHours` (browser TZ) → `madridLocalToUTCFE` (explicit Madrid)
+- `handleDropOnDay`: `getHours(parseISO())` (browser TZ) → `getMadridHM` (explicit Madrid)
+
+Reschedule confirmation in chat.ts: `.toISOString().slice(11,16)` (UTC) → `toLocaleTimeString({timeZone:"Europe/Madrid"})`.
+
+## Regression test
+
+`artifacts/omniflow/src/__tests__/timezone.test.ts` — 22 round-trip tests across summer/winter + bug detection.
+Tests all QA times (09:00, 12:00, 15:00, 18:00, 23:30) in both summer and winter.
+All 33 tests pass.
+
 ## TZ logs added
 
 - `[TZ create_appointment]` in telegram.ts and chat.ts: logs hora_recibida, tz, utc_stored, madrid_display.

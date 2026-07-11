@@ -10,53 +10,15 @@ import { eq, and, asc, desc, gte, lt, inArray, ilike } from "drizzle-orm";
 import type { SkillDefinition, SkillContext } from "./types";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Timezone helpers (Europe/Madrid)
+// Timezone helpers — imported from single canonical source.
+// See: src/utils/timezone.ts for documentation and implementation.
 // ═══════════════════════════════════════════════════════════════════════════
-
-export function madridLocalToUTC(dateStr: string, timeStr: string): Date {
-  const [yr, mo, dy] = dateStr.split("-").map(Number);
-  const [h,  m_]     = timeStr.split(":").map(Number);
-  const probe = new Date(Date.UTC(yr!, mo! - 1, dy!, h!, m_!, 0));
-  const fmt   = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false,
-  });
-  const parts  = fmt.formatToParts(probe);
-  const mh     = parseInt(parts.find(p => p.type === "hour")!.value,   10);
-  const mmVal  = parseInt(parts.find(p => p.type === "minute")!.value, 10);
-  const shiftMin = (h! * 60 + m_!) - (mh * 60 + mmVal);
-  return new Date(probe.getTime() + shiftMin * 60_000);
-}
-
-export function apptTimeDisplay(d: Date): string {
-  return d.toLocaleTimeString("es-ES", {
-    timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false,
-  });
-}
-
-export function apptDateDisplay(d: Date): string {
-  return d.toLocaleDateString("es-ES", {
-    timeZone: "Europe/Madrid", weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
-}
-
-export function getMadridDayBounds(offsetDays: number): { start: Date; end: Date } {
-  const now = new Date();
-  const base = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays, 0, 0, 0));
-  const fmt = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Madrid", year: "numeric", month: "numeric", day: "numeric",
-    hour: "numeric", minute: "numeric", hour12: false,
-  });
-  const parts = fmt.formatToParts(base);
-  const yr = parseInt(parts.find(p => p.type === "year")!.value, 10);
-  const mo = parseInt(parts.find(p => p.type === "month")!.value, 10);
-  const dy = parseInt(parts.find(p => p.type === "day")!.value, 10);
-  const h  = parseInt(parts.find(p => p.type === "hour")!.value, 10);
-  const m  = parseInt(parts.find(p => p.type === "minute")!.value, 10);
-  const shiftMs = base.getTime() - Date.UTC(yr, mo - 1, dy, h, m, 0);
-  const start = new Date(Date.UTC(yr, mo - 1, dy, 0, 0, 0) - shiftMs);
-  const end   = new Date(Date.UTC(yr, mo - 1, dy, 23, 59, 59, 999) - shiftMs);
-  return { start, end };
-}
+export {
+  madridLocalToUTC,
+  apptTimeDisplay,
+  apptDateDisplay,
+  getMadridDayBounds,
+} from "../utils/timezone";
 
 export function getMadridWeekBounds(): { start: Date; end: Date } {
   const now = new Date();

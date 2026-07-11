@@ -439,6 +439,10 @@ async function executeTelegramCreateAppointment(
 // STORAGE CONVENTION (Rule 1): All timestamps stored as real UTC.
 // DISPLAY CONVENTION  (Rule 2): All timestamps shown in Europe/Madrid.
 //
+// CANONICAL SOURCE: src/utils/timezone.ts — this is a local copy kept here
+// to avoid import cycles. Both implementations are identical.
+// If you change the algorithm, update timezone.ts first, then copy here.
+//
 // madridLocalToUTC: converts a date+time string expressed in Europe/Madrid local
 // time (as provided by the user / AI) into the equivalent UTC Date.
 // Correctly handles both CET (UTC+1, winter) and CEST (UTC+2, summer) via Intl.

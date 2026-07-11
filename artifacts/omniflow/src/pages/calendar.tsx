@@ -198,7 +198,7 @@ function ApptBlock({
         ) : compact ? (
           <div className="flex items-center gap-1">
             <span className="text-[10px] font-semibold text-white truncate flex-1">{appt.title}</span>
-            <span className="text-[9px] text-white/50 shrink-0">{format(parseISO(appt.startTime), "HH:mm")}</span>
+            <span className="text-[9px] text-white/50 shrink-0">{toTimeStr(appt.startTime)}</span>
           </div>
         ) : (
           <>
@@ -210,7 +210,7 @@ function ApptBlock({
               <p className="text-[10px] text-white/60 truncate mt-0.5 pl-0.5">{appt.clientName}</p>
             )}
             <p className="text-[9px] text-white/45 mt-auto pt-0.5 pl-0.5">
-              {format(parseISO(appt.startTime), "HH:mm")}–{format(parseISO(appt.endTime), "HH:mm")}
+              {toTimeStr(appt.startTime)}–{toTimeStr(appt.endTime)}
             </p>
           </>
         )}
@@ -292,7 +292,7 @@ function ApptDetail({ appt, onEdit, onDelete, onClose, onStatusChange }: {
   const [copied, setCopied] = useState(false);
 
   const copyDetails = () => {
-    const text = `${appt.title}\n${format(parseISO(appt.startTime), "EEEE d MMM yyyy", { locale: es })}\n${format(parseISO(appt.startTime), "HH:mm")}–${format(parseISO(appt.endTime), "HH:mm")}\nCliente: ${appt.clientName ?? "—"}\n${appt.location ? `Lugar: ${appt.location}\n` : ""}${appt.description ?? ""}`;
+    const text = `${appt.title}\n${format(parseISO(appt.startTime), "EEEE d MMM yyyy", { locale: es })}\n${toTimeStr(appt.startTime)}–${toTimeStr(appt.endTime)}\nCliente: ${appt.clientName ?? "—"}\n${appt.location ? `Lugar: ${appt.location}\n` : ""}${appt.description ?? ""}`;
     navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
@@ -351,7 +351,7 @@ function ApptDetail({ appt, onEdit, onDelete, onClose, onStatusChange }: {
                 {format(parseISO(appt.startTime), "EEEE d 'de' MMMM, yyyy", { locale: es })}
               </p>
               <p className="text-xs text-slate-400 mt-0.5">
-                {format(parseISO(appt.startTime), "HH:mm")} – {format(parseISO(appt.endTime), "HH:mm")}
+                {toTimeStr(appt.startTime)} – {toTimeStr(appt.endTime)}
                 <span className="ml-2 text-slate-500">{dur} min</span>
               </p>
             </div>
@@ -599,7 +599,7 @@ function AiPanel({ onClose, onFillForm, selectedAppt }: {
                   <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06]">
                     <p className="text-sm font-semibold text-white">{selectedAppt.title}</p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      {format(parseISO(selectedAppt.startTime), "d MMM, HH:mm", { locale: es })}
+                      {format(parseISO(selectedAppt.startTime), "d MMM", { locale: es })}, {toTimeStr(selectedAppt.startTime)}
                       {selectedAppt.clientName && ` · ${selectedAppt.clientName}`}
                     </p>
                   </div>
@@ -609,7 +609,7 @@ function AiPanel({ onClose, onFillForm, selectedAppt }: {
                       client: selectedAppt.clientName,
                       company: selectedAppt.clientCompany,
                       type: selectedAppt.type,
-                      date: format(parseISO(selectedAppt.startTime), "d MMM yyyy HH:mm", { locale: es }),
+                      date: `${format(parseISO(selectedAppt.startTime), "d MMM yyyy", { locale: es })} ${toTimeStr(selectedAppt.startTime)}`,
                       duration: differenceInMinutes(parseISO(selectedAppt.endTime), parseISO(selectedAppt.startTime)) + " min",
                       description: selectedAppt.description,
                       location: selectedAppt.location,
@@ -1066,7 +1066,7 @@ function DayAgendaView({ day, appts, onAppt, onCreateAt }: {
 
             {/* Time column */}
             <div className="w-14 shrink-0 flex flex-col items-center pt-0.5">
-              <p className="text-sm font-bold text-white">{format(parseISO(appt.startTime), "HH:mm")}</p>
+              <p className="text-sm font-bold text-white">{toTimeStr(appt.startTime)}</p>
               <p className="text-[10px] text-slate-500">{dur}m</p>
             </div>
 
@@ -1104,7 +1104,7 @@ function DayAgendaView({ day, appts, onAppt, onCreateAt }: {
             {/* Right indicators */}
             <div className="flex flex-col items-end gap-1 shrink-0">
               {appt.reminder && <Bell className="w-3 h-3 text-amber-400"/>}
-              <span className="text-[10px] text-slate-600">{format(parseISO(appt.endTime), "HH:mm")}</span>
+              <span className="text-[10px] text-slate-600">{toTimeStr(appt.endTime)}</span>
             </div>
           </motion.button>
         );
@@ -1242,14 +1242,15 @@ export default function CalendarPage() {
     const newHour  = DAY_START + Math.floor(totalMinutesFromStart / 60);
     const newMin   = totalMinutesFromStart % 60;
 
-    const newStartISO = new Date(dayDate);
-    newStartISO.setHours(newHour, newMin, 0, 0);
-
-    const newEndISO = new Date(newStartISO.getTime() + duration * 60000);
+    // Convert Madrid wall-clock hours (from pixel position) → real UTC ISO
+    const dayStr   = toDateStr(dayDate.toISOString());
+    const timeStr  = `${String(newHour).padStart(2,"0")}:${String(newMin).padStart(2,"0")}`;
+    const newStartISO = madridLocalToUTCFE(dayStr, timeStr);
+    const newEndISO   = addMinutesToISO(newStartISO, duration);
 
     updateMut.mutate({
       id: apptId,
-      data: { startTime: newStartISO.toISOString(), endTime: newEndISO.toISOString() },
+      data: { startTime: newStartISO, endTime: newEndISO },
     });
     setDragApptId(null);
   };
@@ -1258,10 +1259,12 @@ export default function CalendarPage() {
     const appt = allAppts.find(a => a.id === apptId) as ApptEx | undefined;
     if (!appt) return;
     const duration = differenceInMinutes(parseISO(appt.endTime), parseISO(appt.startTime));
-    const [h, m] = [getHours(parseISO(appt.startTime)), getMinutes(parseISO(appt.startTime))];
-    const newStart = new Date(`${dayStr}T${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:00`);
-    const newEnd   = new Date(newStart.getTime() + duration * 60000);
-    updateMut.mutate({ id: apptId, data: { startTime: newStart.toISOString(), endTime: newEnd.toISOString() } });
+    // Use getMadridHM to get hours in Madrid TZ (not browser TZ)
+    const { h, m } = getMadridHM(appt.startTime);
+    const timeStr   = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+    const newStartISO = madridLocalToUTCFE(dayStr, timeStr);
+    const newEndISO   = addMinutesToISO(newStartISO, duration);
+    updateMut.mutate({ id: apptId, data: { startTime: newStartISO, endTime: newEndISO } });
     setDragApptId(null);
   };
 
@@ -1516,7 +1519,7 @@ export default function CalendarPage() {
                         <div className={cn("w-2 h-2 rounded-full shrink-0", sc.dot)}/>
                         <span className="text-xs font-medium text-white truncate flex-1">{a.title}</span>
                         {a.clientName && <span className="text-[10px] text-slate-500 truncate hidden sm:block">{a.clientName}</span>}
-                        <span className="text-[10px] text-slate-500 shrink-0">{format(parseISO(a.startTime), "HH:mm")}</span>
+                        <span className="text-[10px] text-slate-500 shrink-0">{toTimeStr(a.startTime)}</span>
                       </button>
                     );
                   })}

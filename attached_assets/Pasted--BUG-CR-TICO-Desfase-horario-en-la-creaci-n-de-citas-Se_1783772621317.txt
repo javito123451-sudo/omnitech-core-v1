@@ -1,0 +1,92 @@
+# 🚨 BUG CRÍTICO - Desfase horario en la creación de citas
+
+Se ha detectado un error crítico en el calendario.
+
+## Comportamiento observado
+
+Se solicita a Ava crear una cita para las **15:00**.
+
+Ava confirma correctamente la cita.
+
+Sin embargo, al consultar el calendario, la cita aparece a las **13:00**.
+
+Existe un desfase de 2 horas entre la hora solicitada y la hora almacenada/mostrada.
+
+----------------------------------------------------
+
+## Comportamiento esperado
+
+La hora mostrada en el calendario debe coincidir exactamente con la hora solicitada por el usuario.
+
+Si el usuario pide una cita a las 15:00, el calendario debe mostrar 15:00.
+
+----------------------------------------------------
+
+## Revisar de forma exhaustiva
+
+1. Configuración de zona horaria del frontend.
+2. Configuración de zona horaria del backend.
+3. Base de datos:
+   - ¿Se almacena en UTC?
+   - ¿Se convierte correctamente al mostrarla?
+4. Conversión de fechas con JavaScript:
+   - Date
+   - toISOString()
+   - new Date()
+   - locale
+5. Librerías de fechas (date-fns, Luxon, Day.js, etc.).
+6. Timezone del servidor.
+7. Timezone del navegador.
+8. Timezone configurada para el Workspace.
+9. Timezone del usuario autenticado.
+10. Conversión durante la creación de la cita.
+11. Conversión durante la lectura de la cita.
+
+----------------------------------------------------
+
+## Importante
+
+No aplicar un parche de sumar o restar dos horas.
+
+Encontrar la causa raíz.
+
+Toda la aplicación debe trabajar con un único criterio de fechas:
+
+- Guardar internamente en UTC (si esa es la arquitectura elegida).
+- Mostrar siempre la hora local correcta del usuario o del Workspace.
+
+----------------------------------------------------
+
+## QA obligatorio
+
+Realizar pruebas creando citas a distintas horas:
+
+09:00
+12:00
+15:00
+18:00
+23:30
+
+Verificar que todas aparecen exactamente a la misma hora al consultarlas.
+
+Comprobar también:
+
+- Calendario
+- Recordatorios
+- Automatizaciones
+- Google Calendar (si existe integración)
+- Outlook (si existe integración)
+- Notificaciones
+- Agenda de Ava
+
+----------------------------------------------------
+
+## Entrega
+
+Indicar:
+
+1. Causa raíz del desfase horario.
+2. Archivos modificados.
+3. Corrección aplicada.
+4. Confirmar que toda la aplicación utiliza correctamente la gestión de zonas horarias.
+5. Confirmar que no existen desfases horarios en ningún módulo.

@@ -205,9 +205,9 @@ INSTRUCCIONES ESPECIALES PARA ESTE CLIENTE:
 // ── CRM Tools ─────────────────────────────────────────────────────────────────
 
 // ── Timezone helper: Europe/Madrid local → UTC (probe technique) ──────────────
-// Converts a date string (YYYY-MM-DD) + time string (HH:MM) expressed in
-// Europe/Madrid local time into the equivalent real UTC Date.
-// Handles DST automatically (CET = UTC+1 in winter, CEST = UTC+2 in summer).
+// CANONICAL SOURCE: src/utils/timezone.ts — this is a local copy kept here
+// to avoid import cycles. Both implementations are identical.
+// If you change the algorithm, update timezone.ts first, then copy here.
 function madridLocalToUTC(dateStr: string, timeStr: string): Date {
   const [yr, mo, dy] = dateStr.split("-").map(Number);
   const [h,  m_]     = timeStr.split(":").map(Number);
@@ -1715,13 +1715,13 @@ export async function executeCrmTool(
         return JSON.stringify({ error: "Error de validación: la nueva cita no se creó correctamente en la base de datos." });
       }
 
-      // Use raw ISO slice — DB stores wall-clock value as UTC-naive (no conversion)
-      const isoDate  = verified.startTime.toISOString().slice(0, 10);
-      const [vyr, vmo, vdy] = isoDate.split("-").map(Number);
-      const localDate = new Date(vyr!, vmo! - 1, vdy!, 12, 0, 0).toLocaleDateString("es-ES", {
-        weekday: "long", day: "numeric", month: "long", year: "numeric",
+      // Display in Europe/Madrid timezone (stored as UTC, show as Madrid local)
+      const localDate = verified.startTime.toLocaleDateString("es-ES", {
+        timeZone: "Europe/Madrid", weekday: "long", day: "numeric", month: "long", year: "numeric",
       });
-      const localTime = verified.startTime.toISOString().slice(11, 16);
+      const localTime = verified.startTime.toLocaleTimeString("es-ES", {
+        timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false,
+      });
 
       await db.insert(activityTable).values({
         orgId,
