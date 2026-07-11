@@ -66,3 +66,9 @@ id = "3-bUgEUihhwzDguk8otKO"
 uri = "file://manual_super_admin.md"
 type = "text"
 title = "Manual Super Admin — Control Center OmniTech"
+
+[[outputs]]
+id = "aDxvNfXVQwiDLcbMLNi8k"
+uri = "file://artifacts/api-server/docs/big-data-architecture.md"
+type = "text"
+title = "Arquitectura Big Data Ready — Documento Técnico"

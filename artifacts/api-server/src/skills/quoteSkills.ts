@@ -5,6 +5,7 @@
 import { db, clientsTable, quotesTable, quoteItemsTable, activityTable } from "@workspace/db";
 import { eq, and, desc, ilike } from "drizzle-orm";
 import type { SkillDefinition, SkillContext } from "./types";
+import { emit } from "../events";
 
 async function createQuote(
   params: Record<string, unknown>,
@@ -79,6 +80,22 @@ async function createQuote(
     description: `Presupuesto "${title}" creado para ${client.name} — ${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(total)}`,
     clientName:  client.name,
   }).catch(() => {/* non-critical */});
+
+  emit({
+    type:    "sales.quote.created",
+    orgId,
+    userId:  context.clerkUserId ?? null,
+    module:  "sales",
+    payload: {
+      quoteId:    quote.id,
+      clientId:   client.id,
+      clientName: client.name,
+      title,
+      total,
+      taxRate,
+      itemCount:  lineItems.length,
+    },
+  });
 
   return JSON.stringify({
     success:     true,

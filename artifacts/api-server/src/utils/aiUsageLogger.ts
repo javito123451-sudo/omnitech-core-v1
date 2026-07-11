@@ -1,5 +1,6 @@
 import { db, aiUsageLogsTable, aiBudgetsTable } from "@workspace/db";
 import { eq, and, gte, lt, sum, sql } from "drizzle-orm";
+import { emit } from "../events";
 
 // ── Cost rates (USD per 1K tokens) ───────────────────────────────────────────
 const COST_RATES: Record<string, { input: number; output: number }> = {
@@ -53,6 +54,25 @@ export async function logAiCall(params: AiCallParams): Promise<void> {
     // After logging, check budget threshold and maybe block
     if (params.orgId && costUsd > 0) {
       checkAndUpdateBudget(params.orgId).catch(() => {});
+    }
+
+    // Emit event for Big Data pipeline / AI interaction analysis / model training data
+    if (params.orgId) {
+      emit({
+        type:    "ai.chat.interaction",
+        orgId:   params.orgId,
+        userId:  params.userClerkId ?? null,
+        module:  "ai",
+        payload: {
+          functionName: params.functionName,
+          model:        params.model,
+          tokensInput:  params.tokensInput,
+          tokensOutput: params.tokensOutput,
+          costUsd:      costUsd,
+          durationMs:   params.durationMs ?? null,
+          status:       params.status ?? "ok",
+        },
+      });
     }
   } catch (err) {
     console.error("[AiUsageLogger] Failed to log AI call:", err);

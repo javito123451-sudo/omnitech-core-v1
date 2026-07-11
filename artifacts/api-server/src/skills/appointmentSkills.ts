@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { eq, and, asc, desc, gte, lt, inArray, ilike } from "drizzle-orm";
 import type { SkillDefinition, SkillContext } from "./types";
+import { emit } from "../events";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Timezone helpers — imported from single canonical source.
@@ -120,6 +121,22 @@ async function createAppointment(
     description: `Cita "${title}" agendada con ${resolvedClient.name} para el ${localDate} a las ${localTime}`,
     clientName:  resolvedClient.name,
   }).catch(() => {/* non-critical */});
+
+  emit({
+    type:    "calendar.appointment.created",
+    orgId,
+    userId:  context.clerkUserId ?? null,
+    module:  "calendar",
+    payload: {
+      appointmentId: saved.id,
+      clientId:      resolvedClient.id,
+      clientName:    resolvedClient.name,
+      title,
+      startTime:     saved.startTime.toISOString(),
+      endTime:       saved.endTime.toISOString(),
+      type:          apptType,
+    },
+  });
 
   // CRM-003: POST-OPERATION VERIFICATION — re-query the appointment to confirm
   const [reverified] = await db.select()

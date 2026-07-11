@@ -774,6 +774,62 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info(`[Migration] ✅ FIX-AB: module_configs seeded for ${orgs.length} org(s), ${seeded} rows inserted (conflicts skipped — existing admin settings preserved)`);
     }
 
+    // ── FIX-AC: system_events table + missing performance indexes ─────────────
+    // Creates the central event store that backs the Event Bus.
+    // Every OmniEvent is persisted here — this table is the foundation for
+    // future Big Data integrations (Kafka changelog, Spark input, Data Lake).
+    {
+      // Central event store
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS system_events (
+          id          BIGSERIAL     PRIMARY KEY,
+          event_id    UUID          NOT NULL DEFAULT gen_random_uuid(),
+          org_id      INTEGER       NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          user_id     TEXT,
+          event_type  TEXT          NOT NULL,
+          module      TEXT          NOT NULL,
+          payload     JSONB         NOT NULL DEFAULT '{}',
+          created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+        )
+      `);
+      // Time-series index (most common query: org + recent events)
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS sys_evt_org_created  ON system_events(org_id, created_at DESC)`);
+      // Filter by event type (e.g. all crm.client.created across all orgs)
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS sys_evt_type         ON system_events(event_type)`);
+      // Filter by module (e.g. all AI events for budget analysis)
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS sys_evt_module       ON system_events(module)`);
+      // Global time-series for cross-org analytics / Data Lake exports
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS sys_evt_created      ON system_events(created_at DESC)`);
+      // JSONB index for payload key searches (future Elasticsearch bridge)
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS sys_evt_payload_gin  ON system_events USING gin(payload)`);
+
+      // ── Missing indexes on high-volume tables ──────────────────────────────
+      // clients
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_clients_org_id      ON clients(org_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_clients_status       ON clients(org_id, status)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_clients_created_at   ON clients(org_id, created_at DESC)`);
+      // appointments
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_appts_org_id         ON appointments(org_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_appts_client_id      ON appointments(client_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_appts_start_time     ON appointments(org_id, start_time)`);
+      // quotes
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_quotes_org_id        ON quotes(org_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_quotes_client_id     ON quotes(client_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_quotes_status        ON quotes(org_id, status)`);
+      // activity (high-volume append-only log)
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_activity_org_id      ON activity(org_id)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_activity_org_created ON activity(org_id, created_at DESC)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_activity_type        ON activity(org_id, type)`);
+      // audit_logs
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_audit_org_created    ON audit_logs(org_id, created_at DESC)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_audit_actor          ON audit_logs(actor_clerk_id)`);
+      // ai_usage_logs
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ai_usage_org_created ON ai_usage_logs(org_id, created_at DESC)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ai_usage_func        ON ai_usage_logs(org_id, function_name)`);
+
+      logger.info("[Migration] ✅ FIX-AC: system_events table + performance indexes created");
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
