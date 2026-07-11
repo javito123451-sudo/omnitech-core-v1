@@ -16,6 +16,14 @@ const app: Express = express();
 
 app.set("trust proxy", 1);
 
+// ── Health check — registered BEFORE all middleware (Clerk, CORS, auth) ──────
+// Autoscale deployments health-check /api immediately on cold start.
+// Any middleware that throws (Clerk init, CORS, rate-limit) returns 500 and
+// prevents the deployment from completing. This raw handler is always 200.
+app.get("/api/healthz", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.use(
   pinoHttp({
     logger,
