@@ -803,35 +803,82 @@ export async function runStartupMigrations(): Promise<void> {
       // JSONB index for payload key searches (future Elasticsearch bridge)
       await db.execute(sql`CREATE INDEX IF NOT EXISTS sys_evt_payload_gin  ON system_events USING gin(payload)`);
 
-      // ── Missing indexes on high-volume tables ──────────────────────────────
-      // clients
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_clients_org_id      ON clients(org_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_clients_status       ON clients(org_id, status)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_clients_created_at   ON clients(org_id, created_at DESC)`);
-      // appointments
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_appts_org_id         ON appointments(org_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_appts_client_id      ON appointments(client_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_appts_start_time     ON appointments(org_id, start_time)`);
-      // quotes
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_quotes_org_id        ON quotes(org_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_quotes_client_id     ON quotes(client_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_quotes_status        ON quotes(org_id, status)`);
-      // activity (high-volume append-only log)
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_activity_org_id      ON activity(org_id)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_activity_org_created ON activity(org_id, created_at DESC)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_activity_type        ON activity(org_id, type)`);
-      // audit_logs
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_audit_org_created    ON audit_logs(org_id, created_at DESC)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_audit_actor          ON audit_logs(actor_clerk_id)`);
-      // ai_usage_logs
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ai_usage_org_created ON ai_usage_logs(org_id, created_at DESC)`);
-      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_ai_usage_func        ON ai_usage_logs(org_id, function_name)`);
-
-      logger.info("[Migration] ✅ FIX-AC: system_events table + performance indexes created");
+      // NOTE: Indexes on existing high-volume tables (clients, appointments,
+      // quotes, activity, audit_logs, ai_usage_logs) are created by
+      // runBackgroundIndexOptimization() AFTER the server starts serving
+      // requests, using CREATE INDEX CONCURRENTLY so they never block deploys.
+      logger.info("[Migration] ✅ FIX-AC: system_events table + indexes created");
     }
 
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Background index optimization — called AFTER the server is fully ready.
+//
+//  WHY separate from runStartupMigrations():
+//    CREATE INDEX (non-concurrent) acquires a ShareLock and scans the full
+//    table. On high-volume production tables (activity, audit_logs, etc.) with
+//    thousands/millions of rows, each index can take minutes, blocking the
+//    health check and extending the deploy window by 10-15 minutes.
+//
+//  CREATE INDEX CONCURRENTLY IF NOT EXISTS:
+//    - Does NOT hold a ShareLock during the build phase
+//    - Runs without blocking reads or writes
+//    - After first creation, IF NOT EXISTS is an instant catalog lookup (<1ms)
+//    - Cannot run inside an explicit transaction — each db.execute() call here
+//      gets its own connection from the pool (safe)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function runBackgroundIndexOptimization(): Promise<void> {
+  const indexDefs = [
+    // clients
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_clients_org_id      ON clients(org_id)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_clients_status       ON clients(org_id, status)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_clients_created_at   ON clients(org_id, created_at DESC)`,
+    // appointments
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_appts_org_id         ON appointments(org_id)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_appts_client_id      ON appointments(client_id)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_appts_start_time     ON appointments(org_id, start_time)`,
+    // quotes
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_quotes_org_id        ON quotes(org_id)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_quotes_client_id     ON quotes(client_id)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_quotes_status        ON quotes(org_id, status)`,
+    // activity — high-volume append-only, most important to index concurrently
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_activity_org_id      ON activity(org_id)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_activity_org_created ON activity(org_id, created_at DESC)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_activity_type        ON activity(org_id, type)`,
+    // audit_logs
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_org_created    ON audit_logs(org_id, created_at DESC)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_actor          ON audit_logs(actor_clerk_id)`,
+    // ai_usage_logs
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ai_usage_org_created ON ai_usage_logs(org_id, created_at DESC)`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ai_usage_func        ON ai_usage_logs(org_id, function_name)`,
+  ] as const;
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const ddl of indexDefs) {
+    try {
+      // Each execute() gets its own pool connection — CONCURRENT is safe here
+      await db.execute(sql.raw(ddl));
+      created++;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // "already exists" means IF NOT EXISTS handled it — not an error
+      if (!msg.includes("already exists")) {
+        logger.warn({ err, ddl }, "[BgIndex] index creation warning (non-fatal)");
+      } else {
+        skipped++;
+      }
+    }
+  }
+
+  logger.info(
+    `[BgIndex] ✅ Performance index optimization complete — ${created} created, ${skipped} skipped (already existed)`,
+  );
 }
