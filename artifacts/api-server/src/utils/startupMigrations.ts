@@ -724,6 +724,56 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info("[Migration] ✅ FIX-AA: campaign_send_logs table + campaign columns ensured");
     }
 
+    // ── FIX-AB: Seed module_configs for every org based on their plan ─────────
+    // Root cause: workspaces created without the Onboard Wizard had NO rows in
+    // module_configs, so /api/auth/me returned an incomplete modules object.
+    // canAccessModule then defaulted every absent key to true (fail-open), making
+    // all modules appear accessible regardless of plan or admin toggles.
+    // Fix: ensure every org has a row for every known module slug. ON CONFLICT DO
+    // NOTHING preserves any explicit admin-set values (e.g. is_enabled=false).
+    {
+      const ALL_SLUGS = [
+        "crm", "ai_agents", "analytics", "integrations", "automations",
+        "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
+        "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
+        "omni_security", "omni_docs", "quotes", "portal_cliente",
+        "knowledge_base",
+      ] as const;
+
+      const PLAN_SLUGS: Record<string, readonly string[]> = {
+        starter:         ["crm", "whatsapp", "omni_marketing", "knowledge_base",
+                          "omni_accounting", "ai_agents", "quotes", "portal_cliente"],
+        professional:    ["crm", "whatsapp", "omni_marketing", "knowledge_base",
+                          "omni_accounting", "ai_agents", "quotes", "portal_cliente",
+                          "automations", "integrations", "analytics", "omni_docs"],
+        business:        ALL_SLUGS,
+        enterprise:      ALL_SLUGS,
+        enterprise_plus: ALL_SLUGS,
+        free:            ["crm"],
+        growth:          ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
+        scale:           ALL_SLUGS,
+      };
+
+      const orgRows = await db.execute(sql`SELECT id, plan FROM organizations`);
+      const orgs = (orgRows as { rows: { id: number; plan: string }[] }).rows;
+      let seeded = 0;
+
+      for (const org of orgs) {
+        const allowed = new Set<string>(PLAN_SLUGS[org.plan] ?? ALL_SLUGS);
+        for (const slug of ALL_SLUGS) {
+          const isEnabled = slug === "crm" ? true : allowed.has(slug);
+          await db.execute(sql`
+            INSERT INTO module_configs (org_id, module_slug, is_enabled, updated_by, updated_at)
+            VALUES (${org.id}, ${slug}, ${isEnabled}, 'system-fix-ab', NOW())
+            ON CONFLICT (org_id, module_slug) DO NOTHING
+          `);
+          seeded++;
+        }
+        bumpOrgModuleVersion(org.id);
+      }
+      logger.info(`[Migration] ✅ FIX-AB: module_configs seeded for ${orgs.length} org(s), ${seeded} rows inserted (conflicts skipped — existing admin settings preserved)`);
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

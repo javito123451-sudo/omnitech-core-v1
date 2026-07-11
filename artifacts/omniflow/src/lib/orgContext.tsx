@@ -255,9 +255,10 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     (key: string): boolean => {
       // crm is always on — never gated
       if (key === "crm") return true;
-      // If the key has an explicit entry, use it; otherwise fail-open (true)
-      // so newly-added modules don't break before being configured
-      return modules[key] !== false;
+      // Fail-closed: only return true when the backend explicitly sent true.
+      // undefined (key absent) → false. The backend now always sends all
+      // known module slugs so absence means the module is not in the plan.
+      return modules[key] === true;
     },
     [modules],
   );

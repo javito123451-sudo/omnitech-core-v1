@@ -1,0 +1,292 @@
+# 🚨 ACTUALIZACIÓN PRIORITARIA - SISTEMA DE LICENCIAS + NUEVOS PLANES COMERCIALES
+
+Estamos preparando OmniTech Core para producción.
+
+Se ha detectado un fallo CRÍTICO en el sistema de licencias que debe corregirse antes del lanzamiento.
+
+=========================================================
+🔴 BUG CRÍTICO - EL SISTEMA DE LICENCIAS NO SE RESPETA
+=========================================================
+
+## Problema detectado
+
+En el Control Center tengo desactivados varios módulos para un Workspace.
+
+Sin embargo, cuando inicio sesión con un usuario perteneciente a ese Workspace y entro en la aplicación (por ejemplo al crear un cliente nuevo), aparecen TODOS los módulos como si estuvieran contratados.
+
+Esto rompe completamente el sistema de licencias.
+
+Actualmente un cliente puede visualizar módulos que NO ha contratado.
+
+Eso no puede ocurrir.
+
+---------------------------------------------------------
+
+## Comportamiento esperado
+
+Cada Workspace únicamente podrá:
+
+✔ Ver los módulos contratados.
+
+✔ Acceder únicamente a los módulos contratados.
+
+✔ Utilizar únicamente los módulos contratados.
+
+Los módulos NO contratados deben quedar completamente ocultos.
+
+No deben aparecer:
+
+- Dashboard
+- Menú lateral
+- Formularios
+- Crear Cliente
+- Marketing
+- Automatizaciones
+- IA
+- Facturación
+- Configuración
+- Ningún selector
+- Ningún acceso rápido
+
+Tampoco deberán poder abrirse:
+
+- Mediante URL directa
+- Mediante llamadas a la API
+- Mediante enlaces internos
+
+---------------------------------------------------------
+
+## AUDITORÍA COMPLETA
+
+No quiero una corrección puntual.
+
+Quiero una auditoría completa del sistema de licencias.
+
+Revisar:
+
+- Control Center
+- Dashboard
+- Sidebar
+- Routing
+- Middleware
+- Backend
+- API
+- Permisos
+- RBAC
+- Workspace
+- Organización
+- Hooks
+- Context
+- Renderizado de módulos
+
+Buscar cualquier componente que cargue módulos sin validar previamente:
+
+- Licencia
+- Workspace
+- Organización
+- Permisos
+
+Toda la aplicación debe utilizar un único servicio centralizado de validación de licencias.
+
+No debe existir lógica duplicada.
+
+---------------------------------------------------------
+
+## VALIDACIÓN
+
+Crear Workspaces de prueba para comprobar que el sistema funciona correctamente.
+
+Workspace Starter
+
+Solo debe mostrar los módulos permitidos.
+
+Workspace Professional
+
+Solo debe mostrar sus módulos.
+
+Workspace Business
+
+Solo debe mostrar sus módulos.
+
+Workspace Enterprise
+
+Debe mostrar todos.
+
+No debe existir ninguna forma de acceder a módulos no contratados.
+
+=========================================================
+💰 NUEVA ESTRUCTURA DE PLANES
+=========================================================
+
+Eliminar completamente los precios antiguos.
+
+Actualizar toda la plataforma.
+
+---------------------------------------------------------
+
+🟢 STARTER — 99 €/mes
+
+Pensado para autónomos y pequeñas empresas.
+
+Incluye:
+
+• CRM
+• Clientes
+• Contactos
+• Calendario
+• Conversaciones
+• WhatsApp Business
+• Email Marketing
+• Base de Conocimiento
+• Facturación
+• Dashboard
+• IA básica
+• Hasta 3 usuarios
+• Soporte estándar
+
+---------------------------------------------------------
+
+🟡 PROFESSIONAL — 149 €/mes
+
+Pensado para empresas en crecimiento.
+
+Incluye TODO lo anterior más:
+
+• Hasta 10 usuarios
+• Marketing Hub
+• Campañas WhatsApp
+• Campañas Email
+• Automatizaciones básicas
+• Formularios
+• Pipeline avanzado
+• Informes
+• Segmentación
+• Integraciones principales
+• Soporte prioritario
+
+---------------------------------------------------------
+
+🔵 BUSINESS — 299 €/mes
+
+Pensado para empresas consolidadas.
+
+Incluye TODO lo anterior más:
+
+• Hasta 25 usuarios
+• Automatizaciones avanzadas
+• IA avanzada
+• API
+• Roles y permisos
+• Dashboards avanzados
+• Workflows ilimitados
+• Integraciones avanzadas
+• Estadísticas completas
+• Soporte Premium
+
+---------------------------------------------------------
+
+🟣 ENTERPRISE — Desde 1.000 €/mes
+
+Solución empresarial completa.
+
+Incluye TODO lo anterior más:
+
+### Infraestructura
+
+• Usuarios ilimitados
+• Multiempresa
+• Multi Workspace
+• Multi sucursal
+• Alta disponibilidad
+
+### Inteligencia Artificial
+
+• Agentes IA personalizados
+• Automatizaciones ilimitadas
+• IA entrenada con documentación propia
+• Asistentes por departamento
+
+### Seguridad
+
+• Single Sign-On (SSO)
+• Autenticación multifactor (MFA)
+• Auditoría completa
+• Logs avanzados
+• Copias de seguridad
+• Cumplimiento RGPD avanzado
+
+### Integraciones
+
+• API completa
+• Webhooks
+• ERP
+• Power BI
+• Integraciones personalizadas
+
+### Personalización
+
+• Marca blanca
+• Dominio propio
+• Personalización completa
+• Desarrollo a medida
+
+### Servicios
+
+• Implantación
+• Formación
+• Gestor de cuenta dedicado
+• Consultoría
+• Soporte prioritario
+
+---------------------------------------------------------
+
+⚫ ENTERPRISE+ — Presupuesto personalizado
+
+Para grandes empresas.
+
+Incluye:
+
+• Todo Enterprise
+• Desarrollo exclusivo
+• Infraestructura dedicada
+• Integraciones complejas
+• SLA personalizado
+• Consultoría estratégica
+• Roadmap personalizado
+• Equipo técnico dedicado
+
+=========================================================
+ACTUALIZAR TODA LA APLICACIÓN
+=========================================================
+
+Cambiar los nuevos planes en:
+
+- Landing
+- Página de precios
+- Dashboard
+- Checkout
+- Stripe
+- Base de datos
+- Seeds
+- Configuración
+- Variables
+- Emails
+- Facturas
+- Panel de administración
+- Control Center
+- Documentación
+
+No debe quedar ningún precio antiguo.
+
+=========================================================
+ENTREGA
+=========================================================
+
+Al finalizar indicar:
+
+1. Qué provocaba el fallo de licencias.
+2. Cómo se ha solucionado.
+3. Qué archivos se modificaron.
+4. Qué componentes utilizan ahora la validación centralizada.
+5. Confirmar que ningún Workspace puede acceder a módulos no contratados.
+6. Confirmar que todos los precios y planes han sido actualizados correctamente en toda la plataforma.

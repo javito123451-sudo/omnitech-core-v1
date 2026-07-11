@@ -28,51 +28,67 @@ const PLANS: PlanInfo[] = [
   {
     key: "starter",
     name: "Starter",
-    price: "29€/mes",
-    description: "Para freelancers y pequeños equipos",
+    price: "99€/mes",
+    description: "Para freelancers y autónomos",
     icon: Zap,
     color: "blue",
     users: 3,
-    modules: ["crm", "calendar", "quotes"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente"],
   },
   {
-    key: "growth",
-    name: "Growth",
-    price: "79€/mes",
+    key: "professional",
+    name: "Professional",
+    price: "149€/mes",
     description: "Para equipos en crecimiento",
     icon: Rocket,
     color: "violet",
     users: 10,
-    modules: ["crm", "calendar", "quotes", "ai_agents", "analytics", "integrations", "automations"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs"],
   },
   {
-    key: "scale",
-    name: "Scale",
-    price: "199€/mes",
+    key: "business",
+    name: "Business",
+    price: "299€/mes",
     description: "Para empresas consolidadas",
     icon: Crown,
     color: "amber",
-    users: 50,
-    modules: ["crm", "calendar", "quotes", "ai_agents", "analytics", "integrations", "automations", "omni_accounting", "omni_import_ai", "whatsapp", "omni_docs"],
+    users: 25,
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
+  },
+  {
+    key: "enterprise",
+    name: "Enterprise",
+    price: "1.000€+/mes",
+    description: "Para grandes organizaciones",
+    icon: Building2,
+    color: "rose",
+    users: 999,
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
   },
 ];
 
 const ALL_MODULES = [
-  { key: "crm", label: "CRM & Clientes", icon: Users },
-  { key: "calendar", label: "Calendario", icon: Zap },
-  { key: "quotes", label: "Presupuestos", icon: Sparkles },
-  { key: "ai_agents", label: "AI Agents", icon: Brain },
-  { key: "analytics", label: "Analytics", icon: BarChart3 },
-  { key: "integrations", label: "Integraciones", icon: Puzzle },
-  { key: "automations", label: "Automaciones", icon: MessageSquare },
-  { key: "omni_accounting", label: "Contabilidad", icon: Receipt },
-  { key: "omni_import_ai", label: "Omni Import AI", icon: Sparkles },
-  { key: "whatsapp", label: "WhatsApp", icon: MessageSquare },
-  { key: "omni_docs", label: "Documentación", icon: Shield },
+  { key: "crm",            label: "CRM & Clientes",    icon: Users },
+  { key: "quotes",         label: "Presupuestos",       icon: Sparkles },
+  { key: "ai_agents",      label: "AI Agents",          icon: Brain },
+  { key: "whatsapp",       label: "WhatsApp Business",  icon: MessageSquare },
+  { key: "omni_marketing", label: "Marketing Hub",      icon: Shield },
+  { key: "omni_accounting",label: "Contabilidad",       icon: Receipt },
+  { key: "knowledge_base", label: "Base de Conocimiento", icon: Shield },
+  { key: "portal_cliente", label: "Portal Cliente",     icon: Users },
+  { key: "analytics",      label: "Analytics",          icon: BarChart3 },
+  { key: "integrations",   label: "Integraciones",      icon: Puzzle },
+  { key: "automations",    label: "Automatizaciones",   icon: Zap },
+  { key: "omni_docs",      label: "Documentación",      icon: Shield },
+  { key: "omni_import_ai", label: "Omni Import AI",     icon: Sparkles },
+  { key: "omni_ads",       label: "OmniAds",            icon: BarChart3 },
+  { key: "omni_leads",     label: "OmniLeads AI",       icon: Users },
+  { key: "omni_tax",       label: "OmniTax",            icon: Receipt },
+  { key: "omni_security",  label: "Seguridad",          icon: Shield },
 ];
 
 export default function PlansPage() {
-  const { org } = useOrg();
+  const { org, canAccessModule } = useOrg();
   const currentPlan = org?.plan ?? "free";
 
   return (
@@ -88,7 +104,7 @@ export default function PlansPage() {
       </div>
 
       {/* Plan cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {PLANS.map(plan => {
           const isCurrent = plan.key === currentPlan;
           const Icon = plan.icon;
@@ -159,8 +175,7 @@ export default function PlansPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {ALL_MODULES.map(mod => {
               const ModIcon = mod.icon;
-              // This would need actual data from backend; placeholder for now
-              const enabled = true;
+              const enabled = canAccessModule(mod.key);
               return (
                 <div key={mod.key} className={cn(
                   "flex items-center gap-2 p-2.5 rounded-lg border",

@@ -116,46 +116,59 @@ authRouter.get("/me", requireAuth, async (req, res) => {
 
     const primaryMembership = memberships.find(m => !m.isSuspended) ?? memberships[0] ?? null;
 
-    // ── Module config for primary org ──────────────────────────────────────
-    let modules: Record<string, boolean> = {};
+    // ── Plan-based module gating ───────────────────────────────────────────
+    // Canonical list of all known module slugs.
+    const ALL_MODULE_SLUGS = [
+      "crm", "ai_agents", "analytics", "integrations", "automations",
+      "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
+      "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
+      "omni_security", "omni_docs", "quotes", "portal_cliente",
+      "knowledge_base",
+    ] as const;
+
+    // Each plan defines which slugs are ALLOWED. DB configs can only RESTRICT
+    // within-plan modules; they cannot GRANT access beyond the plan limit.
+    const PLAN_MODULES: Record<string, readonly string[]> = {
+      // ── Current plans ─────────────────────────────────────────────────────
+      starter:         ["crm", "whatsapp", "omni_marketing", "knowledge_base",
+                        "omni_accounting", "ai_agents", "quotes", "portal_cliente"],
+      professional:    ["crm", "whatsapp", "omni_marketing", "knowledge_base",
+                        "omni_accounting", "ai_agents", "quotes", "portal_cliente",
+                        "automations", "integrations", "analytics", "omni_docs"],
+      business:        ALL_MODULE_SLUGS,
+      enterprise:      ALL_MODULE_SLUGS,
+      enterprise_plus: ALL_MODULE_SLUGS,
+      // ── Legacy plan names (backward compat) ───────────────────────────────
+      free:            ["crm"],
+      growth:          ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
+      scale:           ALL_MODULE_SLUGS,
+    };
+
+    const plan = primaryMembership?.orgPlan ?? "starter";
+    const allowedSet = new Set<string>(PLAN_MODULES[plan] ?? ALL_MODULE_SLUGS);
+
+    // 1. Initialize ALL known modules from plan (fail-closed: false unless plan allows)
+    const modules: Record<string, boolean> = {};
+    for (const slug of ALL_MODULE_SLUGS) {
+      modules[slug] = allowedSet.has(slug);
+    }
+    // CRM is always on — cannot be disabled by plan or DB
+    modules.crm = true;
+
+    // 2. Apply explicit DB configs (admin can only DISABLE within-plan modules)
     if (primaryMembership) {
       const configs = await db
         .select({ moduleSlug: moduleConfigsTable.moduleSlug, isEnabled: moduleConfigsTable.isEnabled })
         .from(moduleConfigsTable)
         .where(eq(moduleConfigsTable.orgId, primaryMembership.orgId));
       for (const cfg of configs) {
-        modules[cfg.moduleSlug] = cfg.isEnabled ?? true;
+        if (cfg.moduleSlug === "crm") continue; // CRM cannot be disabled
+        if (allowedSet.has(cfg.moduleSlug)) {
+          // Module is plan-allowed — respect the admin's explicit toggle
+          modules[cfg.moduleSlug] = cfg.isEnabled ?? true;
+        }
+        // Module NOT in plan: DB cannot override — stays false
       }
-    }
-    // crm is the core module — always enabled, cannot be disabled
-    modules.crm = true;
-
-    // ── Plan-based module gating ───────────────────────────────────────────
-    // Starter / free: crm only
-    // Growth: crm + ai_agents + analytics + integrations + automations + omni_marketing
-    // Scale / professional / enterprise / business / unknown: all modules
-    // (unknown plans fail-open — trust module_configs rather than blocking everything)
-    const ALL_MODULES = [
-      "crm", "ai_agents", "analytics", "integrations", "automations",
-      "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
-      "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
-      "omni_security", "omni_docs", "quotes", "portal_cliente",
-      "knowledge_base",
-    ];
-    const planModules: Record<string, string[]> = {
-      starter:      ["crm"],
-      free:         ["crm"],
-      growth:       ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
-      scale:        ALL_MODULES,
-      professional: ALL_MODULES,
-      enterprise:   ALL_MODULES,
-      business:     ALL_MODULES,
-    };
-    const plan = primaryMembership?.orgPlan ?? "starter";
-    // Unknown plans fail-open: never accidentally block a workspace
-    const allowedModules = planModules[plan] ?? ALL_MODULES;
-    for (const key of Object.keys(modules)) {
-      if (!allowedModules.includes(key)) modules[key] = false;
     }
 
     // ── Permission set for primary role ───────────────────────────────────

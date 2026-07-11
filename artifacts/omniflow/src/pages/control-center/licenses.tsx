@@ -24,32 +24,52 @@ const PLANS = [
   {
     id: "starter",
     name: "Starter",
-    desc: "Para equipos pequeños",
-    price: "Gratis",
+    desc: "Para freelancers y autónomos",
+    price: "€99/mes",
     seats: 3,
-    features: ["CRM básico", "WhatsApp (100 msg/mes)", "Soporte básico"],
+    features: ["CRM & Clientes", "WhatsApp Business", "Marketing Hub", "Facturación", "IA básica", "Base de Conocimiento"],
     color: "border-slate-700",
     badge: "bg-slate-500/20 text-slate-300",
   },
   {
     id: "professional",
     name: "Professional",
-    desc: "Para empresas en crecimiento",
-    price: "€49/mes",
+    desc: "Para equipos en crecimiento",
+    price: "€149/mes",
     seats: 10,
-    features: ["CRM completo", "WhatsApp ilimitado", "IA avanzada", "Analytics", "Soporte prioritario"],
+    features: ["Todo en Starter", "Analytics & Estadísticas", "Automatizaciones", "Integraciones", "Documentación"],
     color: "border-blue-500/30",
     badge: "bg-blue-500/20 text-blue-400",
+  },
+  {
+    id: "business",
+    name: "Business",
+    desc: "Para empresas consolidadas",
+    price: "€299/mes",
+    seats: 25,
+    features: ["Todo en Professional", "Omni Import AI", "OmniAds & OmniLeads", "OmniTax", "Diagnósticos & Seguridad"],
+    color: "border-violet-500/30",
+    badge: "bg-violet-500/20 text-violet-400",
   },
   {
     id: "enterprise",
     name: "Enterprise",
     desc: "Para grandes organizaciones",
-    price: "Personalizado",
+    price: "€1.000+/mes",
     seats: 999,
-    features: ["Todo en Professional", "Módulos personalizados", "SLA garantizado", "Onboarding dedicado", "API avanzada"],
-    color: "border-violet-500/30",
-    badge: "bg-violet-500/20 text-violet-400",
+    features: ["Todo en Business", "Multi-empresa", "SSO & MFA avanzado", "Onboarding dedicado", "SLA garantizado", "API avanzada"],
+    color: "border-amber-500/30",
+    badge: "bg-amber-500/20 text-amber-400",
+  },
+  {
+    id: "enterprise_plus",
+    name: "Enterprise+",
+    desc: "Solución a medida",
+    price: "Personalizado",
+    seats: 9999,
+    features: ["Todo en Enterprise", "Desarrollo personalizado", "IA con datos propios", "Infraestructura dedicada", "CSM dedicado"],
+    color: "border-rose-500/30",
+    badge: "bg-rose-500/20 text-rose-400",
   },
 ];
 
@@ -152,7 +172,7 @@ export default function LicensesPage() {
       )}
 
       {/* Plan Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-10">
         {PLANS.map(p => (
           <div key={p.id} className={`bg-[#0d0e1e] border ${p.color} rounded-2xl p-6`}>
             <div className="flex items-start justify-between mb-4">
