@@ -62,7 +62,7 @@ export default function MyCustomersPage() {
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <UserCheck className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-bold">Mis Clientes Activos</h1>
+        <h1 className="text-xl font-bold">Mi cartera</h1>
         <Badge variant="secondary">{filtered.length}</Badge>
       </div>
 

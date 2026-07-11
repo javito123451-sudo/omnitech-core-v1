@@ -43,7 +43,7 @@ const sidebarGroups: NavGroup[] = [
     label: "Principal",
     items: [
       { icon: Cpu,             label: "Dashboard",    href: "/executive-dashboard" },
-      { icon: LayoutDashboard, label: "Panel",        href: "/dashboard",          moduleKey: "crm" },
+      { icon: LayoutDashboard, label: "Panel CRM",     href: "/dashboard",          moduleKey: "crm" },
       { icon: Users,           label: "Clientes",     href: "/clients",            moduleKey: "crm" },
       { icon: FileText,        label: "Presupuestos", href: "/quotes",             moduleKey: "crm" },
     ],
@@ -95,14 +95,14 @@ const sidebarGroups: NavGroup[] = [
   {
     label: "Admin",
     items: [
-      { icon: Users,        label: "Mis Clientes",     href: "/my-clients",     moduleKey: "crm" },
+      { icon: Users,        label: "Clientes asignados", href: "/my-clients",   moduleKey: "crm" },
     ],
   },
   {
     label: "Vendedor",
     items: [
       { icon: Target,       label: "Mis Prospectos",   href: "/my-prospects",   moduleKey: "crm" },
-      { icon: UserCheck,    label: "Mis Clientes",     href: "/my-customers",   moduleKey: "crm" },
+      { icon: UserCheck,    label: "Mi cartera",       href: "/my-customers",   moduleKey: "crm" },
       { icon: TrendingUp,   label: "Mis Comisiones",   href: "/my-commissions", moduleKey: "crm" },
     ],
   },
