@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { scheduleAutoBackups } from "./utils/backupEngine";
 import { autoSetupTelegramWebhooks } from "./routes/telegram";
-import { runStartupMigrations, runBackgroundIndexOptimization } from "./utils/startupMigrations";
+import { runStartupMigrations } from "./utils/startupMigrations";
 import { startAutopilotScheduler } from "./utils/autopilotScheduler";
 import { startRecurringInvoiceScheduler } from "./utils/recurringInvoiceScheduler";
 
@@ -33,16 +33,6 @@ app.listen(port, (err) => {
     .finally(() => {
       // Recurring invoice scheduler needs recurring_invoices table (created in FIX-H)
       startRecurringInvoiceScheduler();
-
-      // ── Background index optimization ───────────────────────────────────
-      // Runs AFTER the server is fully up and health checks have passed.
-      // Uses CREATE INDEX CONCURRENTLY — never blocks reads/writes/deploys.
-      // On subsequent restarts, IF NOT EXISTS makes each call a <1ms no-op.
-      setTimeout(() => {
-        runBackgroundIndexOptimization().catch((err) =>
-          logger.warn({ err }, "[BgIndex] background optimization failed (non-fatal)"),
-        );
-      }, 5_000); // 5s delay — ensures health checks pass first
     });
   scheduleAutoBackups();
   if (process.env["NODE_ENV"] !== "test") startAutopilotScheduler();

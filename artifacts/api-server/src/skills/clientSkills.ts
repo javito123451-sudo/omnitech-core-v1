@@ -5,7 +5,6 @@
 import { db, clientsTable, activityTable } from "@workspace/db";
 import { eq, and, desc, ilike, inArray } from "drizzle-orm";
 import type { SkillDefinition, SkillContext } from "./types";
-import { emit } from "../events";
 
 const STATUS_LABEL: Record<string, string> = {
   lead:     "Prospecto",
@@ -103,14 +102,6 @@ async function createClient(
     description: `Cliente "${name}" creado desde ${source}${company ? ` (${company})` : ""}`,
     clientName:  name,
   }).catch(() => {/* non-critical */});
-
-  emit({
-    type:    "crm.client.created",
-    orgId,
-    userId:  context.clerkUserId ?? null,
-    module:  "crm",
-    payload: { clientId: client.id, name, email, phone, company, status, source },
-  });
 
   return JSON.stringify({
     success:   true,
