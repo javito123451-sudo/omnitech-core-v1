@@ -1,0 +1,172 @@
+# 🚨 DETENER NUEVAS FUNCIONALIDADES - AUDITORÍA DE ARQUITECTURA DEL SISTEMA DE LICENCIAS
+
+A partir de este momento NO quiero seguir aplicando parches.
+
+Ya hemos tenido varias regresiones:
+
+1. Se mostraban módulos que no estaban licenciados.
+2. Se corrigió ese problema.
+3. Ahora ya no aparecen módulos que sí están activados.
+
+Esto indica que el problema es de arquitectura.
+
+====================================================
+
+OBJETIVO
+
+Encontrar la causa raíz.
+
+No quiero más soluciones puntuales.
+
+Quiero reconstruir correctamente el sistema de licencias para que sea estable.
+
+====================================================
+
+AUDITORÍA COMPLETA
+
+Analizar todo el flujo:
+
+Control Center
+↓
+
+Base de datos
+
+↓
+
+API
+
+↓
+
+Workspace
+
+↓
+
+Frontend
+
+↓
+
+Sidebar
+
+↓
+
+Dashboard
+
+↓
+
+Rutas
+
+↓
+
+Permisos
+
+↓
+
+Componentes
+
+↓
+
+Renderizado
+
+====================================================
+
+RESPONDER A ESTAS PREGUNTAS
+
+1. ¿Dónde se guardan realmente las licencias?
+
+2. ¿Cuál es la única fuente de verdad?
+
+3. ¿Qué componente carga las licencias?
+
+4. ¿Quién decide qué módulos se muestran?
+
+5. ¿Existen varias implementaciones distintas?
+
+6. ¿Hay caché desactualizada?
+
+7. ¿Hay estados duplicados?
+
+8. ¿Se usan datos diferentes entre Control Center y Workspace?
+
+====================================================
+
+OBJETIVO DE ARQUITECTURA
+
+Debe existir un único servicio centralizado de licencias.
+
+Por ejemplo:
+
+LicenseService
+
+↓
+
+WorkspaceProvider
+
+↓
+
+Toda la aplicación
+
+Ningún componente debe comprobar licencias por su cuenta.
+
+Toda la aplicación debe consultar SIEMPRE la misma fuente.
+
+====================================================
+
+VALIDACIÓN
+
+Crear un Workspace de prueba.
+
+Activar un módulo.
+
+Debe aparecer inmediatamente.
+
+Desactivarlo.
+
+Debe desaparecer inmediatamente.
+
+Volver a activarlo.
+
+Debe volver a aparecer.
+
+Cerrar sesión.
+
+Volver a entrar.
+
+Debe mantenerse.
+
+Recargar la aplicación.
+
+Debe mantenerse.
+
+Publicar una nueva versión.
+
+Debe mantenerse.
+
+No quiero inconsistencias.
+
+====================================================
+
+IMPORTANTE
+
+No continuar desarrollando nuevas funcionalidades hasta que este sistema sea completamente estable.
+
+Es un bloqueo de producción.
+
+====================================================
+
+ENTREGA
+
+Quiero un informe indicando:
+
+• Causa raíz.
+
+• Qué parte de la arquitectura estaba mal diseñada.
+
+• Qué se ha refactorizado.
+
+• Qué archivos se modificaron.
+
+• Qué componentes ahora utilizan el sistema centralizado.
+
+• Qué pruebas se realizaron.
+
+• Confirmación de que el sistema de licencias funciona correctamente en toda la aplicación sin introducir regresiones.

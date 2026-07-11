@@ -7,8 +7,9 @@ description: How module gating works end-to-end — auth.ts, orgContext.tsx, req
 
 `auth.ts` (GET /api/auth/me) **always** returns every known module slug as either `true` or `false`.
 `orgContext.tsx` `canAccessModule` uses `=== true` (fail-closed). Absence → blocked.
+DB is ALWAYS authoritative. Plan = default template only (NOT a hard ceiling).
 
-**Why:** The old code only included modules with DB rows in the response. `modules[key] !== false` defaulted absent keys to `true`, making every unset module accessible regardless of plan or admin toggles.
+**Why:** Two bugs: (1) Old code sent partial response → frontend fail-open. (2) Plan-as-ceiling blocked admin-enabled modules beyond the plan. (3) moduleVersion base=0 reset on deploy → stale cache never cleared by version. All fixed.
 
 ## How to apply
 
@@ -16,8 +17,13 @@ description: How module gating works end-to-end — auth.ts, orgContext.tsx, req
 1. Build `allowedSet` from `PLAN_MODULES[plan]` (or ALL_MODULES if unknown plan).
 2. Initialize `modules[slug] = allowedSet.has(slug)` for **every** slug in `ALL_MODULE_SLUGS`.
 3. Set `modules.crm = true` unconditionally.
-4. Apply DB configs: only for slugs in `allowedSet` — DB can only restrict, never grant beyond plan.
-5. Send full object: every slug is present as `true` or `false`.
+4. Apply DB configs: DB ALWAYS wins (both directions — enable or disable). Guard only: skip crm.
+5. Send full object: every slug present as `true` or `false`.
+
+### moduleVersion.ts
+- `DEPLOY_BASE = Math.floor(Date.now() / 1000)` at startup
+- `getOrgModuleVersion` defaults to DEPLOY_BASE (not 0)
+- Guarantees cached version (small int) < deploy version → cache always cleared on restart
 
 ### Frontend — `orgContext.tsx`
 ```ts

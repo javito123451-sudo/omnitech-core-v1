@@ -155,19 +155,20 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     // CRM is always on — cannot be disabled by plan or DB
     modules.crm = true;
 
-    // 2. Apply explicit DB configs (admin can only DISABLE within-plan modules)
+    // 2. DB configs ALWAYS override plan defaults — admin has final say.
+    // The plan is a billing template (what's enabled by default when a workspace
+    // is created). Once a workspace exists, module_configs is the single source
+    // of truth. Admin can enable modules beyond the plan default OR disable
+    // modules within the plan. Neither direction is blocked here.
     if (primaryMembership) {
       const configs = await db
         .select({ moduleSlug: moduleConfigsTable.moduleSlug, isEnabled: moduleConfigsTable.isEnabled })
         .from(moduleConfigsTable)
         .where(eq(moduleConfigsTable.orgId, primaryMembership.orgId));
       for (const cfg of configs) {
-        if (cfg.moduleSlug === "crm") continue; // CRM cannot be disabled
-        if (allowedSet.has(cfg.moduleSlug)) {
-          // Module is plan-allowed — respect the admin's explicit toggle
-          modules[cfg.moduleSlug] = cfg.isEnabled ?? true;
-        }
-        // Module NOT in plan: DB cannot override — stays false
+        if (cfg.moduleSlug === "crm") continue; // CRM is always on, ignore DB
+        // DB row always wins over plan default (true or false)
+        modules[cfg.moduleSlug] = cfg.isEnabled ?? modules[cfg.moduleSlug] ?? false;
       }
     }
 
