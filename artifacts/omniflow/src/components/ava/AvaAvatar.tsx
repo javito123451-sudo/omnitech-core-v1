@@ -1,9 +1,9 @@
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-// To use a real avatar: set this to `${import.meta.env.BASE_URL}ava-avatar.png`
-// and place the file in artifacts/omniflow/public/ava-avatar.png
-export const AVA_AVATAR_URL = "";
+// Avatar image served from /public — transparent background PNG
+// To swap: change this path or drop a new file in artifacts/omniflow/public/
+const AVA_AVATAR_URL = `${import.meta.env.BASE_URL}ava-avatar.png`;
 
 interface AvaAvatarProps {
   size?: number;
