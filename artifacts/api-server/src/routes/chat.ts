@@ -30,6 +30,17 @@ const AGENT_SLUG = "operator";
 import { requirePermission } from "../middlewares/permissions";
 type AgentMemoryRow = typeof agentMemoryTable.$inferSelect;
 
+// ── Intent Engine + deterministic response formatters (no LLM) ────────────────
+import { classifyIntentRegex, intentToSkill } from "../intents/intentEngine";
+import { Intent } from "../intents/types";
+import {
+  formatSkillResponse,
+  formatExecutiveResponse,
+  buildGreetingResponse,
+  buildHelpResponse,
+  buildFallbackResponse,
+} from "./avaFormatters";
+
 // ── Semantic helpers ──────────────────────────────────────────────────────────
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0, magA = 0, magB = 0;
@@ -2096,11 +2107,13 @@ router.get("/sessions/:sessionId/messages", requirePermission("ai.read"), async 
 });
 
 // ── Chat endpoint ─────────────────────────────────────────────────────────────
+// All Ava actions route through the Intent Engine → Skill Engine deterministically.
+// Zero generative AI dependency in this path: no OpenAI calls, no embeddings.
 
 router.post("/", requirePermission("ai.write"), async (req, res) => {
   const { messages, clientContext, sessionId: incomingSessionId } = req.body as {
     messages: { role: "user" | "assistant"; content: string }[];
-    clientContext?: ClientContext;
+    clientContext?: { page?: string; id?: number; name?: string; [key: string]: unknown };
     sessionId?: string;
   };
 
@@ -2109,277 +2122,177 @@ router.post("/", requirePermission("ai.write"), async (req, res) => {
     return;
   }
 
-  const apiKey = process.env["OPENAI_API_KEY"];
-  if (!apiKey) {
-    res.status(503).json({ error: "OPENAI_API_KEY no configurada" });
-    return;
-  }
+  const orgId          = req.orgId!;
+  const lastUserMessage = messages.filter(m => m.role === "user").at(-1)?.content ?? "";
 
-  const orgId = req.orgId!;
-
-  // ── Budget guard ──────────────────────────────────────────────────────────
+  // ── Budget guard (kept: guards DB overload too, not just AI cost) ──────────
   const budgetCheck = await checkBudgetBlocked(orgId);
   if (budgetCheck.blocked) {
     res.status(429).json({
       error: `Límite de IA alcanzado (${budgetCheck.pct.toFixed(0)}% del presupuesto mensual). ${budgetCheck.reason ?? ""}`.trim(),
-      code: "AI_BUDGET_EXCEEDED",
+      code:  "AI_BUDGET_EXCEEDED",
     });
     return;
   }
 
-  const aiProvider = getProviderSingleton();
-
-  // Load relevant memories via semantic search (isolated by orgId)
+  // ── Load memories from DB (recency-based, no embedding/LLM needed) ─────────
   let memories: AgentMemoryRow[] = [];
-  const lastUserMessage = messages.filter(m => m.role === "user").at(-1)?.content ?? "";
   try {
-    memories = await getRelevantMemories(aiProvider, orgId, lastUserMessage);
-    console.log(
-      `[Chat] org=${orgId} memories_loaded=${memories.length}` +
-      (memories.length > 0
-        ? ` keys=[${memories.map(m => m.title ?? m.memoryKey).join(", ")}]`
-        : " (none — assistant will respond without memory context)"),
-    );
-  } catch (memErr) {
-    console.error("[Chat] FAILED to load memories:", String(memErr));
-    // Continue without memory — non-fatal
+    memories = await db
+      .select()
+      .from(agentMemoryTable)
+      .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, AGENT_SLUG)))
+      .orderBy(desc(agentMemoryTable.updatedAt))
+      .limit(20);
+    if (memories.length > 0) {
+      console.log(`[Ava] org=${orgId} memories=${memories.length} keys=[${memories.slice(0, 5).map(m => m.title ?? m.memoryKey).join(", ")}]`);
+    }
+  } catch {
+    // Non-fatal — continue without memory context
   }
 
   // ── Session persistence ────────────────────────────────────────────────────
   let sessionId: string | undefined = incomingSessionId;
   try {
     if (sessionId) {
-      // Existing session — verify ownership and bump updatedAt
       await db
         .update(aiSessionsTable)
         .set({ updatedAt: new Date() })
         .where(and(eq(aiSessionsTable.id, sessionId), eq(aiSessionsTable.orgId, orgId)));
     } else {
-      // New session — create and title from first user message
-      const title = lastUserMessage.slice(0, 60) || "Nueva conversación";
+      const title      = lastUserMessage.slice(0, 60) || "Nueva conversación";
       const [newSession] = await db
         .insert(aiSessionsTable)
-        .values({ orgId, userId: req.userId!, title, clientId: clientContext?.id ?? null })
+        .values({ orgId, userId: req.userId!, title, clientId: null })
         .returning();
       sessionId = newSession.id;
     }
-    // Persist user message immediately (before streaming)
     await db.insert(aiMessagesTable).values({
       sessionId: sessionId!,
       role:      "user",
       content:   lastUserMessage,
     });
   } catch (sessionErr) {
-    console.error("[Chat] Session persistence error:", String(sessionErr));
-    // Non-fatal — continue; client will get undefined sessionId
+    console.error("[Ava] Session persistence error:", String(sessionErr));
     sessionId = incomingSessionId;
   }
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
+  // ── SSE setup ──────────────────────────────────────────────────────────────
+  res.setHeader("Content-Type",    "text/event-stream");
+  res.setHeader("Cache-Control",   "no-cache");
+  res.setHeader("Connection",      "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
-
-  // Tell client which sessionId to use for continuation
   res.write(`data: ${JSON.stringify({ event: "session_created", sessionId })}\n\n`);
 
-  try {
-    // Detect executive dashboard / business summary requests
-    const isExecutive = EXECUTIVE_KEYWORDS.test(lastUserMessage);
-
-    // Build system prompt — inject executive addon when in executive mode
-    const systemContent = buildSystemPrompt(memories, clientContext) +
-      (isExecutive ? EXECUTIVE_SYSTEM_ADDON : "");
-
-    const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: "system", content: systemContent },
-      ...messages,
-    ];
-
-    if (isExecutive) {
-      // ── Executive mode: pre-fetch ALL CRM tables in parallel ─────────────
-      // Skip phase 1 — we know exactly which data is needed for a full report.
-      console.log(`[Chat] Executive mode triggered for org=${orgId}`);
-
-      const [clientsData, upcomingData, pendingData, activityData, strategicData] = await Promise.all([
-        executeCrmTool("list_clients",        { status: "all",      sort: "value_desc", limit: 50 }, orgId),
-        executeCrmTool("get_appointments",    { date_filter: "upcoming",   status_filter: "all",     limit: 10 }, orgId),
-        executeCrmTool("get_appointments",    { date_filter: "all",        status_filter: "pending",  limit: 20 }, orgId),
-        executeCrmTool("get_recent_activity", { period: "this_month", limit: 30 }, orgId),
-        executeCrmTool("get_strategic_brief", {}, orgId),
-      ]);
-
-      // Inject as synthetic tool call sequence (OpenAI requires paired calls+results)
-      apiMessages.push({
-        role: "assistant",
-        content: null,
-        tool_calls: [
-          { id: "exec_1", type: "function", function: { name: "list_clients",          arguments: '{"status":"all","sort":"value_desc"}' } },
-          { id: "exec_2", type: "function", function: { name: "get_appointments",      arguments: '{"date_filter":"upcoming","status_filter":"all","limit":10}' } },
-          { id: "exec_3", type: "function", function: { name: "get_appointments",      arguments: '{"date_filter":"all","status_filter":"pending","limit":20}' } },
-          { id: "exec_4", type: "function", function: { name: "get_recent_activity",   arguments: '{"period":"this_month","limit":30}' } },
-          { id: "exec_5", type: "function", function: { name: "get_strategic_brief",   arguments: '{}' } },
-        ],
-      });
-      apiMessages.push(
-        { role: "tool", tool_call_id: "exec_1", content: clientsData },
-        { role: "tool", tool_call_id: "exec_2", content: upcomingData },
-        { role: "tool", tool_call_id: "exec_3", content: pendingData },
-        { role: "tool", tool_call_id: "exec_4", content: activityData },
-        { role: "tool", tool_call_id: "exec_5", content: strategicData },
-      );
-
-      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: ["list_clients", "get_appointments", "get_appointments", "get_recent_activity", "get_strategic_brief"] })}\n\n`);
-
-    } else {
-      // ── Phase 1: CRM tool resolution (non-streaming) ─────────────────────
-      // Let OpenAI decide which tools to call based on the user's question.
-      const phase1 = await aiProvider.generate(apiMessages, {
-        model:       "gpt-4o-mini",
-        maxTokens:   300,
-        temperature: 0.1,
-        tools:       CRM_TOOLS,
-        toolChoice:  "auto",
-      });
-
-      const crmToolCalls = (phase1.toolCalls ?? []).filter(
-        tc => CRM_TOOL_NAMES.has(tc.function.name),
-      );
-
-      if (crmToolCalls.length > 0) {
-        const toolResults = await Promise.all(
-          crmToolCalls.map(async tc => {
-            let args: Record<string, unknown> = {};
-            try { args = JSON.parse(tc.function.arguments) as Record<string, unknown>; } catch { /* use {} */ }
-            const result = await executeCrmTool(tc.function.name, args, orgId, {
-              orgRole: req.orgRole,
-              clerkUserId: req.clerkUserId,
-            });
-            console.log(`[CRM] tool=${tc.function.name} args=${tc.function.arguments} result_len=${result.length}`);
-            return { role: "tool" as const, tool_call_id: tc.id, content: result };
-          }),
-        );
-
-        apiMessages.push({ role: "assistant", content: null, tool_calls: crmToolCalls });
-        apiMessages.push(...toolResults);
-        res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: crmToolCalls.map(tc => tc.function.name) })}\n\n`);
-
-        // Emit domain-specific events so the frontend can refresh relevant caches
-        for (let i = 0; i < crmToolCalls.length; i++) {
-          const tc = crmToolCalls[i];
-          if (tc?.function.name === "create_appointment") {
-            try {
-              const apptResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
-              if (apptResult["success"]) {
-                res.write(`data: ${JSON.stringify({ event: "appointment_created", appointment: apptResult })}\n\n`);
-              }
-            } catch { /* non-critical */ }
-          }
-          if (tc?.function.name === "reschedule_appointment") {
-            try {
-              const apptResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
-              if (apptResult["success"]) {
-                res.write(`data: ${JSON.stringify({ event: "appointment_rescheduled", appointment: apptResult })}\n\n`);
-              }
-            } catch { /* non-critical */ }
-          }
-          if (tc?.function.name === "cancel_appointment") {
-            try {
-              const apptResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
-              if (apptResult["success"]) {
-                res.write(`data: ${JSON.stringify({ event: "appointment_cancelled", appointment: apptResult })}\n\n`);
-              }
-            } catch { /* non-critical */ }
-          }
-          if (tc?.function.name === "create_quote") {
-            try {
-              const qResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
-              if (qResult["success"]) {
-                res.write(`data: ${JSON.stringify({ event: "quote_created", quote: qResult })}\n\n`);
-              }
-            } catch { /* non-critical */ }
-          }
-          if (tc?.function.name === "create_invoice") {
-            try {
-              const invResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
-              if (invResult["success"]) {
-                res.write(`data: ${JSON.stringify({ event: "invoice_created", invoice: invResult })}\n\n`);
-              }
-            } catch { /* non-critical */ }
-          }
-          if (tc?.function.name === "register_payment") {
-            try {
-              const payResult = JSON.parse(toolResults[i]?.content ?? "{}") as Record<string, unknown>;
-              if (payResult["success"]) {
-                res.write(`data: ${JSON.stringify({ event: "payment_registered", payment: payResult })}\n\n`);
-              }
-            } catch { /* non-critical */ }
-          }
-        }
-      }
+  // ── Streaming helper — sends text in chunks for smooth typing effect ────────
+  const streamText = async (text: string): Promise<void> => {
+    const chunks = text.match(/.{1,40}/gs) ?? [text];
+    for (const chunk of chunks) {
+      res.write(`data: ${JSON.stringify({ token: chunk })}\n\n`);
     }
-
-    // ── Phase 2: Final streaming response (always) ─────────────────────────
-    // Executive reports get more token budget for complete structured output.
-    const chatStreamStart = Date.now();
-    let accumulatedResponse = "";
-    let streamUsage: { promptTokens: number; completionTokens: number } | undefined;
-
-    for await (const chunk of aiProvider.stream(apiMessages, {
-      model:       "gpt-4o-mini",
-      maxTokens:   isExecutive ? 1200 : 700,
-      temperature: 0.7,
-    })) {
-      if (chunk.usage) streamUsage = chunk.usage;
-      const token = chunk.token;
-      if (token) {
-        accumulatedResponse += token;
-        res.write(`data: ${JSON.stringify({ token })}\n\n`);
-      }
+    if (sessionId) {
+      await db.insert(aiMessagesTable)
+        .values({ sessionId, role: "assistant", content: text })
+        .catch(e => console.error("[Ava] Failed to save assistant message:", String(e)));
     }
-
-    // Log AI usage (fire-and-forget)
-    logAiCall({
-      orgId,
-      userClerkId:  req.clerkUserId ?? null,
-      functionName: isExecutive ? "chat_executive" : "chat_stream",
-      model:        "gpt-4o-mini",
-      tokensInput:  streamUsage?.promptTokens    ?? 0,
-      tokensOutput: streamUsage?.completionTokens ?? 0,
-      durationMs:   Date.now() - chatStreamStart,
-    }).catch(() => {});
-
-    // Persist AI response to session (fire-and-forget)
-    if (sessionId && accumulatedResponse.length > 0) {
-      db.insert(aiMessagesTable)
-        .values({ sessionId, role: "assistant", content: accumulatedResponse })
-        .catch(err => console.error("[Chat] Failed to save AI message:", String(err)));
-    }
-
-    // Extract and save memories after streaming (non-blocking on the user)
-    if (accumulatedResponse.length > 30 && messages.length > 0) {
-      const lastUserMsg = [...messages]
-        .reverse()
-        .find(m => m.role === "user")?.content ?? "";
-
-      const newMemories = await extractAndSaveMemories(
-        aiProvider,
-        orgId,
-        lastUserMsg,
-        accumulatedResponse,
-        memories,
-      );
-
-      for (const mem of newMemories) {
-        res.write(`data: ${JSON.stringify({ event: "memory_saved", memory: mem })}\n\n`);
-      }
-    }
-
     res.write("data: [DONE]\n\n");
     res.end();
+  };
+
+  // ── Domain event helper — triggers frontend cache refreshes ────────────────
+  const emitDomainEvent = (skillId: string, parsed: Record<string, unknown>): void => {
+    const EVT: Record<string, string> = {
+      "create_appointment":     "appointment_created",
+      "reschedule_appointment": "appointment_rescheduled",
+      "cancel_appointment":     "appointment_cancelled",
+      "create_quote":           "quote_created",
+      "create_invoice":         "invoice_created",
+      "register_payment":       "payment_registered",
+      "create_client":          "client_created",
+      "create_task":            "task_created",
+    };
+    const evtName = EVT[skillId];
+    if (evtName && parsed["success"]) {
+      res.write(`data: ${JSON.stringify({ event: evtName, data: parsed })}\n\n`);
+    }
+  };
+
+  try {
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 1 — Classify intent (deterministic regex, zero LLM cost)
+    // ════════════════════════════════════════════════════════════════════════
+    const intentResult = classifyIntentRegex(lastUserMessage);
+    const intent       = intentResult?.intent ?? Intent.GENERAL_QUERY;
+    const intentParams = intentResult?.params  ?? {};
+
+    console.log(
+      `[Ava] org=${orgId} intent=${intent} confidence=${(intentResult?.confidence ?? 0).toFixed(2)} ` +
+      `source=${intentResult?.source ?? "default"} params=${JSON.stringify(intentParams)}`,
+    );
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 2 — Route by intent
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── GREETING ────────────────────────────────────────────────────────────
+    if (intent === Intent.GREETING) {
+      await streamText(buildGreetingResponse(memories));
+      return;
+    }
+
+    // ── HELP ────────────────────────────────────────────────────────────────
+    if (intent === Intent.HELP) {
+      await streamText(buildHelpResponse());
+      return;
+    }
+
+    // ── EXECUTIVE / STRATEGIC — deterministic DB fetch + structured report ──
+    if (EXECUTIVE_KEYWORDS.test(lastUserMessage)) {
+      console.log(`[Ava] Executive mode triggered for org=${orgId}`);
+      const [clientsData, upcomingData, pendingData, activityData, strategicData] =
+        await Promise.all([
+          executeCrmTool("list_clients",        { status: "all", sort: "value_desc", limit: 50 }, orgId),
+          executeCrmTool("get_appointments",    { date_filter: "upcoming",  status_filter: "all",    limit: 10 }, orgId),
+          executeCrmTool("get_appointments",    { date_filter: "all",       status_filter: "pending", limit: 20 }, orgId),
+          executeCrmTool("get_recent_activity", { period: "this_month", limit: 30 }, orgId),
+          executeCrmTool("get_strategic_brief", {}, orgId),
+        ]);
+      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: ["list_clients", "get_appointments", "get_recent_activity", "get_strategic_brief"] })}\n\n`);
+      await streamText(
+        formatExecutiveResponse(clientsData, upcomingData, pendingData, activityData, strategicData),
+      );
+      return;
+    }
+
+    // ── ACTION — route to Skill Engine ──────────────────────────────────────
+    const skillId = intentToSkill(intent);
+    if (skillId) {
+      res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: [skillId] })}\n\n`);
+
+      const skillResult = await executeSkill(skillId, intentParams, orgId, {
+        user: req.clerkUserId ? { id: req.clerkUserId, name: "" } : undefined,
+      });
+
+      console.log(`[Ava] Skill=${skillId} success=${skillResult.success} result_len=${skillResult.result.length}`);
+
+      // Domain events (refresh calendar, clients list, etc.)
+      if (skillResult.success) {
+        let parsed: Record<string, unknown> = {};
+        try { parsed = JSON.parse(skillResult.result) as Record<string, unknown>; } catch {}
+        emitDomainEvent(skillId, parsed);
+      }
+
+      await streamText(formatSkillResponse(skillId, skillResult, intentParams));
+      return;
+    }
+
+    // ── GENERAL_QUERY / unrecognized — memory search + friendly fallback ────
+    await streamText(buildFallbackResponse(lastUserMessage, memories));
+
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("[Ava] POST handler error:", message);
     res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
     res.end();
   }

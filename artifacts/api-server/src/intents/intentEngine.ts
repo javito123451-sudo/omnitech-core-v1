@@ -36,7 +36,6 @@ const PATTERNS: Pattern[] = [
       date: (_m, text) => {
         const d = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
         if (d) return d[1];
-        // Spanish relative dates
         if (/\bhoy\b/i.test(text)) {
           const now = new Date();
           return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
@@ -58,6 +57,19 @@ const PATTERNS: Pattern[] = [
         const h = text.match(/\b(\d{1,2})\s*(hora|horas)\b/i);
         if (h) return Number(h[1]) * 60;
         return 60;
+      },
+      client_name: (_m, text) => {
+        // "cita con [Name]" or "reunión con [Name]"
+        const withMatch = text.match(
+          /\b(?:cita|reuni[oó]n)\s+con\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|para|hoy|ma\u00f1ana|\d|a\s+las?)|\s*$)/i,
+        );
+        if (withMatch?.[1]) return withMatch[1].trim();
+        // "con [Name] el lunes"
+        const genWith = text.match(
+          /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|hoy|ma\u00f1ana|\d))/i,
+        );
+        if (genWith?.[1]) return genWith[1].trim();
+        return undefined;
       },
     },
   },
@@ -84,6 +96,14 @@ const PATTERNS: Pattern[] = [
         const t = text.match(/\b(\d{1,2}:\d{2})\b/);
         return t ? t[1] : undefined;
       },
+      client_name: (_m, text) => {
+        const m = text.match(
+          /\bde\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+        ) ?? text.match(
+          /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+        );
+        return m?.[1]?.trim();
+      },
     },
   },
   // ── CANCEL_APPOINTMENT ──
@@ -98,6 +118,14 @@ const PATTERNS: Pattern[] = [
       reason: (_m, text) => {
         const r = text.match(/\bporque\s+(.{3,100})/i);
         return r ? r[1].trim() : undefined;
+      },
+      client_name: (_m, text) => {
+        const m = text.match(
+          /\bde\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+        ) ?? text.match(
+          /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+        );
+        return m?.[1]?.trim();
       },
     },
   },
