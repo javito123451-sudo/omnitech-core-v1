@@ -1,7 +1,7 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, MessageSquare, CalendarDays, BarChart3,
+  LayoutDashboard, Users, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, ShieldCheck, Sparkles, Bot, BookOpen,
   Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
@@ -54,7 +54,6 @@ const sidebarGroups: NavGroup[] = [
   {
     label: "Trabajo",
     items: [
-      { icon: MessageSquare, label: "Asistente",     href: "/assistant",      moduleKey: "ai_agents" },
       { icon: CalendarDays,  label: "Calendario",    href: "/calendar",       moduleKey: "crm" },
       { icon: Bot,           label: "Conversaciones", href: "/telegram-inbox", moduleKey: "ai_agents" },
     ],
@@ -117,7 +116,6 @@ interface MoreItem extends NavItem {
 
 const moreItems: MoreItem[] = [
   { icon: LayoutDashboard, label: "Panel",           href: "/dashboard",      group: "Principal",  moduleKey: "crm" },
-  { icon: MessageSquare,   label: "Asistente",       href: "/assistant",      group: "Trabajo",    moduleKey: "ai_agents" },
   { icon: CalendarDays,    label: "Calendario",      href: "/calendar",       group: "Trabajo",    moduleKey: "crm" },
   { icon: Bot,             label: "Conversaciones",  href: "/telegram-inbox", group: "Trabajo",    moduleKey: "ai_agents" },
   { icon: BookOpen,        label: "Base de Conoc.",  href: "/knowledge-base", group: "Sistema",    moduleKey: "ai_agents" },

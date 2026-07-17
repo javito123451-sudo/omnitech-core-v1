@@ -102,6 +102,7 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
             details: { platformRole, targetOrgName: targetOrg.name, reason: supportReason },
             severity: "warning",
             result: "success",
+            req,
           });
           next();
           return;

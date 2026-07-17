@@ -21,7 +21,6 @@ const ROUTE_LABELS: Array<[string, string]> = [
   ["/clients",             "Clientes"],
   ["/quotes",              "Presupuestos"],
   ["/calendar",            "Calendario"],
-  ["/assistant",           "Asistente Ava"],
   ["/accounting",          "Contabilidad"],
   ["/pipeline",            "Pipeline"],
   ["/statistics",          "Estadísticas"],

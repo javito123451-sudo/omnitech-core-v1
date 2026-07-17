@@ -23,7 +23,6 @@ import MyCommissionsPage from "@/pages/my-commissions";
 import PipelinePage from "@/pages/pipeline";
 import OnboardingPage from "@/pages/onboarding";
 import SupportPage from "@/pages/support";
-import Assistant from "@/pages/assistant";
 import Calendar from "@/pages/calendar";
 import Statistics from "@/pages/statistics";
 import Setup from "@/pages/setup";
@@ -343,13 +342,7 @@ function AppRoutes() {
         </ProtectedRoute>
       </Route>
       <Route path="/assistant">
-        <ProtectedRoute>
-          <MainLayout>
-            <ModuleGuard moduleKey="ai_agents">
-              <Assistant />
-            </ModuleGuard>
-          </MainLayout>
-        </ProtectedRoute>
+        <Redirect to="/executive-dashboard" />
       </Route>
       <Route path="/calendar">
         <ProtectedRoute>

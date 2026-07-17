@@ -10,16 +10,26 @@ const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 type Role = "user" | "ai";
 type Msg  = { id: string; role: Role; content: string; ts: Date; streaming?: boolean; error?: boolean };
 
-function inlineFormat(text: string): React.ReactNode {
+function inlineFormat(text: unknown): React.ReactNode {
+  if (typeof text !== "string") {
+    console.warn("[AvaChat] inlineFormat recibió un valor no-string:", typeof text, text);
+    return null;
+  }
   return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).map((p, i) => {
+    if (p === undefined) return null;
     if (p.startsWith("**") && p.endsWith("**")) return <strong key={i} className="text-white font-semibold">{p.slice(2, -2)}</strong>;
     if (p.startsWith("*")  && p.endsWith("*") && p.length > 2) return <em key={i} className="italic text-slate-300">{p.slice(1, -1)}</em>;
     return p;
   });
 }
 
-function renderMarkdown(text: string): React.ReactNode[] {
+function renderMarkdown(text: unknown): React.ReactNode[] {
+  if (typeof text !== "string") {
+    console.warn("[AvaChat] renderMarkdown recibió un valor no-string:", typeof text, text);
+    return [];
+  }
   return text.split("\n").map((line, i) => {
+    if (typeof line !== "string") return null;
     if (/^#{1,3} /.test(line)) return <strong key={i} className="block text-white font-bold mt-2 mb-0.5">{line.replace(/^#{1,3} /, "")}</strong>;
     if (/^[-*] /.test(line))   return <span key={i} className="flex gap-2 my-0.5"><span className="text-primary mt-0.5 shrink-0">•</span><span>{inlineFormat(line.slice(2))}</span></span>;
     if (line === "")            return <span key={i} className="block h-1.5" />;
