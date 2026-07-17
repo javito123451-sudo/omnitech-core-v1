@@ -119,13 +119,16 @@ export default function AvaChat({ pendingMessage, onClearPending, moduleLabel }:
       setMsgs(prev => prev.map(m => m.id === aiId ? { ...m, content: msg, streaming: false, error: true } : m));
 
     try {
+      const ctxPayload = moduleLabel ? { page: moduleLabel } : undefined;
+      console.log("[AvaChat] sendMessage → clientContext enviado:", ctxPayload, "| sessionId:", sessionIdRef.current);
+
       const res = await authFetch(`${API_BASE}/api/chat`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages:      history,
           sessionId:     sessionIdRef.current,
-          clientContext: moduleLabel ? { page: moduleLabel } : undefined,
+          clientContext: ctxPayload,
         }),
         signal: ctrl.signal,
       });

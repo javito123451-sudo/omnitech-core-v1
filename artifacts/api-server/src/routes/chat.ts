@@ -171,7 +171,16 @@ INSTRUCCIÓN CRÍTICA: La MEMORIA ORGANIZACIONAL contiene información oficial y
 
   const base = BASE_SYSTEM_PROMPT + dateBlock + memoryBlock;
 
-  if (!clientContext) return base;
+  // Guard: only render the "CLIENTE EN FOCO" block when a real client with a name is provided.
+  // AvaChat sends { page: string } without a name — that must not reach the .split() below.
+  if (!clientContext?.name) {
+    if (clientContext?.page) {
+      console.log(`[chat] clientContext.page="${clientContext.page}" — no client name, skipping client block`);
+    }
+    return base;
+  }
+
+  console.log(`[chat] clientContext.name="${clientContext.name}" — rendering client block`);
 
   const lines = [
     `Nombre completo: ${clientContext.name}`,
