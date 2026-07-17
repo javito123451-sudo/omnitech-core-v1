@@ -13,6 +13,9 @@ import { useClerk, useUser } from "@clerk/react";
 import { useOrg, clearSidebarCacheForOrg } from "@/lib/orgContext";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { authFetch } from "@/lib/authFetch";
+import { AvaProvider } from "@/components/ava/AvaContext";
+import AvaFloatingButton from "@/components/ava/AvaFloatingButton";
+import AvaPanel from "@/components/ava/AvaPanel";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -300,6 +303,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   );
 
   return (
+    <AvaProvider>
     <div className="flex h-dvh w-full max-w-full bg-background overflow-hidden text-foreground">
 
       {/* ── Desktop Sidebar ───────────────────────────────────────────── */}
@@ -540,5 +544,10 @@ export default function MainLayout({ children }: { children: ReactNode }) {
         />
       </main>
     </div>
+
+    {/* ── Ava floating assistant ──────────────────────────────────── */}
+    <AvaFloatingButton />
+    <AvaPanel />
+    </AvaProvider>
   );
 }

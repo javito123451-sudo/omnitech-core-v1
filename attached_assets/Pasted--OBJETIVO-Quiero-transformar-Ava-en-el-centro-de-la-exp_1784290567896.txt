@@ -1,0 +1,281 @@
+# OBJETIVO
+
+Quiero transformar Ava en el centro de la experiencia de usuario de OmniTech Core.
+
+A partir de ahora Ava NO será una página independiente.
+
+Será un asistente flotante permanente disponible desde cualquier pantalla del sistema.
+
+NO quiero modificar la lógica existente.
+
+NO quiero romper ninguna funcionalidad.
+
+Solo quiero añadir una nueva capa de interfaz profesional.
+
+------------------------------------------------------------
+
+OBJETIVO UX
+
+Ava debe estar visible en todo momento.
+
+Como Microsoft Copilot.
+
+Como ChatGPT.
+
+Como Intercom.
+
+Como Crisp.
+
+Pero con diseño premium.
+
+------------------------------------------------------------
+
+AVATAR
+
+Eliminar el icono o miniatura actual.
+
+En su lugar utilizar el avatar oficial de Ava.
+
+NO utilizar iconos genéricos.
+
+Debe cargar una imagen PNG/WebP del avatar.
+
+El avatar debe ser completamente redondo.
+
+Tamaño:
+
+72x72 px
+
+Sombra elegante.
+
+Borde blanco muy fino.
+
+Ligero efecto glass.
+
+Animación breathing muy suave.
+
+Hover con efecto glow.
+
+------------------------------------------------------------
+
+POSICIÓN
+
+Siempre visible.
+
+position: fixed
+
+bottom: 24px
+
+right: 24px
+
+z-index máximo.
+
+Nunca debe desaparecer al cambiar de módulo.
+
+Debe mostrarse en TODAS las páginas autenticadas.
+
+------------------------------------------------------------
+
+AL HACER CLICK
+
+NO abrir otra página.
+
+Debe abrir un panel lateral derecho.
+
+El panel debe deslizarse suavemente.
+
+Ancho:
+
+420px desktop
+
+100% móvil
+
+Animación 300ms.
+
+------------------------------------------------------------
+
+PANEL
+
+Cabecera
+
+Avatar de Ava.
+
+Texto
+
+Hola.
+
+Soy Ava.
+
+¿En qué puedo ayudarte?
+
+Botón cerrar.
+
+------------------------------------------------------------
+
+MENSAJES RÁPIDOS
+
+Mostrar botones:
+
+Buscar cliente
+
+Crear presupuesto
+
+Crear factura
+
+Ver agenda
+
+Buscar documento
+
+Analizar ventas
+
+Automatizar tarea
+
+------------------------------------------------------------
+
+CHAT
+
+Caja de texto inferior.
+
+Enviar con ENTER.
+
+Botón enviar.
+
+Historial persistente.
+
+Preparado para conectar posteriormente con OpenAI.
+
+------------------------------------------------------------
+
+CONTEXTO
+
+Crear un Context Provider.
+
+Ava debe conocer automáticamente:
+
+Página actual
+
+Ruta
+
+Módulo
+
+Usuario
+
+Workspace
+
+Empresa
+
+Cuando cambie la ruta actualizar automáticamente el contexto.
+
+Ejemplo
+
+Si estoy en Clientes
+
+Ava muestra
+
+"Veo que estás en Clientes."
+
+Si estoy en Facturas
+
+"Ahora mismo estás gestionando Facturas."
+
+Si estoy en Dashboard
+
+"Resumen preparado."
+
+No inventar datos.
+
+Solo detectar el módulo.
+
+------------------------------------------------------------
+
+ESTADOS
+
+Estado minimizado
+
+Solo avatar.
+
+Estado hover
+
+Pequeña animación.
+
+Estado abierto
+
+Panel completo.
+
+------------------------------------------------------------
+
+ARQUITECTURA
+
+Crear
+
+/components/ava
+
+AvaFloatingButton.tsx
+
+AvaPanel.tsx
+
+AvaHeader.tsx
+
+AvaQuickActions.tsx
+
+AvaChat.tsx
+
+AvaContext.tsx
+
+AvaProvider.tsx
+
+AvaAnimations.ts
+
+No mezclar con otros componentes.
+
+------------------------------------------------------------
+
+DISEÑO
+
+Usar Tailwind.
+
+Diseño moderno.
+
+Glassmorphism ligero.
+
+Esquinas redondeadas.
+
+Animaciones fluidas.
+
+No utilizar colores chillones.
+
+Todo debe respetar el diseño actual de OmniTech Core.
+
+------------------------------------------------------------
+
+IMPORTANTE
+
+NO romper ninguna funcionalidad existente.
+
+NO modificar rutas.
+
+NO modificar backend.
+
+Solo frontend.
+
+Todo desacoplado.
+
+Todo reutilizable.
+
+------------------------------------------------------------
+
+ANTES DE PROGRAMAR
+
+1. Analizar la estructura actual del proyecto.
+
+2. Localizar el Layout principal.
+
+3. Localizar el componente raíz.
+
+4. Integrar Ava únicamente desde el Layout global para que aparezca automáticamente en todas las pantallas autenticadas.
+
+5. Reutilizar el sistema actual de Ava si ya existe. No crear un segundo asistente ni duplicar lógica.
+
+6. Sustituir la miniatura o icono actual por el avatar oficial de Ava utilizando un componente configurable para poder cambiar la imagen fácilmente desde una única ruta.
+
+Después de ese análisis, implementar la solución paso a paso mostrando qué archivos se crean y cuáles se modifican.
