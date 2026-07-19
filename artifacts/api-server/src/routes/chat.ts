@@ -33,6 +33,8 @@ type AgentMemoryRow = typeof agentMemoryTable.$inferSelect;
 // ── Intent Engine + deterministic response formatters (no LLM) ────────────────
 import { classifyIntentRegex, intentToSkill } from "../intents/intentEngine";
 import { Intent } from "../intents/types";
+import { getPendingSkill, setPendingSkill, clearPendingSkill, type PendingSkillState } from "../intents/conversationState";
+import { extractParamFromText, promptForParam, isSkipKeyword } from "../intents/paramResolver";
 import {
   formatSkillResponse,
   formatExecutiveResponse,
@@ -2232,6 +2234,106 @@ router.post("/", requirePermission("ai.write"), async (req, res) => {
     );
 
     // ════════════════════════════════════════════════════════════════════════
+    // STEP 0 — Multi-step conversation: resume or clear pending skill state
+    // Runs after classification so a new real intent can override the flow
+    // ════════════════════════════════════════════════════════════════════════
+    const convUserId = req.userId ?? req.clerkUserId ?? `anon-${orgId}`;
+    {
+      const pending = getPendingSkill(orgId, convUserId);
+      if (pending) {
+        // A high-confidence new intent (not a plain answer) overrides the flow
+        const isNewRealIntent =
+          intent !== Intent.GENERAL_QUERY && intent !== Intent.UNKNOWN;
+
+        if (!isNewRealIntent) {
+          // ── User is answering the pending question ─────────────────────
+
+          // Abort keywords — user wants to cancel the flow
+          if (/\b(cancela[r]?(\s+eso)?|olvida(\s+(eso|lo))?|no\s+importa|d[eé]jalo|para|stop|abort|nada)\b/i.test(lastUserMessage)) {
+            clearPendingSkill(orgId, convUserId);
+            await streamText("De acuerdo, lo dejo. ¿En qué más puedo ayudarte? 😊");
+            return;
+          }
+
+          const updatedParams = { ...pending.collectedParams };
+          const [nextParam]   = pending.missingParams;
+
+          if (nextParam) {
+            const skill    = getSkill(pending.skillId);
+            const paramDef = skill?.params.find(p => p.name === nextParam);
+            const canSkip  = !paramDef?.required && isSkipKeyword(lastUserMessage);
+
+            if (!canSkip) {
+              const extracted = extractParamFromText(
+                nextParam,
+                paramDef?.type ?? "string",
+                lastUserMessage,
+              );
+              if (extracted !== undefined) {
+                updatedParams[nextParam] = extracted;
+              }
+            }
+          }
+
+          // Recompute missing required params after this answer
+          const skillDef      = getSkill(pending.skillId);
+          const stillRequired = skillDef
+            ? skillDef.params
+                .filter(p => p.required && !(p.name in updatedParams))
+                .map(p => p.name)
+            : [];
+
+          // Special: "items" can't be collected conversationally → redirect to UI
+          if (stillRequired[0] === "items") {
+            clearPendingSkill(orgId, convUserId);
+            const isQuote    = pending.skillId === "create_quote";
+            const url        = isQuote ? "/quotes"       : "/accounting";
+            const label      = isQuote ? "Presupuestos"  : "Contabilidad";
+            const noun       = isQuote ? "el presupuesto" : "la factura";
+            const clientLine = updatedParams["client_name"]
+              ? ` para **${String(updatedParams["client_name"])}**`
+              : "";
+            await streamText(
+              `✅ Perfecto. Para completar ${noun}${clientLine}, ve a [${label} →](${url}) donde puedes añadir los conceptos con todos los detalles.\n\n🔗 [Abrir ${label} →](${url})`,
+            );
+            return;
+          }
+
+          if (stillRequired.length === 0) {
+            // All required params collected — execute skill now
+            clearPendingSkill(orgId, convUserId);
+            res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: [pending.skillId] })}\n\n`);
+            const skillResult = await executeSkill(pending.skillId, updatedParams, orgId, {
+              user: req.clerkUserId ? { id: req.clerkUserId, name: "" } : undefined,
+            });
+            console.log(`[Ava] Multi-step skill=${pending.skillId} success=${skillResult.success}`);
+            if (skillResult.success) {
+              let parsed: Record<string, unknown> = {};
+              try { parsed = JSON.parse(skillResult.result) as Record<string, unknown>; } catch {}
+              emitDomainEvent(pending.skillId, parsed);
+            }
+            await streamText(formatSkillResponse(pending.skillId, skillResult, updatedParams));
+            return;
+          } else {
+            // Still need more params — save updated state and ask for next
+            const newState: PendingSkillState = {
+              ...pending,
+              collectedParams: updatedParams,
+              missingParams:   stillRequired,
+              lastPromptAt:    Date.now(),
+            };
+            setPendingSkill(orgId, convUserId, newState);
+            await streamText(promptForParam(pending.skillId, stillRequired[0]!));
+            return;
+          }
+        } else {
+          // New real intent arrived — discard pending state, fall through to routing
+          clearPendingSkill(orgId, convUserId);
+        }
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     // STEP 2 — Route by intent
     // ════════════════════════════════════════════════════════════════════════
 
@@ -2268,6 +2370,50 @@ router.post("/", requirePermission("ai.write"), async (req, res) => {
     // ── ACTION — route to Skill Engine ──────────────────────────────────────
     const skillId = intentToSkill(intent);
     if (skillId) {
+      const skill           = getSkill(skillId);
+      // Required params missing from what the Intent Engine extracted
+      const missingRequired = skill
+        ? skill.params
+            .filter(p => p.required && !(p.name in intentParams) && p.name !== "items")
+            .map(p => p.name)
+        : [];
+      // Skills with complex "items" array that must be built in the UI
+      const needsItemsRedirect = skill
+        ? skill.params.some(p => p.name === "items" && p.required && !intentParams["items"])
+        : false;
+
+      if (missingRequired.length > 0) {
+        // ── Begin multi-step flow: save state, ask for first missing param ─
+        const state: PendingSkillState = {
+          skillId,
+          intent:          String(intent),
+          collectedParams: intentParams,
+          missingParams:   missingRequired,
+          createdAt:       Date.now(),
+          lastPromptAt:    Date.now(),
+        };
+        setPendingSkill(orgId, convUserId, state);
+        console.log(`[Ava] Multi-step start skill=${skillId} missing=[${missingRequired.join(",")}]`);
+        await streamText(promptForParam(skillId, missingRequired[0]!));
+        return;
+      }
+
+      if (needsItemsRedirect) {
+        // client_name collected but items array must be built in the UI
+        const isQuote    = skillId === "create_quote";
+        const url        = isQuote ? "/quotes"       : "/accounting";
+        const label      = isQuote ? "Presupuestos"  : "Contabilidad";
+        const noun       = isQuote ? "el presupuesto" : "la factura";
+        const clientLine = intentParams["client_name"]
+          ? ` para **${String(intentParams["client_name"])}**`
+          : "";
+        await streamText(
+          `Para crear ${noun}${clientLine}, ve a [${label} →](${url}) donde puedes añadir los conceptos con todos los detalles.\n\n🔗 [Abrir ${label} →](${url})`,
+        );
+        return;
+      }
+
+      // ── All params present — execute immediately ─────────────────────────
       res.write(`data: ${JSON.stringify({ event: "tools_resolved", tools: [skillId] })}\n\n`);
 
       const skillResult = await executeSkill(skillId, intentParams, orgId, {
