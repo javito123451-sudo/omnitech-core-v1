@@ -13,12 +13,13 @@ import type { SkillDefinition, SkillContext } from "./types";
 // Timezone helpers — imported from single canonical source.
 // See: src/utils/timezone.ts for documentation and implementation.
 // ═══════════════════════════════════════════════════════════════════════════
-export {
+import {
   madridLocalToUTC,
   apptTimeDisplay,
   apptDateDisplay,
   getMadridDayBounds,
 } from "../utils/timezone";
+export { madridLocalToUTC, apptTimeDisplay, apptDateDisplay, getMadridDayBounds };
 
 export function getMadridWeekBounds(): { start: Date; end: Date } {
   const now = new Date();
