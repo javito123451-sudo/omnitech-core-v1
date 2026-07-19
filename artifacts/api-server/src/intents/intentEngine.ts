@@ -208,6 +208,36 @@ const PATTERNS: Pattern[] = [
       /\b(mis\s+tareas|ver\s+tareas|lista\s+de\s+tareas|tareas\s+pendientes|qu[eé]\s+tareas\s+tengo)\b/i,
     ],
   },
+  // ── CREATE_INVOICE ──
+  {
+    intent: Intent.CREATE_INVOICE,
+    confidence: 0.90,
+    patterns: [
+      /\b(crea[r]?\s+(una?\s+)?factura|nueva\s+factura|genera[r]?\s+(una?\s+)?factura|hace[r]?\s+(una?\s+)?factura|factura\s+para\b|emiti[r]?\s+(una?\s+)?factura|pon[e]?\s+(una?\s+)?factura)\b/i,
+    ],
+    paramExtractors: {
+      client_name: (_m, text) => {
+        const m = text.match(/\bpara\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?:\s|$)/i);
+        return m?.[1]?.trim();
+      },
+    },
+  },
+  // ── GET_INVOICES ──
+  {
+    intent: Intent.GET_INVOICES,
+    confidence: 0.88,
+    patterns: [
+      /\b(mis\s+facturas|ver\s+facturas|lista\s+de\s+facturas|facturas\s+pendientes|qu[eé]\s+facturas\s+tengo|facturas\s+vencidas|cobros\s+pendientes|cu[aá]nto\s+(me\s+)?deben|facturas\s+sin\s+pagar)\b/i,
+    ],
+  },
+  // ── ACCOUNTING_SUMMARY ──
+  {
+    intent: Intent.ACCOUNTING_SUMMARY,
+    confidence: 0.88,
+    patterns: [
+      /\b(resumen\s+financiero|an[aá]lisis\s+de\s+ventas|analiza[r]?\s+(mis\s+)?ventas|ventas\s+recientes|cu[aá]nto\s+(he\s+|hemos?\s+)?(facturado|ingresado|vendido|cobrado)|ingresos\s+(del\s+mes|del\s+a[nñ]o|recientes|actuales|mensuales)|estado\s+financiero|facturaci[oó]n\s+(del\s+mes|mensual|actual)|cu[aá]nto\s+dinero|din[ea]ro\s+en\s+caja|cu[aá]nto\s+llevo\s+(este\s+)?mes|cartera\s+de\s+cobros|resumen\s+de\s+cobros|qu[eé]\s+(he\s+)?cobrado)\b/i,
+    ],
+  },
   // ── GREETING ──
   {
     intent: Intent.GREETING,
@@ -326,6 +356,9 @@ export function intentToSkill(intent: Intent): string | null {
     case Intent.GET_CLIENTS:            return "list_clients";
     case Intent.GET_QUOTES:             return "list_quotes";
     case Intent.GET_TASKS:              return "list_tasks";
+    case Intent.CREATE_INVOICE:         return "create_invoice";
+    case Intent.GET_INVOICES:           return "list_pending_invoices";
+    case Intent.ACCOUNTING_SUMMARY:     return "accounting_summary";
     default:                            return null;
   }
 }

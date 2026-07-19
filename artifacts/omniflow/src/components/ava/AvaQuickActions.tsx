@@ -1,13 +1,13 @@
 import { Users, FileText, Receipt, CalendarDays, Search, BarChart3, Zap } from "lucide-react";
 
 const ACTIONS = [
-  { icon: Users,       label: "Buscar cliente",    msg: "Necesito buscar información sobre un cliente del CRM." },
-  { icon: FileText,    label: "Crear presupuesto", msg: "Quiero crear un presupuesto para un cliente." },
-  { icon: Receipt,     label: "Crear factura",     msg: "Ayúdame a crear una factura para un cliente." },
-  { icon: CalendarDays,label: "Ver agenda",        msg: "Muéstrame mi agenda de hoy y las próximas citas." },
-  { icon: Search,      label: "Buscar documento",  msg: "Necesito buscar un documento en el sistema." },
-  { icon: BarChart3,   label: "Analizar ventas",   msg: "Dame un análisis rápido de las ventas recientes." },
-  { icon: Zap,         label: "Automatizar tarea", msg: "Quiero automatizar una tarea repetitiva en el sistema." },
+  { icon: Users,       label: "Mis clientes",      msg: "Mis clientes activos" },
+  { icon: FileText,    label: "Crear presupuesto", msg: "Crear un presupuesto" },
+  { icon: Receipt,     label: "Crear factura",     msg: "Crear una factura" },
+  { icon: CalendarDays,label: "Agenda de hoy",     msg: "Mis citas de hoy" },
+  { icon: Search,      label: "Qué puedo hacer",   msg: "Ayuda" },
+  { icon: BarChart3,   label: "Resumen financiero",msg: "Cuánto he facturado este mes" },
+  { icon: Zap,         label: "Mis tareas",        msg: "Mis tareas pendientes" },
 ] as const;
 
 export default function AvaQuickActions({ onAction }: { onAction: (msg: string) => void }) {
