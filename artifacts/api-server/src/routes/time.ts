@@ -267,6 +267,14 @@ timeRouter.get("/entries", async (req, res) => {
   const orgId = req.orgId!;
   const { worker_id, date_from, date_to, status, limit = "50", offset = "0" } = req.query as Record<string, string>;
 
+  // Convert empty/missing values to null so Postgres never receives ""::date or ""::integer
+  const wId   = worker_id ? Number(worker_id) : null;
+  const dFrom = date_from || null;
+  const dTo   = date_to   || null;
+  const st    = status    || null;
+  const lim   = Math.min(Math.max(Number(limit)  || 50, 1), 200);
+  const off   = Math.max(Number(offset) || 0, 0);
+
   try {
     const rows = dbRows<{
       id: number; worker_id: number; worker_name: string;
@@ -280,12 +288,12 @@ timeRouter.get("/entries", async (req, res) => {
       FROM time_entries te
       JOIN time_workers tw ON tw.id=te.worker_id
       WHERE te.org_id=${orgId}
-        AND (${worker_id ?? null}::integer IS NULL OR te.worker_id=${Number(worker_id ?? 0)})
-        AND (${date_from ?? null}::date IS NULL OR te.clock_in_at >= ${date_from ?? ""}::date)
-        AND (${date_to ?? null}::date IS NULL OR te.clock_in_at < (${date_to ?? ""}::date + INTERVAL '1 day'))
-        AND (${status ?? null} IS NULL OR te.status=${status ?? ""})
+        AND (${wId}::integer IS NULL OR te.worker_id=${wId ?? 0})
+        AND (${dFrom}::date IS NULL OR te.clock_in_at >= ${dFrom}::date)
+        AND (${dTo}::date IS NULL OR te.clock_in_at < (${dTo}::date + INTERVAL '1 day'))
+        AND (${st} IS NULL OR te.status=${st ?? ""})
       ORDER BY te.clock_in_at DESC
-      LIMIT ${Number(limit)} OFFSET ${Number(offset)}
+      LIMIT ${lim} OFFSET ${off}
     `));
     res.json(rows);
   } catch (err) {
