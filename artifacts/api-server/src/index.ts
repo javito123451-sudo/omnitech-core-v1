@@ -5,6 +5,7 @@ import { autoSetupTelegramWebhooks } from "./routes/telegram";
 import { runStartupMigrations } from "./utils/startupMigrations";
 import { startAutopilotScheduler } from "./utils/autopilotScheduler";
 import { startRecurringInvoiceScheduler } from "./utils/recurringInvoiceScheduler";
+import { initAIE } from "./aie";
 
 const rawPort = process.env["PORT"];
 
@@ -33,6 +34,8 @@ app.listen(port, (err) => {
     .finally(() => {
       // Recurring invoice scheduler needs recurring_invoices table (created in FIX-H)
       startRecurringInvoiceScheduler();
+      // AIE starts after migrations so event handlers can safely query DB tables
+      initAIE();
     });
   scheduleAutoBackups();
   if (process.env["NODE_ENV"] !== "test") startAutopilotScheduler();
