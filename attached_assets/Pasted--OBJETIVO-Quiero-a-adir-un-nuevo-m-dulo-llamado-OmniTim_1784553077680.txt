@@ -1,0 +1,272 @@
+# OBJETIVO
+
+Quiero añadir un nuevo módulo llamado OmniTime a OmniTech Core.
+
+NO quiero una implementación rápida.
+
+Quiero una implementación profesional, modular, escalable y totalmente integrada con la arquitectura existente.
+
+Bajo ningún concepto debes romper funcionalidades existentes.
+
+No debes modificar ningún módulo que no sea estrictamente necesario.
+
+Antes de escribir una sola línea de código debes auditar completamente el proyecto.
+
+---
+
+# FASE 1 - AUDITORÍA
+
+Analiza completamente la aplicación.
+
+Identifica:
+
+- Arquitectura
+- Frontend
+- Backend
+- Base de datos
+- ORM
+- Sistema de autenticación
+- Sistema de permisos
+- Multiempresa
+- Roles
+- Organización de carpetas
+- Componentes reutilizables
+- APIs existentes
+- Hooks existentes
+- Servicios existentes
+- Modelos existentes
+
+NO MODIFIQUES NADA.
+
+Entrega únicamente el informe.
+
+---
+
+# FASE 2 - COMPATIBILIDAD
+
+Analiza cómo integrar OmniTime.
+
+Debe reutilizar:
+
+- Usuarios
+- Organizaciones
+- Roles
+- Permisos
+- Auditoría
+- Sistema de IA
+- Sistema de notificaciones
+- Componentes UI
+- Diseño actual
+
+No debe duplicar absolutamente nada.
+
+---
+
+# FASE 3 - DISEÑO
+
+Diseña el módulo completo.
+
+Debe ser independiente.
+
+Debe poder activarse o desactivarse por empresa.
+
+Debe respetar completamente el aislamiento entre organizaciones.
+
+Debe ser escalable.
+
+Debe seguir exactamente la arquitectura actual.
+
+No cambies la arquitectura existente.
+
+Amplíala.
+
+---
+
+# FUNCIONALIDADES
+
+El módulo debe incluir:
+
+- Fichaje de entrada
+- Fichaje de salida
+- Descansos
+- Horas extra
+- Turnos
+- Horarios
+- Vacaciones
+- Ausencias
+- Calendario
+- Incidencias
+
+---
+
+# IA
+
+Toda la inteligencia debe utilizar Ava.
+
+No crear otro asistente.
+
+Ava debe ser capaz de:
+
+- Detectar olvidos de fichaje.
+- Detectar retrasos.
+- Detectar horas extra.
+- Detectar jornadas excesivas.
+- Detectar patrones repetitivos.
+- Recomendar cambios de turnos.
+- Responder preguntas en lenguaje natural.
+
+Ejemplos:
+
+"¿Quién no ha fichado hoy?"
+
+"¿Quién está trabajando ahora mismo?"
+
+"¿Cuántas horas lleva Juan esta semana?"
+
+---
+
+# CONTEXTO INTELIGENTE
+
+No quiero únicamente un sistema de fichaje.
+
+Quiero que Ava comprenda el contexto.
+
+Cuando un usuario cambie entre:
+
+- Clientes
+- Proyectos
+- Órdenes de trabajo
+- Conversaciones
+- Presupuestos
+
+Ava debe detectar el cambio de contexto.
+
+NO debe cambiar automáticamente la imputación.
+
+Debe preguntar al usuario si desea cambiar el tiempo al nuevo cliente o proyecto.
+
+Todo debe ser configurable por empresa.
+
+Modo Manual.
+
+Modo Asistido por IA.
+
+Modo Automático.
+
+---
+
+# BASE DE DATOS
+
+Antes de crear tablas:
+
+Analiza todas las tablas existentes.
+
+Reutiliza las que ya existan.
+
+Solo crea nuevas tablas cuando sea imprescindible.
+
+Documenta todas las migraciones.
+
+---
+
+# API
+
+No rompas ninguna API existente.
+
+Si necesitas nuevas rutas:
+
+Créalas en un módulo independiente.
+
+No modifiques endpoints existentes salvo necesidad absoluta.
+
+---
+
+# FRONTEND
+
+Reutiliza:
+
+Layouts
+
+Sidebar
+
+Menús
+
+Cards
+
+Botones
+
+Componentes
+
+Hooks
+
+Providers
+
+No dupliques componentes.
+
+---
+
+# SEGURIDAD
+
+Mantén:
+
+Roles.
+
+Permisos.
+
+Auditoría.
+
+Logs.
+
+RGPD.
+
+Multiempresa.
+
+No debe existir fuga de datos entre organizaciones.
+
+---
+
+# IMPLEMENTACIÓN
+
+Trabaja únicamente por fases.
+
+Nunca hagas una implementación masiva.
+
+Cada fase debe incluir:
+
+Objetivo.
+
+Archivos modificados.
+
+Archivos nuevos.
+
+Impacto.
+
+Pruebas necesarias.
+
+Rollback.
+
+---
+
+# ANTES DE CADA CAMBIO
+
+Explícame:
+
+Por qué lo haces.
+
+Qué impacto tiene.
+
+Qué riesgos existen.
+
+Cómo volver atrás.
+
+No implementes el siguiente paso hasta validar el anterior.
+
+---
+
+# REGLA PRINCIPAL
+
+La estabilidad de OmniTech Core es prioritaria.
+
+Si detectas una decisión que pueda romper el sistema, detente y propón una alternativa.
+
+Nunca sacrifiques la arquitectura por rapidez.
