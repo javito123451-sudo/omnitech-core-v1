@@ -275,43 +275,51 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
         return textReply || null;
       }
 
-      // ── Execute the tool call ──────────────────────────────────────────────
-      const toolCall = toolCalls[0]!;
-      const toolName = toolCall.function.name;
-      const args     = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+      // ── Execute ALL tool calls returned in this round ─────────────────
+      // OpenAI may batch multiple tool calls in one response; we MUST
+      // push a tool-response message for every tool_call_id in the
+      // assistant message — otherwise round+1 gets a 400 BadRequestError.
+      const toolResponseMessages: import("../ai/types").Message[] = [];
 
-      console.log(`[TG Tool] round=${round} calling=${toolName} | args=${toolCall.function.arguments.slice(0, 200)}`);
+      for (const tc of toolCalls) {
+        const tName = tc.function.name;
+        let tArgs: Record<string, unknown> = {};
+        try { tArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>; } catch { /* malformed args */ }
 
-      // ══ Ava V2: Route tool calls through the Skill Engine ══
-      let toolResult = "";
-      const skillResult = await executeSkill(
-        toolName,
-        args,
-        orgId,
-        {
-          client: client ? { id: client.id, name: client.name } : null,
-          channel: "telegram",
-          lastAppointmentId,
-        },
-      );
-      toolResult = skillResult.result;
-      if (skillResult.lastAppointmentId) {
-        lastAppointmentId = skillResult.lastAppointmentId;
+        console.log(`[TG Tool] round=${round} calling=${tName} | args=${tc.function.arguments.slice(0, 200)}`);
+
+        const skillResult = await executeSkill(
+          tName,
+          tArgs,
+          orgId,
+          {
+            client: client ? { id: client.id, name: client.name } : null,
+            channel: "telegram",
+            lastAppointmentId,
+          },
+        );
+        if (skillResult.lastAppointmentId) {
+          lastAppointmentId = skillResult.lastAppointmentId;
+        }
+        const toolResult = skillResult.result;
+        console.log(`[TG Tool] ${tName} → ${toolResult.slice(0, 250)}`);
+
+        toolResponseMessages.push({
+          role:         "tool",
+          tool_call_id: tc.id,
+          content:      toolResult,
+        });
       }
 
-      console.log(`[TG Tool] ${toolName} → ${toolResult.slice(0, 250)}`);
-
-      // Append assistant message + tool result for next round
+      // Append assistant message then ALL tool responses — one per tool_call_id.
       loopMessages.push({
-        role:        "assistant",
-        content:     textReply,
-        tool_calls:  toolCalls,
+        role:       "assistant",
+        content:    textReply || "",
+        tool_calls: toolCalls,
       });
-      loopMessages.push({
-        role:         "tool",
-        tool_call_id: toolCall.id,
-        content:      toolResult,
-      });
+      for (const trm of toolResponseMessages) {
+        loopMessages.push(trm);
+      }
     }
 
     // Safety fallback if loop exhausted without a text reply
