@@ -16,6 +16,8 @@ import { authFetch } from "@/lib/authFetch";
 import { AvaProvider } from "@/components/ava/AvaContext";
 import AvaFloatingButton from "@/components/ava/AvaFloatingButton";
 import AvaPanel from "@/components/ava/AvaPanel";
+import { AceProvider } from "@/lib/aceContext";
+import { usePageTracker } from "@/hooks/usePageTracker";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -232,6 +234,14 @@ function MobileMoreDrawer({
   );
 }
 
+// ── ACE page sync — mounts inside AceProvider, tracks route changes ───────────
+// Kept as a separate component so usePageTracker() runs inside <AceProvider>.
+
+function AcePageSync() {
+  usePageTracker();
+  return null;
+}
+
 // ── Main layout ───────────────────────────────────────────────────────────────
 
 export default function MainLayout({ children }: { children: ReactNode }) {
@@ -301,6 +311,8 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   );
 
   return (
+    <AceProvider>
+    <AcePageSync />
     <AvaProvider>
     <div className="flex h-dvh w-full max-w-full bg-background overflow-hidden text-foreground">
 
@@ -547,5 +559,6 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     <AvaFloatingButton />
     <AvaPanel />
     </AvaProvider>
+    </AceProvider>
   );
 }

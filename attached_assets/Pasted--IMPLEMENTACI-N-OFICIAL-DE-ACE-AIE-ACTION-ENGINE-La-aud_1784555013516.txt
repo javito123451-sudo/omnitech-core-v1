@@ -1,0 +1,191 @@
+# IMPLEMENTACIÓN OFICIAL DE ACE + AIE + ACTION ENGINE
+
+La auditoría ha sido aprobada.
+
+Puedes comenzar la implementación.
+
+IMPORTANTE:
+
+No quiero una implementación rápida.
+
+Quiero una implementación profesional preparada para soportar el crecimiento de OmniTech Core durante años.
+
+La prioridad absoluta es NO romper ninguna funcionalidad existente.
+
+Trabaja únicamente por fases.
+
+No pases a la siguiente fase sin finalizar correctamente la anterior.
+
+-------------------------------------------------------------------
+
+## FASE 0 — AVA CONTEXT ENGINE (ACE)
+
+Implementa la nueva capa ACE.
+
+ACE será la única fuente de verdad del contexto del usuario.
+
+Debe mantener actualizado:
+
+• Organización activa
+• Workspace activo
+• Usuario autenticado
+• Rol
+• Permisos
+• Módulo activo
+• Página activa
+• Cliente activo
+• Proyecto activo
+• Orden de trabajo activa
+• Conversación activa
+• Presupuesto activo
+• Jornada activa
+• Estado del fichaje
+• Método de fichaje
+• Última actividad
+• Tiempo de inactividad
+• Dispositivo
+• Navegador
+• Zona horaria
+
+ACE NO ejecuta lógica de negocio.
+
+ACE NO ejecuta IA.
+
+ACE NO modifica módulos.
+
+ACE únicamente mantiene el contexto.
+
+Debe exponer una API limpia para consultar el contexto desde cualquier módulo.
+
+-------------------------------------------------------------------
+
+## FASE 1 — AVA INTELLIGENCE ENGINE (AIE)
+
+Implementa el núcleo del motor de inteligencia.
+
+Debe incluir:
+
+• Event Bus
+• Dispatcher
+• Tipos de eventos
+• Registro de eventos
+• Sistema preparado para Handlers
+
+NO implementar todavía inteligencia.
+
+NO ejecutar acciones.
+
+Solo la infraestructura.
+
+-------------------------------------------------------------------
+
+## FASE 2 — ACTION ENGINE
+
+Crear una nueva capa denominada:
+
+Action Engine
+
+Su única responsabilidad será ejecutar acciones solicitadas por AIE.
+
+AIE nunca ejecutará directamente acciones sobre los módulos.
+
+Action Engine será el intermediario entre la inteligencia y la lógica de negocio.
+
+Inicialmente dejar preparada la estructura sin acciones reales.
+
+Debe ser completamente desacoplado.
+
+-------------------------------------------------------------------
+
+## FASE 3 — PREPARAR OMNITIME
+
+Ahora sí comenzar OmniTime.
+
+Implementar:
+
+• Base de datos
+• Modelos
+• API
+• Servicios
+
+Integrándolo desde el principio con:
+
+ACE
+
+AIE
+
+Action Engine
+
+No duplicar lógica.
+
+No crear dependencias innecesarias.
+
+-------------------------------------------------------------------
+
+## ARQUITECTURA FINAL
+
+OmniTech Core
+
+↓
+
+ACE (Contexto)
+
+↓
+
+AIE (Analiza y decide)
+
+↓
+
+Action Engine (Ejecuta)
+
+↓
+
+Módulos
+
+• OmniTime
+• CRM
+• Marketing Hub
+• OmniTax
+• Portal Cliente
+• Control Center
+
+-------------------------------------------------------------------
+
+## REGLAS
+
+No romper ninguna funcionalidad existente.
+
+No modificar código innecesario.
+
+Reutilizar componentes existentes.
+
+No duplicar servicios.
+
+No duplicar modelos.
+
+No duplicar hooks.
+
+No duplicar providers.
+
+Mantener compatibilidad total.
+
+Seguir principios SOLID.
+
+Seguir Clean Architecture.
+
+Seguir DRY.
+
+Seguir KISS.
+
+Documentar todos los cambios.
+
+Cada fase debe finalizar con:
+
+- Resumen técnico.
+- Archivos creados.
+- Archivos modificados.
+- Riesgos.
+- Validación.
+- Pruebas realizadas.
+
+No continúes con la siguiente fase hasta confirmar que la anterior ha quedado estable.
