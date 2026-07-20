@@ -67,6 +67,15 @@ function fmtDatetime(iso: string | null | undefined): string {
   }
 }
 
+function isoToInputLocal(iso: string | null | undefined): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  } catch { return ""; }
+}
+
 // ── EmptyState ─────────────────────────────────────────────────────────────
 
 interface EmptyStateProps {
@@ -483,15 +492,129 @@ function TrabajadoresTab({ workers }: { workers: Worker[] }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EDIT ENTRY MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EditEntryModal({ entry, onClose }: { entry: TimeEntry; onClose: () => void }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    clock_in_at:   isoToInputLocal(entry.clock_in_at),
+    clock_out_at:  isoToInputLocal(entry.clock_out_at),
+    break_minutes: String(entry.break_minutes ?? 0),
+    notes:         entry.notes ?? "",
+    status:        entry.status,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      authFetch(`${BASE}/api/time/entries/${entry.id}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clock_in_at:   form.clock_in_at  ? new Date(form.clock_in_at).toISOString()  : undefined,
+          clock_out_at:  form.clock_out_at ? new Date(form.clock_out_at).toISOString() : undefined,
+          break_minutes: Number(form.break_minutes) || 0,
+          notes:         form.notes.trim() || undefined,
+          status:        form.status,
+        }),
+      }).then(r => { if (!r.ok) throw new Error("Error"); }),
+    onSuccess: () => {
+      toast({ title: "Fichaje actualizado ✓" });
+      qc.invalidateQueries({ queryKey: ["time-entries"] });
+      qc.invalidateQueries({ queryKey: ["time-dashboard"] });
+      onClose();
+    },
+    onError: () => toast({ title: "Error al guardar los cambios", variant: "destructive" }),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl">
+        <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white flex items-center gap-2">
+            <Pencil className="w-4 h-4 text-emerald-400" /> Editar fichaje #{entry.id}
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-xs text-slate-400">
+            Trabajador: <span className="text-slate-200 font-medium">{entry.worker_name}</span>
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Entrada</label>
+              <input type="datetime-local" value={form.clock_in_at}
+                onChange={e => setForm(f => ({ ...f, clock_in_at: e.target.value }))}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Salida</label>
+              <input type="datetime-local" value={form.clock_out_at}
+                onChange={e => setForm(f => ({ ...f, clock_out_at: e.target.value }))}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Pausa (min)</label>
+              <input type="number" min={0} value={form.break_minutes}
+                onChange={e => setForm(f => ({ ...f, break_minutes: e.target.value }))}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Estado</label>
+              <select value={form.status}
+                onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
+                <option value="open">Abierto</option>
+                <option value="closed">Cerrado</option>
+                <option value="adjusted">Ajustado</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Observaciones</label>
+            <input value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Nota opcional…"
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500" />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-slate-700 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-slate-200 text-sm transition-colors">
+            Cancelar
+          </button>
+          <button
+            disabled={saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Guardar cambios
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FICHAJES TAB
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FichajesTab({ workers }: { workers: Worker[] }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const [filters, setFilters] = useState({
-    worker_id: "", status: "", date_from: "", date_to: "",
+    worker_id: "", status: "", date_from: "", date_to: "", search: "",
   });
+  const [editEntry, setEditEntry]         = useState<TimeEntry | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
 
-  const hasFilters = !!(filters.worker_id || filters.status || filters.date_from || filters.date_to);
+  const hasFilters = !!(filters.worker_id || filters.status || filters.date_from || filters.date_to || filters.search);
 
   const { data: entries = [], isLoading, isError, refetch } = useQuery<TimeEntry[]>({
     queryKey: ["time-entries", filters],
@@ -501,6 +624,7 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
       if (filters.status)    params.set("status",    filters.status);
       if (filters.date_from) params.set("date_from", filters.date_from);
       if (filters.date_to)   params.set("date_to",   filters.date_to);
+      if (filters.search)    params.set("search",    filters.search);
       return authFetch(`${BASE}/api/time/entries?${params}`).then(r => {
         if (!r.ok) throw new Error("Error al cargar fichajes");
         return r.json() as Promise<TimeEntry[]>;
@@ -508,10 +632,27 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) =>
+      authFetch(`${BASE}/api/time/entries/${id}`, { method: "DELETE" }).then(r => {
+        if (!r.ok) throw new Error("Error");
+      }),
+    onSuccess: () => {
+      toast({ title: "Fichaje eliminado" });
+      qc.invalidateQueries({ queryKey: ["time-entries"] });
+      qc.invalidateQueries({ queryKey: ["time-dashboard"] });
+      setConfirmDelete(null);
+    },
+    onError: () => toast({ title: "Error al eliminar el fichaje", variant: "destructive" }),
+  });
+
+  const resetFilters = () =>
+    setFilters({ worker_id: "", status: "", date_from: "", date_to: "", search: "" });
+
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* ── Filters ───────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <WorkerSelect
           workers={workers}
           value={filters.worker_id}
@@ -534,14 +675,31 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
         <input type="date" value={filters.date_to}
           onChange={e => setFilters(f => ({ ...f, date_to: e.target.value }))}
           className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500" />
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+          <input
+            value={filters.search}
+            onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+            placeholder="Buscar trabajador…"
+            className="w-full pl-9 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+          />
+        </div>
       </div>
 
+      {hasFilters && (
+        <button onClick={resetFilters} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+          × Limpiar filtros
+        </button>
+      )}
+
+      {/* ── Table ─────────────────────────────────────────────────────────── */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-700/50 flex items-center justify-between">
           <span className="text-sm font-semibold text-slate-300">
             {isLoading ? "Cargando…" : `${entries.length} fichaje(s)`}
           </span>
-          <button onClick={() => refetch()} className="text-slate-500 hover:text-slate-300 transition-colors">
+          <button onClick={() => refetch()} title="Actualizar"
+            className="text-slate-500 hover:text-slate-300 transition-colors">
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -557,12 +715,13 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
             <EmptyState
               icon={ClipboardList}
               title="Sin resultados para este filtro"
-              description="No hay fichajes que coincidan con los criterios seleccionados. Prueba a cambiar el rango de fechas o el trabajador."
+              description="No hay fichajes que coincidan con los criterios seleccionados."
+              action={{ label: "Limpiar filtros", onClick: resetFilters }}
             />
           ) : (
             <EmptyState
               icon={Clock}
-              title="Aún no hay jornadas registradas"
+              title="No existen fichajes registrados"
               description="Cuando un trabajador fiche entrada desde el Panel, su jornada aparecerá aquí automáticamente."
               iconColor="text-blue-400"
             />
@@ -571,28 +730,80 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-700/50 text-xs text-slate-500 uppercase">
+                <tr className="border-b border-slate-700/50 text-xs text-slate-500 uppercase tracking-wider">
                   <th className="px-4 py-2 text-left">Trabajador</th>
                   <th className="px-4 py-2 text-left">Entrada</th>
                   <th className="px-4 py-2 text-left">Salida</th>
-                  <th className="px-4 py-2 text-right">Total</th>
+                  <th className="px-4 py-2 text-right">Horas</th>
                   <th className="px-4 py-2 text-right">Extra</th>
                   <th className="px-4 py-2 text-center">Estado</th>
+                  <th className="px-4 py-2 text-center">Incid.</th>
+                  <th className="px-4 py-2 text-left">Observaciones</th>
+                  <th className="px-4 py-2 text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/30">
                 {entries.map(e => (
-                  <tr key={e.id} className="hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-3 font-medium text-slate-200">{e.worker_name}</td>
-                    <td className="px-4 py-3 text-slate-400">{fmtDatetime(e.clock_in_at)}</td>
-                    <td className="px-4 py-3 text-slate-400">{fmtDatetime(e.clock_out_at)}</td>
-                    <td className="px-4 py-3 text-right text-slate-300">{fmtMins(e.total_minutes)}</td>
-                    <td className="px-4 py-3 text-right">
+                  <tr key={e.id} className="hover:bg-slate-700/20 transition-colors group">
+                    <td className="px-4 py-3 font-medium text-slate-200 whitespace-nowrap">{e.worker_name}</td>
+                    <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{fmtDatetime(e.clock_in_at)}</td>
+                    <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{fmtDatetime(e.clock_out_at)}</td>
+                    <td className="px-4 py-3 text-right text-slate-300 whitespace-nowrap">{fmtMins(e.total_minutes)}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       {(e.overtime_minutes ?? 0) > 0
                         ? <span className="text-amber-400">{fmtMins(e.overtime_minutes)}</span>
-                        : "—"}
+                        : <span className="text-slate-600">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center"><StatusBadge s={e.status} /></td>
+                    <td className="px-4 py-3 text-center">
+                      {e.incident_count > 0 ? (
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold border border-amber-500/30">
+                          {e.incident_count}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 max-w-[160px]">
+                      {e.notes
+                        ? <span className="block text-xs truncate" title={e.notes}>{e.notes}</span>
+                        : <span className="text-slate-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                        {/* Editar */}
+                        <button onClick={() => setEditEntry(e)} title="Editar"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {/* Corregir */}
+                        <button onClick={() => setEditEntry(e)} title="Corregir"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors">
+                          <Wrench className="w-3.5 h-3.5" />
+                        </button>
+                        {/* Eliminar */}
+                        {confirmDelete === e.id ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => deleteMutation.mutate(e.id)}
+                              disabled={deleteMutation.isPending}
+                              className="px-2 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded font-medium transition-colors disabled:opacity-50"
+                            >
+                              {deleteMutation.isPending ? "…" : "¿Confirmar?"}
+                            </button>
+                            <button onClick={() => setConfirmDelete(null)}
+                              className="p-1 text-slate-500 hover:text-slate-300 transition-colors">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setConfirmDelete(e.id)} title="Eliminar"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -600,6 +811,10 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
           </div>
         )}
       </div>
+
+      {editEntry && (
+        <EditEntryModal entry={editEntry} onClose={() => setEditEntry(null)} />
+      )}
     </div>
   );
 }
