@@ -5,7 +5,7 @@ import {
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, ShieldCheck, Sparkles, Bot, BookOpen,
   Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
-  Ticket, Rocket, LogOut as LogOutIcon, Megaphone, Radio, ScanSearch,
+  Ticket, Rocket, LogOut as LogOutIcon, Megaphone, Radio, ScanSearch, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -57,6 +57,7 @@ const sidebarGroups: NavGroup[] = [
     label: "Trabajo",
     items: [
       { icon: CalendarDays,  label: "Calendario",    href: "/calendar",       moduleKey: "crm" },
+      { icon: Clock,         label: "OmniTime",      href: "/time",           moduleKey: "omni_time" },
       { icon: Bot,           label: "Conversaciones", href: "/telegram-inbox", moduleKey: "ai_agents" },
     ],
   },
@@ -119,6 +120,7 @@ interface MoreItem extends NavItem {
 const moreItems: MoreItem[] = [
   { icon: LayoutDashboard, label: "Panel",           href: "/dashboard",      group: "Principal",  moduleKey: "crm" },
   { icon: CalendarDays,    label: "Calendario",      href: "/calendar",       group: "Trabajo",    moduleKey: "crm" },
+  { icon: Clock,           label: "OmniTime",        href: "/time",           group: "Trabajo",    moduleKey: "omni_time" },
   { icon: Bot,             label: "Conversaciones",  href: "/telegram-inbox", group: "Trabajo",    moduleKey: "ai_agents" },
   { icon: BookOpen,        label: "Base de Conoc.",  href: "/knowledge-base", group: "Sistema",    moduleKey: "ai_agents" },
   { icon: Zap,             label: "Intelligence",    href: "/executive",      group: "Análisis",   moduleKey: "analytics" },

@@ -737,7 +737,7 @@ export async function runStartupMigrations(): Promise<void> {
         "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
         "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
         "omni_security", "omni_docs", "quotes", "portal_cliente",
-        "knowledge_base",
+        "knowledge_base", "omni_time",
       ] as const;
 
       const PLAN_SLUGS: Record<string, readonly string[]> = {
@@ -745,7 +745,8 @@ export async function runStartupMigrations(): Promise<void> {
                           "omni_accounting", "ai_agents", "quotes", "portal_cliente"],
         professional:    ["crm", "whatsapp", "omni_marketing", "knowledge_base",
                           "omni_accounting", "ai_agents", "quotes", "portal_cliente",
-                          "automations", "integrations", "analytics", "omni_docs"],
+                          "automations", "integrations", "analytics", "omni_docs",
+                          "omni_time"],
         business:        ALL_SLUGS,
         enterprise:      ALL_SLUGS,
         enterprise_plus: ALL_SLUGS,
@@ -772,6 +773,74 @@ export async function runStartupMigrations(): Promise<void> {
         bumpOrgModuleVersion(org.id);
       }
       logger.info(`[Migration] ✅ FIX-AB: module_configs seeded for ${orgs.length} org(s), ${seeded} rows inserted (conflicts skipped — existing admin settings preserved)`);
+    }
+
+    // ── FIX-AD: OmniTime tables — time_workers, time_entries, time_incidents, time_off_requests
+    {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS time_workers (
+          id           SERIAL PRIMARY KEY,
+          org_id       INTEGER NOT NULL,
+          user_id      INTEGER,
+          name         TEXT NOT NULL,
+          position     TEXT,
+          weekly_hours NUMERIC(5,2) NOT NULL DEFAULT 40,
+          hourly_rate  NUMERIC(10,2),
+          is_active    BOOLEAN NOT NULL DEFAULT true,
+          created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS time_entries (
+          id               SERIAL PRIMARY KEY,
+          org_id           INTEGER NOT NULL,
+          worker_id        INTEGER NOT NULL REFERENCES time_workers(id),
+          clock_in_at      TIMESTAMP NOT NULL,
+          clock_out_at     TIMESTAMP,
+          break_minutes    INTEGER NOT NULL DEFAULT 0,
+          total_minutes    INTEGER,
+          overtime_minutes INTEGER NOT NULL DEFAULT 0,
+          notes            TEXT,
+          method           TEXT NOT NULL DEFAULT 'manual',
+          status           TEXT NOT NULL DEFAULT 'open',
+          created_at       TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS time_incidents (
+          id            SERIAL PRIMARY KEY,
+          org_id        INTEGER NOT NULL,
+          worker_id     INTEGER NOT NULL REFERENCES time_workers(id),
+          entry_id      INTEGER REFERENCES time_entries(id),
+          type          TEXT NOT NULL,
+          severity      TEXT NOT NULL DEFAULT 'low',
+          description   TEXT,
+          auto_detected BOOLEAN NOT NULL DEFAULT false,
+          resolved_at   TIMESTAMP,
+          created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS time_off_requests (
+          id          SERIAL PRIMARY KEY,
+          org_id      INTEGER NOT NULL,
+          worker_id   INTEGER NOT NULL REFERENCES time_workers(id),
+          type        TEXT NOT NULL DEFAULT 'vacation',
+          start_date  DATE NOT NULL,
+          end_date    DATE NOT NULL,
+          days        INTEGER NOT NULL DEFAULT 1,
+          reason      TEXT,
+          status      TEXT NOT NULL DEFAULT 'pending',
+          reviewed_by INTEGER,
+          reviewed_at TIMESTAMP,
+          created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_time_entries_worker ON time_entries(org_id, worker_id, clock_in_at DESC)`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_time_entries_open   ON time_entries(org_id, status) WHERE status='open'`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_time_incidents_open ON time_incidents(org_id, resolved_at) WHERE resolved_at IS NULL`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_time_off_pending    ON time_off_requests(org_id, status) WHERE status='pending'`);
+      logger.info("[Migration] ✅ FIX-AD: OmniTime tables ensured (time_workers, time_entries, time_incidents, time_off_requests)");
     }
 
     // ── FIX-AC: notifications table for Action Engine built-in notification.create

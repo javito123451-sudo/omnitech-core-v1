@@ -37,6 +37,7 @@ import { taxRouter } from "./tax";
 import { marketingRouter } from "./marketing";
 import { adsRouter } from "./ads";
 import { leadsRouter } from "./leads";
+import { timeRouter }  from "./time";
 import { aceRouter } from "./ace";
 
 const router: IRouter = Router();
@@ -111,6 +112,7 @@ router.use("/tax",            requireModule("omni_tax"), taxRouter);
 router.use("/marketing",      requireModule("omni_marketing"), marketingRouter);
 router.use("/ads",            requireModule("omni_ads"),       adsRouter);
 router.use("/leads",          requireModule("omni_leads"),     leadsRouter);
+router.use("/time",           requireModule("omni_time"),      timeRouter);
 
 // ── Ava Context Engine — lightweight context sync, no module gate ─────────
 router.use("/ace", aceRouter);
