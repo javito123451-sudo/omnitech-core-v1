@@ -48,8 +48,15 @@ timeRouter.get("/dashboard", async (req, res) => {
       recentEntries:    recentRows,
     });
   } catch (err) {
-    console.error("[time/dashboard]", err);
-    res.status(500).json({ error: "Error al cargar el dashboard" });
+    const e = err as Error & { cause?: unknown };
+    const causeMsg = (e.cause as Error)?.message ?? String(e.cause ?? "");
+    console.error("[time/dashboard] ERROR:", e.message, "| CAUSE:", causeMsg, "| STACK:", e.stack);
+    res.status(500).json({
+      error:       "Error al cargar el dashboard",
+      drizzle_msg: e.message,
+      pg_cause:    causeMsg,
+      stack:       e.stack,
+    });
   }
 });
 
@@ -270,8 +277,15 @@ timeRouter.get("/entries", async (req, res) => {
     });
     res.json(rows);
   } catch (err) {
-    console.error("[time/entries GET]", err);
-    res.status(500).json({ error: "Error al listar fichajes" });
+    const e = err as Error & { cause?: unknown };
+    const causeMsg = (e.cause as Error)?.message ?? String(e.cause ?? "");
+    console.error("[time/entries GET] ERROR:", e.message, "| CAUSE:", causeMsg, "| STACK:", e.stack);
+    res.status(500).json({
+      error:       "Error al listar fichajes",
+      drizzle_msg: e.message,
+      pg_cause:    causeMsg,
+      stack:       e.stack,
+    });
   }
 });
 
