@@ -1,0 +1,237 @@
+# ACTUALIZACIÓN DEL ROADMAP DE IMPLEMENTACIÓN
+
+Antes de comenzar la implementación del AIE Core quiero añadir una fase previa imprescindible.
+
+No implementes todavía OmniTime.
+
+No modifiques funcionalidades existentes.
+
+No rompas la arquitectura actual.
+
+---
+
+# FASE 0 — AVA CONTEXT ENGINE (ACE)
+
+Antes del Event Bus quiero crear una nueva capa denominada:
+
+AVA CONTEXT ENGINE (ACE)
+
+Su objetivo es mantener el contexto vivo del usuario durante toda la sesión.
+
+Esta capa NO contiene lógica de negocio.
+
+NO contiene IA.
+
+NO ejecuta automatizaciones.
+
+Su única responsabilidad es conocer en todo momento el contexto del usuario para que posteriormente Ava Intelligence Engine pueda interpretar correctamente los eventos.
+
+Debe seguir el principio de Responsabilidad Única (SRP).
+
+---
+
+# RESPONSABILIDADES
+
+ACE deberá conocer en tiempo real:
+
+• Organización activa.
+
+• Workspace activo.
+
+• Usuario autenticado.
+
+• Rol.
+
+• Permisos.
+
+• Módulo activo.
+
+• Página activa.
+
+• Cliente activo.
+
+• Proyecto activo.
+
+• Orden de trabajo activa.
+
+• Conversación activa.
+
+• Presupuesto activo.
+
+• Jornada activa.
+
+• Estado del fichaje.
+
+• Método de fichaje.
+
+• Última actividad.
+
+• Tiempo de inactividad.
+
+• Dispositivo.
+
+• Navegador.
+
+• Dirección IP (si ya existe soporte).
+
+• Zona horaria.
+
+• Idioma.
+
+• Fecha y hora del servidor.
+
+---
+
+# FUNCIONAMIENTO
+
+Cada vez que ocurre un cambio de contexto:
+
+Cambio de módulo
+
+Cambio de cliente
+
+Cambio de proyecto
+
+Cambio de orden
+
+Cambio de conversación
+
+Inicio de sesión
+
+Cierre de sesión
+
+Cambio de organización
+
+Cambio de página
+
+ACE debe actualizar únicamente el contexto.
+
+No debe ejecutar acciones.
+
+No debe llamar a la IA.
+
+No debe modificar la base de datos salvo que la arquitectura actual ya disponga de un mecanismo para persistir sesiones.
+
+---
+
+# API INTERNA
+
+Diseña una API común para consultar el contexto desde cualquier módulo.
+
+Ejemplos:
+
+getCurrentContext()
+
+getActiveClient()
+
+getActiveProject()
+
+getCurrentWorkspace()
+
+getCurrentSession()
+
+getCurrentModule()
+
+getCurrentWorkday()
+
+setContext()
+
+updateContext()
+
+clearContext()
+
+No implementes todavía la lógica completa.
+
+Solo diseña una interfaz limpia y escalable.
+
+---
+
+# COMPATIBILIDAD
+
+ACE debe ser totalmente independiente.
+
+No debe depender de OmniTime.
+
+No debe depender del CRM.
+
+No debe depender del Control Center.
+
+Todos ellos dependerán de ACE.
+
+---
+
+# INTEGRACIÓN FUTURA
+
+Esta capa será utilizada posteriormente por:
+
+• Ava Intelligence Engine
+
+• OmniTime
+
+• CRM
+
+• Marketing Hub
+
+• OmniTax
+
+• Portal Cliente
+
+• Automatizaciones
+
+• Control Center
+
+---
+
+# ROADMAP ACTUALIZADO
+
+FASE 0
+
+Ava Context Engine (ACE)
+
+↓
+
+FASE 1
+
+Ava Intelligence Engine Core (AIE)
+
+↓
+
+FASE 2
+
+OmniTime Database
+
+↓
+
+FASE 3
+
+OmniTime API
+
+↓
+
+FASE 4
+
+Time Handlers
+
+↓
+
+FASE 5
+
+Inteligencia de OmniTime
+
+↓
+
+FASE 6
+
+Integración progresiva con CRM, Control Center y el resto de módulos
+
+---
+
+# REGLA PRINCIPAL
+
+ACE debe convertirse en la fuente única de verdad del contexto del usuario dentro de OmniTech Core.
+
+Ava Intelligence Engine nunca debe interpretar un evento sin consultar previamente ACE.
+
+El objetivo es construir una arquitectura preparada para crecer durante años sin generar deuda técnica.
+
+Antes de escribir código, confirma que la arquitectura propuesta mantiene la compatibilidad con OmniTech Core y explica qué archivos se crearán y por qué.
