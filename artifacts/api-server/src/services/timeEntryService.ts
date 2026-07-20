@@ -72,8 +72,8 @@ export async function listTimeEntries(opts: ListEntriesOpts): Promise<TimeEntryR
       AND (${wId}::integer IS NULL OR te.worker_id = ${wId}::integer)
       AND (${dFrom}::date  IS NULL OR te.clock_in_at >= ${dFrom}::date)
       AND (${dTo}::date    IS NULL OR te.clock_in_at <  (${dTo}::date + INTERVAL '1 day'))
-      AND (${st}           IS NULL OR te.status = ${st})
-      AND (${srch}         IS NULL OR tw.name ILIKE ${srch})
+      AND (${st}::text     IS NULL OR te.status = ${st}::text)
+      AND (${srch}::text   IS NULL OR tw.name ILIKE ${srch}::text)
     GROUP BY te.id, tw.name
     ORDER BY te.clock_in_at DESC
     LIMIT ${lim} OFFSET ${off}
