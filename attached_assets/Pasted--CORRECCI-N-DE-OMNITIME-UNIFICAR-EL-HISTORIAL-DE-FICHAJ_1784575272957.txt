@@ -1,0 +1,195 @@
+# CORRECCIÓN DE OMNITIME - UNIFICAR EL HISTORIAL DE FICHAJES
+
+He detectado una inconsistencia importante en OmniTime.
+
+## Comportamiento actual
+
+Las pruebas demuestran que:
+
+✅ El fichaje se crea correctamente.
+
+✅ El contador "Fichajes hoy" aumenta.
+
+✅ El panel "Fichajes recientes" muestra el nuevo registro.
+
+Pero:
+
+❌ La pestaña "Fichajes" no muestra esos mismos registros o devuelve un error.
+
+Por tanto el problema NO está en el registro del fichaje.
+
+El problema está en la obtención de los datos para el historial.
+
+----------------------------------------------------
+
+## OBJETIVO
+
+Debe existir UNA ÚNICA fuente de datos para los fichajes.
+
+No quiero varias consultas diferentes.
+
+Crear un único servicio.
+
+Ejemplo:
+
+TimeEntryService
+
+Este servicio será utilizado por:
+
+- Dashboard
+- Fichajes recientes
+- Pantalla Historial
+- Estadísticas
+- Exportaciones
+- Informes
+- IA (AIE)
+
+Todos deben consumir exactamente los mismos datos.
+
+----------------------------------------------------
+
+## AUDITORÍA
+
+Revisar:
+
+- Endpoint utilizado por Dashboard
+- Endpoint utilizado por Historial
+- Consultas SQL
+- Filtros
+- Ordenación
+- Transformación JSON
+
+Mostrar exactamente dónde divergen.
+
+----------------------------------------------------
+
+## HISTORIAL
+
+La pestaña "Fichajes" debe mostrar:
+
+Trabajador
+
+Entrada
+
+Salida
+
+Horas trabajadas
+
+Estado
+
+Incidencias
+
+Observaciones
+
+Acciones
+
+Editar
+
+Eliminar
+
+Corregir
+
+----------------------------------------------------
+
+## FILTROS
+
+Trabajador
+
+Estado
+
+Fecha desde
+
+Fecha hasta
+
+Buscar
+
+----------------------------------------------------
+
+## EMPTY STATE
+
+Si no existen fichajes:
+
+Mostrar:
+
+"No existen fichajes registrados."
+
+Nunca mostrar error.
+
+----------------------------------------------------
+
+## ERROR STATE
+
+Solo mostrar Error cuando:
+
+- falle realmente la API
+
+- falle la base de datos
+
+- exista una excepción
+
+No utilizar Error para colecciones vacías.
+
+----------------------------------------------------
+
+## REUTILIZACIÓN
+
+Dashboard
+
+↓
+
+TimeEntryService
+
+↓
+
+API
+
+↓
+
+Base de datos
+
+Historial
+
+↓
+
+TimeEntryService
+
+↓
+
+API
+
+↓
+
+Base de datos
+
+No duplicar consultas.
+
+----------------------------------------------------
+
+## VALIDACIÓN FINAL
+
+Después de la corrección quiero comprobar:
+
+1. Crear un fichaje.
+
+2. Verlo inmediatamente en:
+
+- Dashboard
+
+- Fichajes recientes
+
+- Historial
+
+3. Editarlo.
+
+4. Eliminarlo.
+
+5. Ver que desaparece en todas las vistas.
+
+Quiero un único flujo de datos para todo OmniTime.
+
+Al finalizar indica:
+
+- Causa raíz encontrada.
+- Archivos modificados.
+- Servicio reutilizado.
+- Pruebas realizadas.

@@ -5,7 +5,7 @@ import {
   Clock, Users, AlertTriangle, CalendarOff, LayoutDashboard,
   LogIn, LogOut, Plus, Check, X, Timer, Loader2, RefreshCw,
   CheckCircle2, UserPlus, ShieldCheck, CalendarDays, ClipboardList,
-  ArrowRight, TriangleAlert, ServerCrash,
+  ArrowRight, TriangleAlert, ServerCrash, Pencil, Trash2, Wrench, Search,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -34,6 +34,7 @@ interface TimeEntry {
   clock_in_at: string; clock_out_at: string | null;
   break_minutes: number; total_minutes: number | null;
   overtime_minutes: number; notes: string | null; method: string; status: string;
+  incident_count: number;
 }
 
 interface Incident {

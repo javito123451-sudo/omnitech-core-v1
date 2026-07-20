@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db }     from "@workspace/db";
 import { sql }    from "drizzle-orm";
 import { emitAieEvent, EVENT_TYPES } from "../aie";
+import { listTimeEntries } from "../services/timeEntryService";
 
 export const timeRouter = Router();
 
@@ -36,17 +37,7 @@ timeRouter.get("/dashboard", async (req, res) => {
         `)),
       ]);
 
-    const recentRows = dbRows<{
-      id: number; worker_name: string; clock_in_at: string;
-      clock_out_at: string | null; total_minutes: number | null; status: string;
-    }>(await db.execute(sql`
-      SELECT te.id, tw.name AS worker_name, te.clock_in_at, te.clock_out_at,
-             te.total_minutes, te.status
-      FROM time_entries te
-      JOIN time_workers tw ON tw.id=te.worker_id
-      WHERE te.org_id=${orgId}
-      ORDER BY te.clock_in_at DESC LIMIT 10
-    `));
+    const recentRows = await listTimeEntries({ orgId, limit: 10 });
 
     res.json({
       totalWorkers:     Number(workers[0]?.total ?? 0),
@@ -265,36 +256,18 @@ timeRouter.post("/clock-out", async (req, res) => {
 
 timeRouter.get("/entries", async (req, res) => {
   const orgId = req.orgId!;
-  const { worker_id, date_from, date_to, status, limit = "50", offset = "0" } = req.query as Record<string, string>;
-
-  // Convert empty/missing values to null so Postgres never receives ""::date or ""::integer
-  const wId   = worker_id ? Number(worker_id) : null;
-  const dFrom = date_from || null;
-  const dTo   = date_to   || null;
-  const st    = status    || null;
-  const lim   = Math.min(Math.max(Number(limit)  || 50, 1), 200);
-  const off   = Math.max(Number(offset) || 0, 0);
-
+  const { worker_id, date_from, date_to, status, search, limit = "50", offset = "0" } = req.query as Record<string, string>;
   try {
-    const rows = dbRows<{
-      id: number; worker_id: number; worker_name: string;
-      clock_in_at: string; clock_out_at: string | null;
-      break_minutes: number; total_minutes: number | null;
-      overtime_minutes: number; notes: string | null; method: string; status: string;
-    }>(await db.execute(sql`
-      SELECT te.id, te.worker_id, tw.name AS worker_name,
-             te.clock_in_at, te.clock_out_at, te.break_minutes,
-             te.total_minutes, te.overtime_minutes, te.notes, te.method, te.status
-      FROM time_entries te
-      JOIN time_workers tw ON tw.id=te.worker_id
-      WHERE te.org_id=${orgId}
-        AND (${wId}::integer IS NULL OR te.worker_id=${wId ?? 0})
-        AND (${dFrom}::date IS NULL OR te.clock_in_at >= ${dFrom}::date)
-        AND (${dTo}::date IS NULL OR te.clock_in_at < (${dTo}::date + INTERVAL '1 day'))
-        AND (${st} IS NULL OR te.status=${st ?? ""})
-      ORDER BY te.clock_in_at DESC
-      LIMIT ${lim} OFFSET ${off}
-    `));
+    const rows = await listTimeEntries({
+      orgId,
+      workerId: worker_id ? Number(worker_id) : null,
+      dateFrom: date_from || null,
+      dateTo:   date_to   || null,
+      status:   status    || null,
+      search:   search    || null,
+      limit:    Number(limit)  || 50,
+      offset:   Number(offset) || 0,
+    });
     res.json(rows);
   } catch (err) {
     console.error("[time/entries GET]", err);
@@ -322,6 +295,19 @@ timeRouter.patch("/entries/:id", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Error al actualizar fichaje" });
+  }
+});
+
+timeRouter.delete("/entries/:id", async (req, res) => {
+  const orgId   = req.orgId!;
+  const entryId = Number(req.params.id);
+  try {
+    await db.execute(sql`
+      DELETE FROM time_entries WHERE id=${entryId} AND org_id=${orgId}
+    `);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Error al eliminar fichaje" });
   }
 });
 
