@@ -616,19 +616,35 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
 
   const hasFilters = !!(filters.worker_id || filters.status || filters.date_from || filters.date_to || filters.search);
 
-  const { data: entries = [], isLoading, isError, refetch } = useQuery<TimeEntry[]>({
+  const { data: entries = [], isLoading, isError, error: entriesError, refetch } = useQuery<TimeEntry[]>({
     queryKey: ["time-entries", filters],
-    queryFn: () => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       if (filters.worker_id) params.set("worker_id", filters.worker_id);
       if (filters.status)    params.set("status",    filters.status);
       if (filters.date_from) params.set("date_from", filters.date_from);
       if (filters.date_to)   params.set("date_to",   filters.date_to);
       if (filters.search)    params.set("search",    filters.search);
-      return authFetch(`${BASE}/api/time/entries?${params}`).then(r => {
-        if (!r.ok) throw new Error("Error al cargar fichajes");
-        return r.json() as Promise<TimeEntry[]>;
-      });
+      const url = `${BASE}/api/time/entries?${params}`;
+      const r = await authFetch(url);
+      const bodyText = await r.text();
+      if (!r.ok) {
+        const err = new Error(
+          `HTTP ${r.status} ${r.statusText}\nURL: ${url}\nResponse: ${bodyText}`
+        );
+        (err as Error & { httpStatus: number; responseBody: string; endpoint: string }).httpStatus = r.status;
+        (err as Error & { httpStatus: number; responseBody: string; endpoint: string }).responseBody = bodyText;
+        (err as Error & { httpStatus: number; responseBody: string; endpoint: string }).endpoint = url;
+        throw err;
+      }
+      try {
+        return JSON.parse(bodyText) as TimeEntry[];
+      } catch (parseErr) {
+        const err = new Error(
+          `JSON parse failed\nURL: ${url}\nStatus: ${r.status}\nBody: ${bodyText}\nParseError: ${String(parseErr)}`
+        );
+        throw err;
+      }
     },
   });
 
@@ -709,7 +725,18 @@ function FichajesTab({ workers }: { workers: Worker[] }) {
             <Loader2 className="w-6 h-6 text-slate-500 animate-spin" />
           </div>
         ) : isError ? (
-          <ErrorState onRetry={() => refetch()} />
+          <div className="p-4 space-y-3">
+            <div className="text-red-400 font-bold text-sm">⛔ ERROR — volcado diagnóstico</div>
+            <pre className="bg-black/60 border border-red-700/50 rounded-xl p-4 text-xs text-red-300 whitespace-pre-wrap break-all overflow-x-auto font-mono">
+{String((entriesError as Error)?.message ?? entriesError)}
+
+--- Stack trace ---
+{(entriesError as Error)?.stack ?? "(sin stack)"}
+            </pre>
+            <button onClick={() => refetch()} className="text-xs text-slate-400 hover:text-slate-200 underline">
+              Reintentar
+            </button>
+          </div>
         ) : entries.length === 0 ? (
           hasFilters ? (
             <EmptyState
