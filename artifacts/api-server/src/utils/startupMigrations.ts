@@ -774,6 +774,28 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info(`[Migration] ✅ FIX-AB: module_configs seeded for ${orgs.length} org(s), ${seeded} rows inserted (conflicts skipped — existing admin settings preserved)`);
     }
 
+    // ── FIX-AC: notifications table for Action Engine built-in notification.create
+    {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id             SERIAL PRIMARY KEY,
+          org_id         INTEGER NOT NULL,
+          target_user_id INTEGER NOT NULL,
+          title          TEXT NOT NULL,
+          body           TEXT NOT NULL,
+          link           TEXT,
+          level          TEXT NOT NULL DEFAULT 'info',
+          is_read        BOOLEAN NOT NULL DEFAULT false,
+          created_at     TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_notifications_user
+          ON notifications(org_id, target_user_id, is_read)
+      `);
+      logger.info("[Migration] ✅ FIX-AC: notifications table ensured");
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

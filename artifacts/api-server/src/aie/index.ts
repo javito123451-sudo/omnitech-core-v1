@@ -34,13 +34,20 @@ export type { AieEvent, AieEventSource, AieHandler, AieSubscription, IEventBus }
 import { initDispatcher }      from "./dispatcher";
 import { registerAllHandlers } from "./handlers";
 import { aieEventBus }         from "./eventBus";
+import { initActionEngine }    from "../action-engine";
 
 /**
- * Initialise the AIE.
+ * Initialise the AIE + Action Engine pipeline.
  * Must be called once at server startup, after all modules are loaded.
  * Called by src/index.ts after runStartupMigrations() completes.
+ *
+ * Startup order within this function:
+ *   1. Action Engine — must be ready before handlers register (handlers execute actions)
+ *   2. Dispatcher
+ *   3. Handlers — register subscriptions on the bus
  */
 export function initAIE(): void {
+  initActionEngine();
   initDispatcher();
   registerAllHandlers();
   console.log(
