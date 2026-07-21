@@ -17,6 +17,21 @@ import { randomUUID } from "crypto";
 
 export const controlCenterRouter = Router();
 
+// ── Resolve req.userId for CC routes ─────────────────────────────────────────
+// The CC router is mounted BEFORE the global resolveOrg middleware so
+// req.userId is never set by it. This lightweight middleware fills the gap.
+controlCenterRouter.use(async (req, _res, next) => {
+  if (req.userId) { next(); return; }
+  const auth = getAuth(req);
+  const clerkUserId = auth?.userId;
+  if (!clerkUserId) { next(); return; }
+  try {
+    const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.clerkId, clerkUserId));
+    if (user) req.userId = user.id;
+  } catch { /* non-fatal — routes that need userId will handle null */ }
+  next();
+});
+
 // Mount AI Center sub-router
 controlCenterRouter.use("/ai-center", aiCenterRouter);
 
@@ -270,6 +285,8 @@ controlCenterRouter.post("/workspaces/:id/assign-user", async (req, res) => {
 // One-Step: create invitation for new user + auto-assign on accept
 controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) => {
   if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  if (!req.userId) { res.status(401).json({ error: "No se pudo resolver el usuario invitante." }); return; }
+
   const orgId = Number(req.params["id"]);
   const { email, role = "member", name } = req.body as { email: string; role?: string; name?: string };
 
@@ -282,74 +299,80 @@ controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) =
   const VALID = ["owner", "admin", "manager", "member", "client", "guest", "read_only", "vendedor", "cliente"];
   if (!VALID.includes(role)) { res.status(400).json({ error: "Rol inválido" }); return; }
 
-  // Check if user already exists
-  const [existingUser] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, cleanEmail));
-  if (existingUser) {
-    res.status(409).json({ error: "Ya existe un usuario con este email. Usa \"Asignar\" en lugar de \"Crear\".", exists: true });
-    return;
+  try {
+    // Check if user already exists
+    const [existingUser] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, cleanEmail));
+    if (existingUser) {
+      res.status(409).json({ error: "Ya existe un usuario con este email. Usa \"Asignar\" en lugar de \"Crear\".", exists: true });
+      return;
+    }
+
+    // Check for pending invitation (acceptedAt IS NULL means still pending)
+    const [pendingInv] = await db.select({ id: orgInvitationsTable.id }).from(orgInvitationsTable)
+      .where(and(
+        eq(orgInvitationsTable.orgId, orgId),
+        eq(orgInvitationsTable.email, cleanEmail),
+        isNull(orgInvitationsTable.acceptedAt),
+      ));
+    if (pendingInv) {
+      res.status(409).json({ error: "Ya hay una invitación pendiente para este email.", hasPendingInvitation: true });
+      return;
+    }
+
+    const token = randomUUID();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const invitedById = req.userId;
+
+    const [inv] = await db.insert(orgInvitationsTable).values({
+      orgId,
+      invitedBy: invitedById,
+      email: cleanEmail,
+      role,
+      token,
+      expiresAt,
+    }).returning();
+
+    // Fire invitation email asynchronously — non-blocking
+    const baseUrl  = req.get("origin") || `https://${req.get("host")}`;
+    const acceptUrl = `${baseUrl}/invite/${inv.token}`;
+    Promise.all([
+      db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId)),
+      db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, invitedById)),
+    ]).then(([[org], [inviter]]) =>
+      sendInvitationEmail({
+        to:          inv.email,
+        inviterName: inviter?.name ?? null,
+        orgName:     org?.name ?? "Tu organización",
+        role:        inv.role,
+        acceptUrl,
+        expiresAt:   inv.expiresAt,
+      }),
+    ).catch(err => console.error("[Email] Invitation send failed:", String(err)));
+
+    await logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:       "workspace_user_invited",
+      resource:     "workspace",
+      resourceId:   String(orgId),
+      details:      { email: cleanEmail, role, name, invitationId: inv.id },
+      severity:     "info",
+      req,
+    });
+
+    res.status(201).json({
+      ok: true,
+      invited: true,
+      email: cleanEmail,
+      role,
+      invitationId: inv.id,
+      token: inv.token,
+      expiresAt: inv.expiresAt.toISOString(),
+      message: "Invitación enviada. El usuario recibirá un email para unirse al Workspace.",
+    });
+  } catch (err) {
+    console.error("[invite-and-assign] Error:", String(err));
+    res.status(500).json({ error: "Error al crear la invitación. Inténtalo de nuevo." });
   }
-
-  // Check for pending invitation (acceptedAt IS NULL means still pending)
-  const [pendingInv] = await db.select({ id: orgInvitationsTable.id }).from(orgInvitationsTable)
-    .where(and(
-      eq(orgInvitationsTable.orgId, orgId),
-      eq(orgInvitationsTable.email, cleanEmail),
-      isNull(orgInvitationsTable.acceptedAt),
-    ));
-  if (pendingInv) {
-    res.status(409).json({ error: "Ya hay una invitación pendiente para este email.", hasPendingInvitation: true });
-    return;
-  }
-
-  const token = randomUUID();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-  const [inv] = await db.insert(orgInvitationsTable).values({
-    orgId,
-    invitedBy: req.userId!,
-    email: cleanEmail,
-    role,
-    token,
-    expiresAt,
-  }).returning();
-
-  // Fire invitation email asynchronously — non-blocking
-  const baseUrl  = req.get("origin") || `https://${req.get("host")}`;
-  const acceptUrl = `${baseUrl}/invite/${inv.token}`;
-  Promise.all([
-    db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId)),
-    db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, req.userId!)),
-  ]).then(([[org], [inviter]]) =>
-    sendInvitationEmail({
-      to:          inv.email,
-      inviterName: inviter?.name ?? null,
-      orgName:     org?.name ?? "Tu organización",
-      role:        inv.role,
-      acceptUrl,
-      expiresAt:   inv.expiresAt,
-    }),
-  ).catch(err => console.error("[Email] Invitation send failed:", String(err)));
-
-  await logAudit({
-    actorClerkId: req.clerkUserId!,
-    action:       "workspace_user_invited",
-    resource:     "workspace",
-    resourceId:   String(orgId),
-    details:      { email: cleanEmail, role, name, invitationId: inv.id },
-    severity:     "info",
-    req,
-  });
-
-  res.status(201).json({
-    ok: true,
-    invited: true,
-    email: cleanEmail,
-    role,
-    invitationId: inv.id,
-    token: inv.token,
-    expiresAt: inv.expiresAt.toISOString(),
-    message: "Invitación enviada. El usuario recibirá un email para unirse al Workspace.",
-  });
 });
 
 // ── POST /workspaces/:id/remove-user/:clerkId ─────────────────────────────────
