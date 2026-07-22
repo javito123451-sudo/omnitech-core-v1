@@ -6,6 +6,8 @@ import { hasPlatformRole } from "./superAdmin";
 import { enterSupportMode, resolvePermissions } from "./permissions";
 import { logAudit } from "../utils/auditLogger";
 
+// ── Platform-role cache piggybacks on superAdmin's 5-min TTL via hasPlatformRole ─
+
 declare global {
   namespace Express {
     interface Request {
@@ -55,6 +57,14 @@ export const resolveOrg = async (req: Request, res: Response, next: NextFunction
     if (!user) {
       res.status(403).json({ error: "User not provisioned. Call /api/auth/me first." });
       return;
+    }
+
+    // ── Set isSuperAdmin globally so requirePermission bypass works everywhere ──
+    // hasPlatformRole is cached in superAdmin.ts (5-min TTL) — negligible overhead.
+    const platformRole = await hasPlatformRole(clerkUserId);
+    if (platformRole === "SUPER_ADMIN" || platformRole === "STAFF_OMNITECH") {
+      req.isSuperAdmin = true;
+      req.platformRole = platformRole;
     }
 
     if (user.status === "suspended") {

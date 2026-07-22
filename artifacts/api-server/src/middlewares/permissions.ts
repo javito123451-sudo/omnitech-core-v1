@@ -29,6 +29,7 @@ export type Permission =
   // Workspace
   | "workspace.view"
   | "workspace.edit"
+  | "workspace.manage"
   | "workspace.delete"
   // CRM
   | "crm.read"
@@ -67,6 +68,9 @@ export type Permission =
   | "ai.write"
   | "memory.read"
   | "memory.write"
+  // Automations / Autopilot
+  | "automations.read"
+  | "automations.write"
   // Integrations
   | "integrations.read"
   | "integrations.write"
@@ -94,7 +98,7 @@ export type Permission =
 
 const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
   owner: [
-    "workspace.view", "workspace.edit", "workspace.delete",
+    "workspace.view", "workspace.edit", "workspace.manage", "workspace.delete",
     "crm.read", "crm.write", "crm.delete", "crm.assign",
     "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
     "accounting.read", "accounting.write", "accounting.delete", "accounting.approve",
@@ -104,6 +108,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "whatsapp.read", "whatsapp.write",
     "telegram.read", "telegram.write",
     "ai.read", "ai.write", "memory.read", "memory.write",
+    "automations.read", "automations.write",
     "integrations.read", "integrations.write",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
@@ -111,7 +116,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "portal.read", "portal.write",
   ],
   admin: [
-    "workspace.view", "workspace.edit",
+    "workspace.view", "workspace.edit", "workspace.manage",
     "crm.read", "crm.write", "crm.delete", "crm.assign",
     "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
     "accounting.read", "accounting.write", "accounting.delete",
@@ -120,11 +125,30 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "whatsapp.read", "whatsapp.write",
     "telegram.read", "telegram.write",
     "ai.read", "ai.write", "memory.read", "memory.write",
+    "automations.read", "automations.write",
     "integrations.read", "integrations.write",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
     "portal.read", "portal.write",
+  ],
+  // MANAGER: like admin but cannot invite users or delete accounting records
+  manager: [
+    "workspace.view", "workspace.edit", "workspace.manage",
+    "crm.read", "crm.write", "crm.delete", "crm.assign",
+    "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
+    "accounting.read", "accounting.write",
+    "calendar.read", "calendar.write", "calendar.delete",
+    "messages.read", "messages.write",
+    "whatsapp.read", "whatsapp.write",
+    "telegram.read", "telegram.write",
+    "ai.read", "ai.write", "memory.read", "memory.write",
+    "automations.read", "automations.write",
+    "integrations.read",
+    "analytics.read", "executive.read",
+    "settings.read",
+    "users.read",
+    "portal.read",
   ],
   member: [
     "workspace.view",
@@ -136,11 +160,26 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "whatsapp.read", "whatsapp.write",
     "telegram.read", "telegram.write",
     "ai.read", "ai.write", "memory.read", "memory.write",
+    "automations.read", "automations.write",
     "integrations.read",
     "analytics.read",
     "settings.read",
     "users.read",
     "portal.read", "portal.write",
+  ],
+  vendedor: [
+    "workspace.view",
+    "crm.read", "crm.write",
+    "quotes.read", "quotes.write", "quotes.delete",
+    "calendar.read", "calendar.write",
+    "messages.read", "messages.write",
+    "whatsapp.read", "whatsapp.write",
+    "telegram.read", "telegram.write",
+    "ai.read", "memory.read",
+    "automations.read",
+    "analytics.read",
+    "settings.read",
+    "portal.read",
   ],
   read_only: [
     "workspace.view",
@@ -152,44 +191,14 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "whatsapp.read",
     "telegram.read",
     "ai.read", "memory.read",
+    "automations.read",
     "integrations.read",
     "analytics.read",
     "settings.read",
     "users.read",
-    "portal.read",
-  ],
-  vendedor: [
-    "workspace.view",
-    "crm.read", "crm.write",
-    "quotes.read", "quotes.write", "quotes.delete",
-    "calendar.read", "calendar.write",
-    "messages.read", "messages.write",
-    "whatsapp.read", "whatsapp.write",
-    "telegram.read", "telegram.write",
-    "ai.read", "memory.read",
-    "analytics.read",
-    "settings.read",
     "portal.read",
   ],
   cliente: [
-    "portal.read",
-  ],
-  // ── New workspace roles ───────────────────────────────────────────────
-  // MANAGER: like admin but cannot invite users
-  manager: [
-    "workspace.view", "workspace.edit",
-    "crm.read", "crm.write", "crm.delete", "crm.assign",
-    "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
-    "accounting.read", "accounting.write",
-    "calendar.read", "calendar.write", "calendar.delete",
-    "messages.read", "messages.write",
-    "whatsapp.read", "whatsapp.write",
-    "telegram.read", "telegram.write",
-    "ai.read", "ai.write", "memory.read", "memory.write",
-    "integrations.read",
-    "analytics.read", "executive.read",
-    "settings.read",
-    "users.read",
     "portal.read",
   ],
   // CLIENT: client portal read access only
@@ -261,16 +270,35 @@ export function requirePermission(...required: Permission[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     // Must have org context first
     if (!req.orgId && !req.supportSession) {
-      res.status(403).json({ error: "No organization context" });
+      const ctx = {
+        user:     req.clerkUserId ?? "unknown",
+        role:     req.effectiveRole ?? req.orgRole ?? "none",
+        orgId:    null,
+        endpoint: `${req.method} ${req.originalUrl}`,
+        reason:   "No hay contexto de organización (x-active-workspace no enviado o membresía no encontrada)",
+      };
+      console.warn(`[Permission] DENIED — no_org_context | ${JSON.stringify(ctx)}`);
+      res.status(403).json({ error: "no_org_context", ...ctx });
       return;
     }
 
+    const role = req.effectiveRole ?? req.orgRole ?? "none";
+
     for (const perm of required) {
       if (!hasPermission(req, perm)) {
-        res.status(403).json({
-          error:    "permission_denied",
+        const ctx = {
+          user:       req.clerkUserId ?? "unknown",
+          role,
+          orgId:      req.orgId ?? null,
+          endpoint:   `${req.method} ${req.originalUrl}`,
           permission: perm,
-          message:  `No tienes permiso para ${perm}. Contacta con tu administrador.`,
+          reason:     `El rol "${role}" no tiene el permiso "${perm}"`,
+        };
+        console.warn(`[Permission] DENIED — permission_denied | ${JSON.stringify(ctx)}`);
+        res.status(403).json({
+          error:   "permission_denied",
+          message: `No tienes permiso para realizar esta acción (${perm}). Contacta con tu administrador.`,
+          ...ctx,
         });
         return;
       }
