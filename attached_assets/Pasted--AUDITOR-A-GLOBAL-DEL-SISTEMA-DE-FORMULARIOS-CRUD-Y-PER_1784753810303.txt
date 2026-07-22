@@ -1,0 +1,111 @@
+# AUDITORÍA GLOBAL DEL SISTEMA DE FORMULARIOS, CRUD Y PERMISOS
+
+No quiero corregir únicamente el formulario de "Nueva condición" de Autopilot.
+
+Quiero realizar una auditoría completa de todos los formularios de OmniTech Core que utilicen la misma arquitectura.
+
+PROBLEMA DETECTADO
+
+Al crear una nueva condición en Autopilot, el backend responde:
+
+HTTP 403 Forbidden
+
+Esto indica un posible problema estructural en el sistema de permisos, validaciones o endpoints reutilizados por otros módulos.
+
+OBJETIVO
+
+Encontrar todos los formularios y acciones que utilicen el mismo patrón de implementación y corregir el problema de forma global.
+
+AUDITORÍA
+
+Analizar todos los módulos:
+
+- CRM
+- Clientes
+- Leads
+- Presupuestos
+- Facturas
+- Calendario
+- Tareas
+- Autopilot
+- Integraciones
+- Agentes IA
+- Usuarios
+- Workspaces
+- Configuración
+- Automatizaciones
+- Cualquier otro módulo con formularios CRUD
+
+Revisar todas las operaciones:
+
+- Crear
+- Editar
+- Eliminar
+- Duplicar
+- Cambiar estado
+- Guardar configuración
+
+Comprobar:
+
+- Endpoints
+- Middleware de autenticación
+- Middleware de autorización
+- RBAC
+- Permisos por Workspace
+- Permisos Owner/Admin/Miembro
+- Validaciones
+- Tokens CSRF/JWT
+- Organización activa
+- Workspace activo
+
+OBJETIVO
+
+Eliminar cualquier 403 incorrecto provocado por errores de implementación.
+
+Un usuario con permisos suficientes debe poder realizar todas las acciones permitidas sin bloqueos.
+
+No eliminar la seguridad.
+
+Corregir únicamente la lógica de autorización.
+
+FRONTEND
+
+Revisar todos los formularios reutilizados.
+
+Comprobar:
+
+- llamadas API
+- rutas
+- payload
+- validaciones
+- manejo de errores
+- componentes reutilizados
+
+BACKEND
+
+Revisar todos los endpoints CRUD.
+
+Detectar patrones repetidos.
+
+Centralizar la lógica de permisos para evitar inconsistencias entre módulos.
+
+LOGS
+
+Cuando un acceso sea rechazado registrar:
+
+- Usuario
+- Rol
+- Workspace
+- Endpoint
+- Acción
+- Motivo exacto del rechazo
+
+Nunca devolver únicamente HTTP 403 sin explicar la causa.
+
+RESULTADO FINAL
+
+Quiero que OmniTech Core tenga un sistema de permisos consistente en todos los módulos.
+
+Si un mismo componente o patrón se utiliza en varios formularios, la corrección debe aplicarse automáticamente a todos ellos.
+
+Antes de modificar código, realiza una auditoría completa, identifica todos los módulos afectados y aplica una solución global, evitando parches específicos para un único formulario.

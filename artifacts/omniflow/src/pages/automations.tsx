@@ -6,7 +6,8 @@ import { authFetch } from "@/lib/authFetch";
 import {
   Zap, Plus, Play, Pause, Trash2, Clock, CheckCircle2,
   XCircle, ChevronRight, X, Loader2, History, Bot,
-  RefreshCw, Calendar, Users, FileText, Brain,
+  RefreshCw, Calendar, Users, FileText, Brain, Bell, Globe,
+  MessageCircle, Send, Mail, Hash,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -51,9 +52,19 @@ const TRIGGER_LABELS: Record<string, string> = {
 const ACTION_LABELS: Record<string, string> = {
   strategic_brief:      "Briefing estratégico",
   notify_owner:         "Notificar al propietario",
-  send_whatsapp:        "Enviar WhatsApp",
+  send_notification:    "Enviar Notificación",
   create_task:          "Crear seguimiento (actividad)",
   update_client_status: "Actualizar estado de cliente",
+};
+
+const CHANNEL_ICONS: Record<string, React.ElementType> = {
+  auto:     Zap,
+  internal: Bell,
+  telegram: Send,
+  whatsapp: MessageCircle,
+  email:    Mail,
+  slack:    Hash,
+  all:      Globe,
 };
 
 const TRIGGERS = Object.entries(TRIGGER_LABELS);
@@ -87,7 +98,7 @@ const TEMPLATES: Template[] = [
     triggerType:   "inactive_clients_30d",
     triggerConfig: { days: 30 },
     actionType:    "notify_owner",
-    actionConfig:  {},
+    actionConfig:  { channels: ["auto"] },
     icon:          Users,
     color:         "text-amber-400 bg-amber-400/10 border-amber-400/25",
     description:   "Alerta cuando clientes llevan 30+ días sin actividad.",
@@ -97,7 +108,7 @@ const TEMPLATES: Template[] = [
     triggerType:   "quotes_expiring_7d",
     triggerConfig: { days: 7 },
     actionType:    "notify_owner",
-    actionConfig:  {},
+    actionConfig:  { channels: ["auto"] },
     icon:          FileText,
     color:         "text-rose-400 bg-rose-400/10 border-rose-400/25",
     description:   "Avisa cuando hay presupuestos enviados que vencen en 7 días.",
@@ -112,7 +123,68 @@ const TEMPLATES: Template[] = [
     color:         "text-cyan-400 bg-cyan-400/10 border-cyan-400/25",
     description:   "Crea actividades de seguimiento cuando leads llevan 7 días sin contacto.",
   },
+  {
+    name:          "Notificación multicanal",
+    triggerType:   "daily",
+    triggerConfig: {},
+    actionType:    "send_notification",
+    actionConfig:  { channels: ["auto"], recipient: "", message: "Recordatorio automático de Ava Autopilot" },
+    icon:          Bell,
+    color:         "text-sky-400 bg-sky-400/10 border-sky-400/25",
+    description:   "Envía un mensaje por el mejor canal disponible (Telegram, WhatsApp, Email…).",
+  },
 ];
+
+// ── Channel option type (from API) ────────────────────────────────────────────
+type ChannelOption = { slug: string; label: string; icon: string };
+
+// ── ChannelPicker — multi-select for notification channels ───────────────────
+function ChannelPicker({
+  available,
+  selected,
+  onChange,
+}: {
+  available: ChannelOption[];
+  selected:  string[];
+  onChange:  (next: string[]) => void;
+}) {
+  const toggle = (slug: string) => {
+    // "auto" and "all" are exclusive — selecting them deselects everything else
+    if (slug === "auto" || slug === "all") {
+      onChange([slug]);
+      return;
+    }
+    // Selecting a specific channel removes "auto" / "all"
+    const base = selected.filter(s => s !== "auto" && s !== "all");
+    if (base.includes(slug)) onChange(base.filter(s => s !== slug) || ["auto"]);
+    else onChange([...base, slug]);
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {available.map(ch => {
+        const Icon = CHANNEL_ICONS[ch.slug] ?? Bell;
+        const active = selected.includes(ch.slug);
+        return (
+          <button
+            key={ch.slug}
+            type="button"
+            onClick={() => toggle(ch.slug)}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-all",
+              active
+                ? "bg-primary/15 border-primary/40 text-primary"
+                : "bg-white/[0.03] border-white/[0.08] text-muted-foreground hover:border-white/20 hover:text-white",
+            )}
+          >
+            <Icon className="w-3 h-3" />
+            {ch.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // ── TaskModal ─────────────────────────────────────────────────────────────────
 function TaskModal({
@@ -126,13 +198,37 @@ function TaskModal({
 }) {
   const isEdit = !!initial?.id;
 
-  const [name,          setName]          = useState(initial?.name          ?? "");
-  const [triggerType,   setTriggerType]   = useState(initial?.triggerType   ?? "weekly");
-  const [triggerConfig, setTriggerConfig] = useState<Record<string, unknown>>(initial?.triggerConfig ?? {});
-  const [actionType,    setActionType]    = useState(initial?.actionType    ?? "strategic_brief");
-  const [actionConfig,  setActionConfig]  = useState<Record<string, unknown>>(initial?.actionConfig  ?? {});
-  const [saving,        setSaving]        = useState(false);
-  const [error,         setError]         = useState("");
+  const [name,             setName]             = useState(initial?.name          ?? "");
+  const [triggerType,      setTriggerType]      = useState(initial?.triggerType   ?? "weekly");
+  const [triggerConfig,    setTriggerConfig]    = useState<Record<string, unknown>>(initial?.triggerConfig ?? {});
+  const [actionType,       setActionType]       = useState(initial?.actionType    ?? "strategic_brief");
+  const [actionConfig,     setActionConfig]     = useState<Record<string, unknown>>(initial?.actionConfig  ?? {});
+  const [saving,           setSaving]           = useState(false);
+  const [error,            setError]            = useState("");
+  const [availableChannels, setAvailableChannels] = useState<ChannelOption[]>([]);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>(() => {
+    const raw = initial?.actionConfig?.["channels"];
+    if (Array.isArray(raw) && raw.length > 0) return raw as string[];
+    return ["auto"];
+  });
+
+  // Fetch workspace channels whenever the modal mounts
+  useEffect(() => {
+    authFetch(`${API_BASE}/api/autopilot/channels`)
+      .then(r => r.json())
+      .then((d: unknown) => {
+        const data = d as { channels?: ChannelOption[] };
+        if (Array.isArray(data.channels)) setAvailableChannels(data.channels);
+      })
+      .catch(() => {/* non-critical */});
+  }, []);
+
+  // Sync selectedChannels → actionConfig.channels whenever they change
+  useEffect(() => {
+    if (actionType === "send_notification" || actionType === "notify_owner" || actionType === "strategic_brief") {
+      setActionConfig(prev => ({ ...prev, channels: selectedChannels }));
+    }
+  }, [selectedChannels, actionType]);
 
   const handleSave = async () => {
     if (!name.trim()) { setError("El nombre es requerido."); return; }
@@ -161,6 +257,11 @@ function TaskModal({
     }
   };
 
+  // Show channels picker for notification-related actions
+  const showChannelPicker = actionType === "send_notification"
+    || actionType === "notify_owner"
+    || actionType === "strategic_brief";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <motion.div
@@ -182,12 +283,14 @@ function TaskModal({
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {/* ── Name ── */}
           <div>
             <label className="text-xs text-muted-foreground mb-1.5 block">Nombre</label>
             <Input value={name} onChange={e => setName(e.target.value)}
               placeholder="Ej: Briefing lunes" className="bg-background/50 border-border" />
           </div>
 
+          {/* ── Trigger ── */}
           <div>
             <label className="text-xs text-muted-foreground mb-1.5 block">Disparador</label>
             <select
@@ -205,8 +308,7 @@ function TaskModal({
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block">Días de umbral</label>
               <Input
-                type="number"
-                min={1}
+                type="number" min={1}
                 value={String(triggerConfig["days"] ?? (triggerType === "quotes_expiring_7d" ? 7 : 30))}
                 onChange={e => setTriggerConfig({ days: Number(e.target.value) })}
                 className="bg-background/50 border-border"
@@ -214,11 +316,12 @@ function TaskModal({
             </div>
           )}
 
+          {/* ── Action ── */}
           <div>
             <label className="text-xs text-muted-foreground mb-1.5 block">Acción</label>
             <select
               value={actionType}
-              onChange={e => { setActionType(e.target.value); setActionConfig({}); }}
+              onChange={e => { setActionType(e.target.value); setActionConfig({}); setSelectedChannels(["auto"]); }}
               className="w-full text-sm bg-background/50 border border-border rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-primary/50"
             >
               {ACTIONS.map(([val, label]) => (
@@ -227,44 +330,65 @@ function TaskModal({
             </select>
           </div>
 
-          {(actionType === "notify_owner" || actionType === "strategic_brief") && (
+          {/* ── Channel picker — shown for all notification actions ── */}
+          {showChannelPicker && availableChannels.length > 0 && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-2 block">
+                Canal de envío
+                {selectedChannels.includes("auto") && (
+                  <span className="ml-2 text-primary/70 text-[10px]">
+                    (automático: Telegram → WhatsApp → Email → interno)
+                  </span>
+                )}
+              </label>
+              <ChannelPicker
+                available={availableChannels}
+                selected={selectedChannels}
+                onChange={setSelectedChannels}
+              />
+            </div>
+          )}
+
+          {/* ── Recipient — shown for send_notification, notify_owner, strategic_brief ── */}
+          {showChannelPicker && (
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block">
-                Teléfono propietario <span className="text-[10px] opacity-60">(WhatsApp, opcional)</span>
+                Destinatario
+                <span className="ml-1.5 text-[10px] opacity-50">
+                  {selectedChannels.includes("telegram") ? "Chat ID de Telegram" :
+                   selectedChannels.includes("whatsapp") ? "+34600000000 (WhatsApp)" :
+                   selectedChannels.includes("email")    ? "email@ejemplo.com" :
+                   "Teléfono, Chat ID o Email (según canal)"}
+                </span>
               </label>
               <Input
-                value={String(actionConfig["owner_phone"] ?? "")}
-                onChange={e => setActionConfig(prev => ({ ...prev, owner_phone: e.target.value }))}
-                placeholder="+34600000000"
+                value={String(actionConfig["recipient"] ?? actionConfig["owner_phone"] ?? "")}
+                onChange={e => setActionConfig(prev => ({ ...prev, recipient: e.target.value, owner_phone: e.target.value }))}
+                placeholder={
+                  selectedChannels.includes("telegram") ? "Ej: 123456789" :
+                  selectedChannels.includes("email")    ? "Ej: propietario@empresa.com" :
+                  "Ej: +34600000000"
+                }
                 className="bg-background/50 border-border"
               />
             </div>
           )}
 
-          {actionType === "send_whatsapp" && (
-            <>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">Teléfono destino</label>
-                <Input
-                  value={String(actionConfig["phone"] ?? "")}
-                  onChange={e => setActionConfig(prev => ({ ...prev, phone: e.target.value }))}
-                  placeholder="+34600000000"
-                  className="bg-background/50 border-border"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">Mensaje</label>
-                <textarea
-                  value={String(actionConfig["message"] ?? "")}
-                  onChange={e => setActionConfig(prev => ({ ...prev, message: e.target.value }))}
-                  placeholder="Escribe el mensaje que se enviará…"
-                  rows={3}
-                  className="w-full text-sm bg-background/50 border border-border rounded-lg px-3 py-2.5 text-white placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50"
-                />
-              </div>
-            </>
+          {/* ── Message — for send_notification only ── */}
+          {actionType === "send_notification" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">Mensaje</label>
+              <textarea
+                value={String(actionConfig["message"] ?? "")}
+                onChange={e => setActionConfig(prev => ({ ...prev, message: e.target.value }))}
+                placeholder="Escribe el mensaje que se enviará…"
+                rows={3}
+                className="w-full text-sm bg-background/50 border border-border rounded-lg px-3 py-2.5 text-white placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
           )}
 
+          {/* ── create_task ── */}
           {actionType === "create_task" && (
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block">Nota de seguimiento</label>
@@ -277,6 +401,7 @@ function TaskModal({
             </div>
           )}
 
+          {/* ── update_client_status ── */}
           {actionType === "update_client_status" && (
             <>
               <div>

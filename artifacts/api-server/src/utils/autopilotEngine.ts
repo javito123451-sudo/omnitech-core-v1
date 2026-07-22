@@ -9,7 +9,8 @@ import {
 } from "@workspace/db";
 import { eq, and, lt, lte, gte, desc, or, sql } from "drizzle-orm";
 import { executeCrmTool } from "../routes/chat";
-import { sendAutoReply } from "../routes/whatsapp";
+import { NotificationService } from "../services/notificationService";
+import type { NotifChannel } from "../services/notificationService";
 
 // ── Label maps ────────────────────────────────────────────────────────────────
 export const TRIGGER_LABELS: Record<string, string> = {
@@ -23,7 +24,9 @@ export const TRIGGER_LABELS: Record<string, string> = {
 export const ACTION_LABELS: Record<string, string> = {
   strategic_brief:      "Briefing estratégico",
   notify_owner:         "Notificar al propietario",
-  send_whatsapp:        "Enviar WhatsApp",
+  send_notification:    "Enviar Notificación",
+  // Legacy — kept for display compatibility; engine migrates to send_notification
+  send_whatsapp:        "Enviar Notificación (WA)",
   create_task:          "Crear seguimiento (actividad)",
   update_client_status: "Actualizar estado de cliente",
 };
@@ -60,21 +63,16 @@ async function hasExpiringQuotes(orgId: number, days: number): Promise<boolean> 
 }
 
 // ── shouldRunTask — evaluates time AND CRM conditions ─────────────────────────
-// Returns true only when the task is due AND (for condition-based triggers)
-// the CRM condition is actually met.
 export async function shouldRunTask(task: AutopilotTask): Promise<boolean> {
   const now = new Date();
   const trigCfg = (task.triggerConfig ?? {}) as Record<string, unknown>;
 
   // ── condition-based triggers ─────────────────────────────────────────────
   if (task.triggerType === "inactive_clients_30d" || task.triggerType === "quotes_expiring_7d") {
-    // Rate-limit: run at most once per 23 h
     if (task.lastRunAt) {
       const hoursAgo = (now.getTime() - task.lastRunAt.getTime()) / 3_600_000;
       if (hoursAgo < 23) return false;
     }
-
-    // Evaluate the actual CRM condition before running
     if (task.triggerType === "inactive_clients_30d") {
       const days = Number(trigCfg["days"] ?? 30);
       return hasInactiveClients(task.orgId, days);
@@ -85,7 +83,7 @@ export async function shouldRunTask(task: AutopilotTask): Promise<boolean> {
     }
   }
 
-  // ── time-based triggers: compare nextRunAt with current time ─────────────
+  // ── time-based triggers ───────────────────────────────────────────────────
   if (!task.nextRunAt) return true;
   return now >= task.nextRunAt;
 }
@@ -94,10 +92,10 @@ export async function shouldRunTask(task: AutopilotTask): Promise<boolean> {
 export function calcNextRunAt(triggerType: string): Date {
   const now = new Date();
   switch (triggerType) {
-    case "daily":   return new Date(now.getTime() + 24       * 3_600_000);
-    case "weekly":  return new Date(now.getTime() + 7 * 24   * 3_600_000);
-    case "monthly": return new Date(now.getTime() + 30 * 24  * 3_600_000);
-    default:        return new Date(now.getTime() + 23       * 3_600_000); // condition-based
+    case "daily":   return new Date(now.getTime() + 24      * 3_600_000);
+    case "weekly":  return new Date(now.getTime() + 7 * 24  * 3_600_000);
+    case "monthly": return new Date(now.getTime() + 30 * 24 * 3_600_000);
+    default:        return new Date(now.getTime() + 23      * 3_600_000);
   }
 }
 
@@ -109,7 +107,7 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
 
   switch (task.actionType) {
 
-    // ── strategic_brief: call shared executeCrmTool, log + optional WhatsApp ─
+    // ── strategic_brief: AI brief → NotificationService ──────────────────────
     case "strategic_brief": {
       const jsonResult = await executeCrmTool("get_strategic_brief", {}, orgId);
       type BriefData = {
@@ -118,7 +116,6 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
         main_risks?: string[];
       };
       const data = JSON.parse(jsonResult) as BriefData;
-
       if (data.error) return `Briefing no disponible: ${data.error}`;
 
       const k = data.kpis;
@@ -131,23 +128,28 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
 
       await db.insert(activityTable).values({ orgId, type: "autopilot_brief", description: summary, clientName: null });
 
-      const phone = cfg["owner_phone"] as string | undefined;
-      if (phone) await sendAutoReply(orgId, phone, summary);
+      // Notify via NotificationService — respects workspace integrations
+      const recipient = (cfg["recipient"] as string | undefined) ?? (cfg["owner_phone"] as string | undefined) ?? "";
+      const channels  = parseChannels(cfg["channels"]);
+      if (recipient) {
+        const results = await NotificationService.send({ orgId, channels, to: recipient, message: summary });
+        return `${summary} | ${NotificationService.summarize(results)}`;
+      }
 
       return summary;
     }
 
-    // ── notify_owner: log + optional WhatsApp via shared sendAutoReply ────────
+    // ── notify_owner: context-aware alert → NotificationService ───────────────
     case "notify_owner": {
-      const phone   = cfg["owner_phone"] as string | undefined;
-      const message = cfg["message"]     as string | undefined ?? "Notificación de Ava Autopilot";
+      const recipient = (cfg["recipient"] as string | undefined) ?? (cfg["owner_phone"] as string | undefined) ?? "";
+      const channels  = parseChannels(cfg["channels"]);
+      const baseMsg   = (cfg["message"] as string | undefined) ?? "Notificación de Ava Autopilot";
 
-      // For condition-triggered tasks, build a context-aware message
-      let contextMsg = message;
+      let contextMsg = baseMsg;
       if (task.triggerType === "inactive_clients_30d") {
-        const days = Number(trigCfg["days"] ?? 30);
+        const days   = Number(trigCfg["days"] ?? 30);
         const cutoff = new Date(now.getTime() - days * 86_400_000);
-        const rows = await db.select({ name: clientsTable.name })
+        const rows   = await db.select({ name: clientsTable.name })
           .from(clientsTable)
           .where(and(
             eq(clientsTable.orgId, orgId),
@@ -160,7 +162,7 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
       } else if (task.triggerType === "quotes_expiring_7d") {
         const days   = Number(trigCfg["days"] ?? 7);
         const cutoff = new Date(now.getTime() + days * 86_400_000);
-        const rows = await db.select({ title: quotesTable.title, validUntil: quotesTable.validUntil })
+        const rows   = await db.select({ title: quotesTable.title, validUntil: quotesTable.validUntil })
           .from(quotesTable)
           .where(and(eq(quotesTable.orgId, orgId), eq(quotesTable.status, "sent"), lte(quotesTable.validUntil, cutoff), gte(quotesTable.validUntil, now)))
           .orderBy(quotesTable.validUntil)
@@ -170,38 +172,36 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
         }
       }
 
-      let result = `Notificación registrada: ${contextMsg}`;
-      if (phone) {
-        const sent = await sendAutoReply(orgId, phone, contextMsg);
-        result = sent
-          ? `WhatsApp enviado a ${phone}: ${contextMsg.slice(0, 80)}…`
-          : `Fallo al enviar WhatsApp a ${phone} — registrado localmente`;
+      await db.insert(activityTable).values({ orgId, type: "autopilot_notify", description: contextMsg, clientName: null });
+
+      if (recipient) {
+        const results = await NotificationService.send({ orgId, channels, to: recipient, message: contextMsg });
+        return `${contextMsg.slice(0, 120)} | ${NotificationService.summarize(results)}`;
       }
-
-      await db.insert(activityTable).values({ orgId, type: "autopilot_notify", description: result, clientName: null });
-      return result;
+      return `Notificación registrada: ${contextMsg}`;
     }
 
-    // ── send_whatsapp: direct message via shared sendAutoReply ───────────────
+    // ── send_notification: universal multi-channel dispatch ───────────────────
+    case "send_notification":
+    // Legacy alias — FIX-AE migrates DB rows but handle in-flight ones defensively
     case "send_whatsapp": {
-      const phone   = cfg["phone"]   as string | undefined;
-      const message = cfg["message"] as string | undefined ?? "Mensaje automático de Ava";
+      const recipient = (cfg["recipient"] as string | undefined) ?? (cfg["phone"] as string | undefined) ?? "";
+      const message   = (cfg["message"] as string | undefined) ?? "Mensaje automático de Ava";
+      const channels  = parseChannels(cfg["channels"] ?? (task.actionType === "send_whatsapp" ? ["whatsapp"] : ["auto"]));
 
-      if (!phone) return "Error: falta el número de teléfono en la configuración.";
+      if (!recipient) return "Error: falta el destinatario en la configuración.";
 
-      const sent = await sendAutoReply(orgId, phone, message);
-      const result = sent
-        ? `WhatsApp enviado a ${phone}`
-        : `Fallo al enviar WhatsApp a ${phone}`;
+      const results = await NotificationService.send({ orgId, channels, to: recipient, message });
+      const summary = NotificationService.summarize(results);
 
-      await db.insert(activityTable).values({ orgId, type: "autopilot_whatsapp", description: result, clientName: null });
-      return result;
+      await db.insert(activityTable).values({ orgId, type: "autopilot_notification", description: summary, clientName: null });
+      return summary;
     }
 
-    // ── create_task: create follow-up activity entries for affected clients ──
+    // ── create_task: follow-up activities for stale clients ───────────────────
     case "create_task": {
       const days   = Number(trigCfg["days"] ?? 30);
-      const note   = cfg["note"] as string | undefined ?? "Seguimiento automático por Ava Autopilot";
+      const note   = (cfg["note"] as string | undefined) ?? "Seguimiento automático por Ava Autopilot";
       const cutoff = new Date(now.getTime() - days * 86_400_000);
 
       const staleClients = await db
@@ -233,11 +233,11 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
       return `✅ Seguimientos creados para ${staleClients.length} cliente(s): ${names}${staleClients.length > 3 ? ` y ${staleClients.length - 3} más` : ""}`;
     }
 
-    // ── update_client_status: bulk-update stale clients in the DB ─────────────
+    // ── update_client_status: bulk-update stale clients ───────────────────────
     case "update_client_status": {
       const days       = Number(trigCfg["days"]      ?? 30);
-      const fromStatus = cfg["from_status"] as string | undefined ?? "lead";
-      const toStatus   = cfg["to_status"]   as string | undefined ?? "inactive";
+      const fromStatus = (cfg["from_status"] as string | undefined) ?? "lead";
+      const toStatus   = (cfg["to_status"]   as string | undefined) ?? "inactive";
       const cutoff     = new Date(now.getTime() - days * 86_400_000);
 
       const targets = await db
@@ -266,17 +266,20 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
       return summary;
     }
 
-    // ── unrecognized action ───────────────────────────────────────────────────
     default:
       return `Acción no reconocida: ${task.actionType}`;
   }
 }
 
+// ── parseChannels — normalise actionConfig.channels to NotifChannel[] ─────────
+function parseChannels(raw: unknown): NotifChannel[] {
+  if (Array.isArray(raw) && raw.length > 0) return raw as NotifChannel[];
+  if (typeof raw === "string" && raw) return [raw as NotifChannel];
+  return ["auto"];
+}
+
 // ── runAutopilotTask — idempotent execution with in-flight guard ──────────────
-// nextRunAt is advanced ONLY after successful completion so that failed tasks
-// remain eligible for retry on the next scheduler tick.
 export async function runAutopilotTask(task: AutopilotTask): Promise<void> {
-  // 1. Idempotency guard: skip if a run is already in progress for this task
   const inflight = await db
     .select({ id: autopilotRunsTable.id })
     .from(autopilotRunsTable)
@@ -284,8 +287,6 @@ export async function runAutopilotTask(task: AutopilotTask): Promise<void> {
     .limit(1);
   if (inflight.length > 0) return;
 
-  // 2. Insert run record as "running" — this acts as the distributed lock
-  //    so a concurrent scheduler tick sees the in-flight guard above.
   const [run] = await db
     .insert(autopilotRunsTable)
     .values({ taskId: task.id, orgId: task.orgId, status: "running" })
@@ -294,8 +295,6 @@ export async function runAutopilotTask(task: AutopilotTask): Promise<void> {
 
   try {
     const result = await executeAction(task, task.orgId);
-
-    // 3. On success: mark run complete AND advance nextRunAt
     const nextRunAt = calcNextRunAt(task.triggerType);
     await Promise.all([
       db.update(autopilotRunsTable)
@@ -306,11 +305,6 @@ export async function runAutopilotTask(task: AutopilotTask): Promise<void> {
         .where(eq(autopilotTasksTable.id, task.id)),
     ]);
   } catch (err) {
-    // 4. On failure: mark run as error only.
-    //    Do NOT touch lastRunAt — shouldRunTask() uses lastRunAt to enforce
-    //    the 23h cooldown for condition-based triggers. Updating it here would
-    //    suppress retries for up to 23h instead of allowing the next minute tick
-    //    to retry immediately.
     const msg = err instanceof Error ? err.message : String(err);
     await db.update(autopilotRunsTable)
       .set({ status: "error", completedAt: new Date(), errorMessage: msg.slice(0, 500) })

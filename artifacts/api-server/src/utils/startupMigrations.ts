@@ -865,6 +865,25 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info("[Migration] ✅ FIX-AC: notifications table ensured");
     }
 
+    // ── FIX-AE: Migrate legacy send_whatsapp tasks → send_notification (channel: whatsapp)
+    {
+      await db.execute(sql`
+        UPDATE autopilot_tasks
+        SET
+          action_type   = 'send_notification',
+          action_config = jsonb_set(
+            COALESCE(action_config::jsonb, '{}'::jsonb),
+            '{channels}',
+            '["whatsapp"]'::jsonb
+          ) || jsonb_build_object(
+            'recipient', COALESCE(action_config::jsonb->>'phone', ''),
+            'message',   COALESCE(action_config::jsonb->>'message', 'Mensaje automático de Ava')
+          )
+        WHERE action_type = 'send_whatsapp'
+      `);
+      logger.info("[Migration] ✅ FIX-AE: Legacy send_whatsapp tasks migrated → send_notification");
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

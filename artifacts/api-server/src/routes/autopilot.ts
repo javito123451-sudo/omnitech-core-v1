@@ -2,12 +2,44 @@ import { Router } from "express";
 import { db, autopilotTasksTable, autopilotRunsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import type { Request, Response } from "express";
+import { getActiveChannels } from "../services/notificationService";
 
 type AuthReq = Request & { orgId?: number; userId?: number };
 
 export const autopilotRouter = Router();
 
 import { requirePermission } from "../middlewares/permissions";
+
+// ── GET /api/autopilot/channels — active integration slugs for this workspace ─
+autopilotRouter.get("/channels", requirePermission("automations.read"), async (req: AuthReq, res: Response) => {
+  const orgId = req.orgId!;
+  try {
+    const slugs = await getActiveChannels(orgId);
+    // Map slugs to human labels; only expose messaging-capable channels
+    const CHANNEL_META: Record<string, { label: string; icon: string }> = {
+      telegram:  { label: "Telegram",             icon: "Send"     },
+      whatsapp:  { label: "WhatsApp",              icon: "MessageCircle" },
+      email:     { label: "Email",                 icon: "Mail"     },
+      slack:     { label: "Slack",                 icon: "Hash"     },
+      teams:     { label: "Microsoft Teams",       icon: "Users"    },
+    };
+    const channels = [
+      // Always include the special modes first
+      { slug: "auto",     label: "Automático (mejor canal disponible)", icon: "Zap"     },
+      { slug: "internal", label: "Notificación interna",                icon: "Bell"    },
+      // Then the workspace's active integrations
+      ...slugs
+        .filter(s => s in CHANNEL_META)
+        .map(s => ({ slug: s, ...(CHANNEL_META[s]!) })),
+      // "Todos" at the end
+      { slug: "all",      label: "Todos los disponibles",              icon: "Globe"   },
+    ];
+    res.json({ channels, active: slugs });
+  } catch (err) {
+    console.error("[autopilot] GET /channels error:", err);
+    res.status(500).json({ error: "Error al obtener canales disponibles" });
+  }
+});
 
 // ── GET /api/autopilot/tasks ─────────────────────────────────────────────────
 autopilotRouter.get("/tasks", requirePermission("automations.read"), async (req: AuthReq, res: Response) => {

@@ -1,0 +1,275 @@
+# OMNITECH CORE
+## EVOLUCIÓN DE AUTOPILOT A MOTOR DE AUTOMATIZACIÓN MULTICANAL
+
+Quiero refactorizar OmniTech Autopilot para eliminar la dependencia de WhatsApp y convertirlo en un motor de automatización multicanal completamente integrado con el sistema de Integraciones de OmniTech Core.
+
+NO quiero añadir simplemente "Enviar Telegram".
+
+Quiero rediseñar la arquitectura para que Autopilot sea independiente del canal de comunicación.
+
+==========================================================
+PROBLEMA ACTUAL
+==========================================================
+
+Actualmente las acciones disponibles son:
+
+- Briefing estratégico
+- Notificar al propietario
+- Enviar WhatsApp
+- Crear seguimiento
+- Actualizar estado del cliente
+
+Esto obliga a modificar Autopilot cada vez que se añade un nuevo canal.
+
+La arquitectura no es escalable.
+
+==========================================================
+OBJETIVO
+==========================================================
+
+Eliminar la acción "Enviar WhatsApp".
+
+Sustituirla por una única acción universal:
+
+✅ Enviar Notificación
+
+Todas las comunicaciones deberán pasar por el sistema de Integraciones.
+
+Nunca directamente por WhatsApp.
+
+==========================================================
+NUEVA ARQUITECTURA
+==========================================================
+
+Acción:
+
+Enviar Notificación
+
+↓
+
+Canal
+
+○ Automático
+○ Telegram
+○ WhatsApp
+○ Email
+○ Slack
+○ Teams
+○ Notificación interna
+○ Todos los disponibles
+
+==========================================================
+MODO AUTOMÁTICO
+==========================================================
+
+Si el usuario selecciona:
+
+Canal Automático
+
+OmniTech decidirá automáticamente.
+
+Ejemplo:
+
+Si existe Telegram
+
+↓
+
+Enviar Telegram
+
+Si no existe Telegram
+
+↓
+
+Enviar WhatsApp
+
+Si no existe WhatsApp
+
+↓
+
+Enviar Email
+
+Si no existe Email
+
+↓
+
+Crear Notificación interna
+
+Todo sin intervención del usuario.
+
+==========================================================
+CANALES MÚLTIPLES
+==========================================================
+
+Permitir seleccionar varios canales simultáneamente.
+
+Ejemplo:
+
+☑ Telegram
+
+☑ Email
+
+☑ WhatsApp
+
+La automatización deberá enviar por todos los canales seleccionados.
+
+==========================================================
+INTEGRACIÓN CON WORKSPACE
+==========================================================
+
+Autopilot nunca debe mostrar canales que el Workspace no tenga configurados.
+
+Ejemplo:
+
+Workspace Empresa
+
+Telegram
+WhatsApp
+Email
+
+↓
+
+Solo mostrar esos.
+
+Workspace Familia
+
+Telegram
+
+↓
+
+Mostrar únicamente Telegram.
+
+==========================================================
+NOTIFICATION SERVICE
+==========================================================
+
+Crear un NotificationService centralizado.
+
+Autopilot nunca debe llamar directamente a:
+
+Telegram
+
+WhatsApp
+
+Email
+
+Slack
+
+Debe llamar únicamente a:
+
+NotificationService.send()
+
+NotificationService decidirá automáticamente qué Adapter utilizar según las integraciones activas del Workspace.
+
+==========================================================
+VALIDACIONES
+==========================================================
+
+Antes de enviar comprobar:
+
+✔ Integración activa.
+
+✔ Adapter HEALTHY.
+
+✔ Token válido.
+
+✔ Destinatario válido.
+
+✔ Permisos.
+
+✔ Workspace correcto.
+
+==========================================================
+GESTIÓN DE ERRORES
+==========================================================
+
+Si un canal falla:
+
+Registrar el error.
+
+Continuar con los demás.
+
+Nunca cancelar toda la automatización.
+
+Guardar historial.
+
+==========================================================
+HISTORIAL
+==========================================================
+
+Registrar:
+
+Fecha
+
+Hora
+
+Canal utilizado
+
+Resultado
+
+Tiempo
+
+Error
+
+Workspace
+
+Usuario
+
+==========================================================
+NUEVOS DISPARADORES
+==========================================================
+
+Preparar Autopilot para utilizar cualquier integración.
+
+Ejemplos:
+
+Telegram recibido
+
+WhatsApp recibido
+
+Nuevo Email
+
+Evento Calendar
+
+Pago Stripe
+
+Formulario Web
+
+Webhook
+
+Slack
+
+==========================================================
+ESCALABILIDAD
+==========================================================
+
+La arquitectura debe permitir añadir nuevos canales sin modificar Autopilot.
+
+Añadir un nuevo Adapter debe ser suficiente.
+
+==========================================================
+COMPATIBILIDAD
+==========================================================
+
+Las automatizaciones existentes deben seguir funcionando.
+
+Migrar automáticamente la acción:
+
+Enviar WhatsApp
+
+↓
+
+Enviar Notificación
+
+Canal:
+
+WhatsApp
+
+Sin perder configuraciones.
+
+==========================================================
+OBJETIVO FINAL
+==========================================================
+
+Autopilot debe convertirse en un motor universal de automatización multicanal basado en el sistema de Integraciones de OmniTech Core.
+
+El resultado esperado es que cualquier Workspace pueda automatizar acciones utilizando Telegram, WhatsApp, Email, Slack o cualquier futura integración sin modificar nuevamente la arquitectura.
