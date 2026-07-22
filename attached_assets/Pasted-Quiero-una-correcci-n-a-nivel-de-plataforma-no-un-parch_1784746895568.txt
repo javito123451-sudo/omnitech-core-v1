@@ -1,0 +1,58 @@
+Quiero una corrección a nivel de plataforma, no un parche para un Workspace concreto.
+
+Antes de realizar cambios, revisa los últimos logs de producción y el flujo completo de las integraciones.
+
+## Telegram
+
+Revisa la arquitectura de la integración para que cualquier Workspace nuevo pueda configurarla automáticamente y sin intervención manual.
+
+Objetivos:
+
+- Cada Workspace debe tener su configuración completamente independiente.
+- La integración debe funcionar para cualquier organización nueva.
+- No quiero crear ni corregir webhooks manualmente.
+- Todo el proceso debe ser automático y escalable.
+
+Revisar especialmente:
+
+- Creación automática de la configuración al activar Telegram.
+- Registro automático del webhook.
+- Asociación correcta entre Bot, Workspace y Organización.
+- Recepción de mensajes.
+- Envío de respuestas.
+- Persistencia de credenciales.
+- Flujo completo desde la activación hasta el primer mensaje.
+
+Corregir cualquier problema de arquitectura para que funcione en todos los Workspaces actuales y futuros.
+
+## WhatsApp
+
+Aunque la integración todavía no está terminada, deja preparada la misma arquitectura escalable para que cualquier Workspace pueda configurarla sin modificaciones manuales cuando esté finalizada.
+
+Además, implementar el procesamiento de notas de voz para WhatsApp.
+
+Cuando llegue un audio por WhatsApp:
+
+1. Descargar el audio.
+2. Transcribir automáticamente el audio a texto.
+3. Procesarlo como un mensaje normal.
+4. Generar la respuesta.
+5. Enviar la respuesta únicamente como mensaje de texto por WhatsApp.
+
+## Telegram
+
+Implementar el mismo comportamiento para Telegram.
+
+Cuando llegue un audio:
+
+1. Descargar el audio.
+2. Transcribir automáticamente el audio a texto.
+3. Procesarlo como un mensaje normal.
+4. Generar la respuesta.
+5. Enviar la respuesta únicamente como mensaje de texto por Telegram.
+
+No responder con audio.
+No implementar llamadas.
+No crear soluciones específicas para un único Workspace.
+
+El objetivo es dejar una arquitectura de mensajería escalable para toda la plataforma, de forma que cualquier cliente nuevo pueda configurar Telegram y, cuando esté disponible, WhatsApp, sin necesidad de intervención técnica.

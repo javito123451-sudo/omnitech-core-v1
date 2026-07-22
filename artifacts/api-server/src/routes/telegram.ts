@@ -7,6 +7,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, asc, isNotNull, ne, ilike, gte, inArray } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
+import { transcribeAudio } from "../utils/transcribeAudio";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Ava V2 imports
@@ -30,9 +31,39 @@ const REJECTION_RE =
   /\b(rechazo|rechazado?|no acepto|no (lo )?quiero|cancelar?|cancelo|no me interesa|no por ahora|declin[oa]r?|denegado?|no procede|no gracias|lo descarto|no vamos a seguir|no seguimos)\b/i;
 
 // ── Telegram Update types ──────────────────────────────────────────────────────
-interface TgUser { id: number; first_name: string; last_name?: string; username?: string; }
-interface TgMessage { message_id: number; from?: TgUser; chat: { id: number }; text?: string; }
+interface TgUser    { id: number; first_name: string; last_name?: string; username?: string; }
+interface TgAudio   { file_id: string; duration: number; mime_type?: string; file_size?: number; }
+interface TgMessage {
+  message_id: number;
+  from?:      TgUser;
+  chat:       { id: number };
+  text?:      string;
+  voice?:     TgAudio; // voice note (OGG/OPUS)
+  audio?:     TgAudio; // audio file
+}
 interface TgUpdate { update_id: number; message?: TgMessage; }
+
+// ── Download voice/audio from Telegram CDN ────────────────────────────────────
+async function downloadTelegramAudio(token: string, fileId: string): Promise<Buffer | null> {
+  try {
+    const fileRes  = await fetch(TG(token, `getFile?file_id=${encodeURIComponent(fileId)}`));
+    const fileData = await fileRes.json() as { ok: boolean; result?: { file_path: string } };
+    if (!fileData.ok || !fileData.result?.file_path) {
+      console.warn(`[downloadTelegramAudio] getFile failed for file_id=${fileId.slice(0, 20)}`);
+      return null;
+    }
+    const downloadUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`;
+    const audioRes    = await fetch(downloadUrl);
+    if (!audioRes.ok) {
+      console.warn(`[downloadTelegramAudio] Download failed: HTTP ${audioRes.status}`);
+      return null;
+    }
+    return Buffer.from(await audioRes.arrayBuffer());
+  } catch (err) {
+    console.error("[downloadTelegramAudio] Error:", String(err));
+    return null;
+  }
+}
 
 // ── Helper: send a Telegram message ──────────────────────────────────────────
 // Returns true on success. Logs every failure with full Telegram error detail.
@@ -1193,9 +1224,37 @@ telegramWebhookRouter.post("/webhook/:secret", (req, res) => {
       }
 
       const msg = update.message;
-      if (!msg?.text) return; // ignore non-text updates (stickers, photos, etc.)
+      if (!msg) return;
 
-      await processIncomingTelegramMessage(conn.orgId, msg);
+      // ── Text message → standard CRM pipeline ───────────────────────────────
+      if (msg.text?.trim()) {
+        await processIncomingTelegramMessage(conn.orgId, msg);
+        return;
+      }
+
+      // ── Voice / audio note → transcribe with Whisper, process as text ───────
+      const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
+      if (voiceFileId) {
+        const mimeType = msg.voice?.mime_type ?? msg.audio?.mime_type ?? "audio/ogg";
+        const token = await getTelegramToken(conn.orgId);
+        if (!token) {
+          console.warn(`[Telegram Webhook] 🎤 No bot token for org ${conn.orgId} — cannot process voice`);
+          return;
+        }
+        const audioBuffer = await downloadTelegramAudio(token, voiceFileId);
+        if (!audioBuffer) return;
+
+        const transcript = await transcribeAudio(audioBuffer, "voice.ogg", mimeType);
+        if (!transcript?.trim()) {
+          console.warn(`[Telegram Webhook] 🎤 Empty transcript for org ${conn.orgId} — ignoring`);
+          return;
+        }
+        console.log(`[Telegram Webhook] 🎤 Voice transcribed for org ${conn.orgId}: "${transcript.slice(0, 80)}"`);
+        await processIncomingTelegramMessage(conn.orgId, { ...msg, text: transcript });
+        return;
+      }
+
+      // Non-text, non-audio → silently ignore (stickers, photos, etc.)
     } catch (err) {
       console.error("[Telegram Webhook] Error:", err);
     }

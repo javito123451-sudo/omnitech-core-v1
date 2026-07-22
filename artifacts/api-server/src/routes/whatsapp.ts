@@ -11,6 +11,7 @@ import {
   integrationEventsTable,
   organizationsTable,
   knowledgeBaseTable,
+  orgIntegrationsTable,
 } from "@workspace/db";
 import { eq, and, desc, asc, gt, isNotNull, ne, inArray } from "drizzle-orm";
 
@@ -25,8 +26,10 @@ import {
   getWhatsAppCreds,
   resolveWhatsAppVerifyTokens,
   logIntegrationEvent,
+  decryptCredentials,
 } from "../utils/integrationCreds";
 import { logAuditSystem } from "../utils/auditLogger";
+import { transcribeAudio } from "../utils/transcribeAudio";
 import { IntegrationManager } from "../hub";
 
 export const whatsappRouter = Router();
@@ -41,14 +44,20 @@ interface MetaWebhookPayload {
       field: string;
       value: {
         messaging_product?: string;
+        metadata?: { display_phone_number?: string; phone_number_id?: string };
         contacts?: Array<{ profile: { name: string }; wa_id: string }>;
         messages?: Array<{
           from: string;
           id: string;
           timestamp: string;
           type: string;
-          text?: { body: string };
+          text?:  { body: string };
+          audio?: { id: string; mime_type?: string };
+          voice?: { id: string; mime_type?: string };
+          image?: { id: string; mime_type?: string; caption?: string };
+          document?: { id: string; mime_type?: string; filename?: string };
         }>;
+        statuses?: Array<{ id: string; status: string; timestamp: string; recipient_id: string }>;
       };
     }>;
   }>;
@@ -312,6 +321,79 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
 
   } catch (err) {
     console.error("[WhatsApp AI] AI error:", err);
+    return null;
+  }
+}
+
+// ── Resolve org credentials from WhatsApp phone_number_id ────────────────────
+// Used for media download when the org cannot yet be determined from the client.
+async function resolveOrgFromPhoneNumberId(
+  phoneNumberId: string,
+): Promise<{ orgId: number; accessToken: string } | null> {
+  try {
+    const rows = await db
+      .select()
+      .from(orgIntegrationsTable)
+      .where(eq(orgIntegrationsTable.integrationSlug, "whatsapp"));
+
+    for (const row of rows) {
+      if (!row.credentialsEnc) continue;
+      const creds = decryptCredentials(row.credentialsEnc);
+      if (creds["phoneNumberId"] === phoneNumberId && creds["accessToken"]) {
+        return { orgId: row.orgId, accessToken: creds["accessToken"] };
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: env-var credentials match
+  const envPhoneId = process.env.WHATSAPP_BUSINESS_PHONE_ID;
+  const envToken   = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (envPhoneId === phoneNumberId && envToken) {
+    try {
+      const [row] = await db
+        .select({ orgId: orgIntegrationsTable.orgId })
+        .from(orgIntegrationsTable)
+        .where(eq(orgIntegrationsTable.integrationSlug, "whatsapp"))
+        .limit(1);
+      if (row) return { orgId: row.orgId, accessToken: envToken };
+    } catch { /* ignore */ }
+    // No org row found — use env creds with orgId 1 as last resort
+    return { orgId: 1, accessToken: envToken };
+  }
+
+  return null;
+}
+
+// ── Download WhatsApp media via Meta Graph API ────────────────────────────────
+async function downloadWhatsAppAudio(
+  mediaId: string,
+  accessToken: string,
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  try {
+    // Step 1: resolve the temporary download URL
+    const metaRes = await fetch(`https://graph.facebook.com/v19.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!metaRes.ok) {
+      console.warn(`[downloadWhatsAppAudio] getMedia failed: HTTP ${metaRes.status}`);
+      return null;
+    }
+    const metaData = await metaRes.json() as { url?: string; mime_type?: string };
+    if (!metaData.url) return null;
+
+    // Step 2: download the binary
+    const audioRes = await fetch(metaData.url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!audioRes.ok) {
+      console.warn(`[downloadWhatsAppAudio] Audio download failed: HTTP ${audioRes.status}`);
+      return null;
+    }
+
+    const buffer = Buffer.from(await audioRes.arrayBuffer());
+    return { buffer, mimeType: metaData.mime_type ?? "audio/ogg" };
+  } catch (err) {
+    console.error("[downloadWhatsAppAudio] Error:", String(err));
     return null;
   }
 }
@@ -797,6 +879,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
 
         for (const msg of value.messages ?? []) {
           if (msg.type === "text") {
+            // ── Text → standard AI pipeline ────────────────────────────────
             await processIncomingMessage({
               fromPhone:    msg.from,
               text:         msg.text?.body ?? "",
@@ -805,8 +888,52 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
             }).catch((err) =>
               console.error("[WhatsApp Webhook] Processing error:", err),
             );
+          } else if (msg.type === "audio" || msg.type === "voice") {
+            // ── Audio / voice note → Whisper transcription → text pipeline ─
+            const mediaId = msg.audio?.id ?? msg.voice?.id;
+            const mimeType = msg.audio?.mime_type ?? msg.voice?.mime_type ?? "audio/ogg";
+            const phoneNumberId = value.metadata?.phone_number_id;
+
+            if (!mediaId) {
+              logIntegrationEvent({ orgId: auditOrgId, integrationSlug: "whatsapp", direction: "inbound", eventType: "message_audio_no_id", status: "skipped", summary: `Audio sin media_id de +${String(msg.from).slice(-9)}` });
+              continue;
+            }
+
+            const orgCreds = phoneNumberId
+              ? await resolveOrgFromPhoneNumberId(phoneNumberId)
+              : null;
+
+            if (!orgCreds) {
+              console.warn(`[WhatsApp Webhook] 🎤 Cannot resolve org for phone_number_id=${phoneNumberId ?? "unknown"} — skipping audio`);
+              logIntegrationEvent({ orgId: auditOrgId, integrationSlug: "whatsapp", direction: "inbound", eventType: "message_audio_no_creds", status: "skipped", summary: `Audio de +${String(msg.from).slice(-9)}: sin credenciales de org` });
+              continue;
+            }
+
+            void (async () => {
+              try {
+                const audio = await downloadWhatsAppAudio(mediaId, orgCreds.accessToken);
+                if (!audio) {
+                  console.warn(`[WhatsApp Webhook] 🎤 Audio download failed — media_id=${mediaId.slice(0, 12)}`);
+                  return;
+                }
+                const transcript = await transcribeAudio(audio.buffer, "audio.ogg", mimeType);
+                if (!transcript?.trim()) {
+                  console.warn(`[WhatsApp Webhook] 🎤 Empty transcript from +${String(msg.from).slice(-9)}`);
+                  return;
+                }
+                console.log(`[WhatsApp Webhook] 🎤 Voice from +${String(msg.from).slice(-9)}: "${transcript.slice(0, 80)}"`);
+                await processIncomingMessage({
+                  fromPhone:   msg.from,
+                  text:        transcript,
+                  waMessageId: msg.id,
+                  contactName: contactNameMap[msg.from],
+                });
+              } catch (err) {
+                console.error("[WhatsApp Webhook] Audio processing error:", err);
+              }
+            })();
           } else {
-            // Non-text messages (image, audio, document, etc.) — log but don't process
+            // Non-text, non-audio messages (image, document, sticker, etc.) — log and skip
             logIntegrationEvent({
               orgId:           auditOrgId,
               integrationSlug: "whatsapp",
