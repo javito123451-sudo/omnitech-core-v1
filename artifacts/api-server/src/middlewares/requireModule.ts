@@ -47,10 +47,20 @@ export function requireModule(slug: string) {
     try {
       const enabled = await isModuleEnabled(orgId, slug);
       if (!enabled) {
+        const ctx = {
+          orgId,
+          module: slug,
+          endpoint: `${req.method} ${req.originalUrl}`,
+          user: (req as any).clerkUserId ?? "unknown",
+          role: (req as any).effectiveRole ?? (req as any).orgRole ?? "unknown",
+        };
+        console.warn(`[Module] DENIED — module_disabled | ${JSON.stringify(ctx)}`);
         res.status(403).json({
           error:   "module_disabled",
           module:  slug,
-          message: `El módulo "${slug}" no está habilitado para tu organización. Contacta con tu administrador.`,
+          orgId,
+          endpoint: ctx.endpoint,
+          message: `El módulo "${slug}" no está habilitado para este workspace. Un SUPER_ADMIN puede activarlo en Control Center → Módulos.`,
         });
         return;
       }

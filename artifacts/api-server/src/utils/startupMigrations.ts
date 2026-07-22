@@ -729,8 +729,14 @@ export async function runStartupMigrations(): Promise<void> {
     // module_configs, so /api/auth/me returned an incomplete modules object.
     // canAccessModule then defaulted every absent key to true (fail-open), making
     // all modules appear accessible regardless of plan or admin toggles.
-    // Fix: ensure every org has a row for every known module slug. ON CONFLICT DO
-    // NOTHING preserves any explicit admin-set values (e.g. is_enabled=false).
+    // Fix: ensure every org has a row for every known module slug.
+    //
+    // ON CONFLICT strategy (critical):
+    //   - INSERT new rows freely.
+    //   - UPDATE existing rows ONLY when updated_by = 'system-fix-ab'
+    //     (i.e. a prior system seed, not an explicit admin customisation).
+    //     This ensures plan upgrades/downgrades are reflected on every restart
+    //     without ever overriding intentional admin overrides.
     {
       const ALL_SLUGS = [
         "crm", "ai_agents", "analytics", "integrations", "automations",
@@ -758,21 +764,87 @@ export async function runStartupMigrations(): Promise<void> {
       const orgRows = await db.execute(sql`SELECT id, plan FROM organizations`);
       const orgs = (orgRows as { rows: { id: number; plan: string }[] }).rows;
       let seeded = 0;
+      let updated = 0;
 
       for (const org of orgs) {
         const allowed = new Set<string>(PLAN_SLUGS[org.plan] ?? ALL_SLUGS);
         for (const slug of ALL_SLUGS) {
           const isEnabled = slug === "crm" ? true : allowed.has(slug);
-          await db.execute(sql`
+          const result = await db.execute(sql`
             INSERT INTO module_configs (org_id, module_slug, is_enabled, updated_by, updated_at)
             VALUES (${org.id}, ${slug}, ${isEnabled}, 'system-fix-ab', NOW())
-            ON CONFLICT (org_id, module_slug) DO NOTHING
+            ON CONFLICT (org_id, module_slug) DO UPDATE
+              SET is_enabled  = EXCLUDED.is_enabled,
+                  updated_by  = EXCLUDED.updated_by,
+                  updated_at  = EXCLUDED.updated_at
+              WHERE module_configs.updated_by = 'system-fix-ab'
           `);
-          seeded++;
+          const r = result as { rowCount?: number };
+          if ((r.rowCount ?? 0) > 0) seeded++;
         }
         bumpOrgModuleVersion(org.id);
       }
-      logger.info(`[Migration] ✅ FIX-AB: module_configs seeded for ${orgs.length} org(s), ${seeded} rows inserted (conflicts skipped — existing admin settings preserved)`);
+      logger.info(`[Migration] ✅ FIX-AB: module_configs synced for ${orgs.length} org(s) — ${seeded} rows inserted/updated, admin overrides preserved`);
+    }
+
+    // ── FIX-AF: Repair knowledge_base (and all plan-gated modules) that were
+    //    left disabled by an earlier FIX-AB run under the old DO NOTHING policy.
+    //    Scope: only rows where updated_by = 'system-fix-ab' (never touch
+    //    intentional admin overrides). Corrects any org whose plan changed after
+    //    the first FIX-AB seed, or that had a stale row from a plan downgrade.
+    {
+      const PLAN_SLUGS_AF: Record<string, string[]> = {
+        starter:         ["crm", "whatsapp", "omni_marketing", "knowledge_base",
+                          "omni_accounting", "ai_agents", "quotes", "portal_cliente"],
+        professional:    ["crm", "whatsapp", "omni_marketing", "knowledge_base",
+                          "omni_accounting", "ai_agents", "quotes", "portal_cliente",
+                          "automations", "integrations", "analytics", "omni_docs",
+                          "omni_time"],
+        business:        ["*"],
+        enterprise:      ["*"],
+        enterprise_plus: ["*"],
+        free:            ["crm"],
+        growth:          ["crm", "ai_agents", "analytics", "integrations",
+                          "automations", "omni_marketing"],
+        scale:           ["*"],
+      };
+
+      const result = await db.execute(sql`
+        UPDATE module_configs mc
+        SET is_enabled = CASE
+              WHEN org_plan.plan IN ('business','enterprise','enterprise_plus','scale') THEN true
+              WHEN org_plan.allowed_slugs IS NOT NULL
+                   AND mc.module_slug = ANY(org_plan.allowed_slugs)       THEN true
+              WHEN mc.module_slug = 'crm'                                  THEN true
+              ELSE false
+            END,
+            updated_at = NOW()
+        FROM (
+          SELECT o.id AS org_id, o.plan,
+            CASE
+              WHEN o.plan = 'starter'      THEN ARRAY['crm','whatsapp','omni_marketing','knowledge_base','omni_accounting','ai_agents','quotes','portal_cliente']
+              WHEN o.plan = 'professional' THEN ARRAY['crm','whatsapp','omni_marketing','knowledge_base','omni_accounting','ai_agents','quotes','portal_cliente','automations','integrations','analytics','omni_docs','omni_time']
+              WHEN o.plan = 'free'         THEN ARRAY['crm']
+              WHEN o.plan = 'growth'       THEN ARRAY['crm','ai_agents','analytics','integrations','automations','omni_marketing']
+              ELSE NULL
+            END AS allowed_slugs
+          FROM organizations o
+        ) org_plan
+        WHERE mc.org_id     = org_plan.org_id
+          AND mc.updated_by = 'system-fix-ab'
+          AND mc.is_enabled = false
+          AND (
+            org_plan.plan IN ('business','enterprise','enterprise_plus','scale')
+            OR (org_plan.allowed_slugs IS NOT NULL AND mc.module_slug = ANY(org_plan.allowed_slugs))
+            OR mc.module_slug = 'crm'
+          )
+      `);
+      const repaired = (result as { rowCount?: number }).rowCount ?? 0;
+      if (repaired > 0) {
+        logger.info(`[Migration] ✅ FIX-AF: repaired ${repaired} module_config row(s) that were incorrectly disabled by a prior system seed`);
+      } else {
+        logger.info(`[Migration] ✅ FIX-AF: no incorrectly-disabled system-seeded modules found — all good`);
+      }
     }
 
     // ── FIX-AD: OmniTime tables — time_workers, time_entries, time_incidents, time_off_requests
