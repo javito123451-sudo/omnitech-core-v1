@@ -37,6 +37,10 @@ export { isModuleEnabled };
 
 export function requireModule(slug: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
+    // SUPER_ADMIN and STAFF_OMNITECH bypass all module gates — they must be
+    // able to access any module regardless of the org's plan or config.
+    if ((req as any).isSuperAdmin) { next(); return; }
+
     const orgId = (req as Request & { orgId?: number }).orgId;
     if (!orgId) { next(); return; }
 

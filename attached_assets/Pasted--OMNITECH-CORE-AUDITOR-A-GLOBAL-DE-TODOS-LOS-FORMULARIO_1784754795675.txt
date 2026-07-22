@@ -1,0 +1,199 @@
+# OMNITECH CORE
+## AUDITORÍA GLOBAL DE TODOS LOS FORMULARIOS, CRUD, ENDPOINTS Y SISTEMA DE PERMISOS
+
+Quiero realizar una auditoría completa de OmniTech Core.
+
+Ya hemos detectado errores similares en distintos módulos:
+
+- Autopilot
+- Base de conocimiento
+
+Estos errores indican que probablemente exista un problema estructural y no un fallo aislado.
+
+NO quiero corregir pantalla por pantalla.
+
+Quiero encontrar la causa raíz.
+
+==========================================================
+
+OBJETIVO
+
+Auditar toda la plataforma para detectar cualquier formulario, CRUD o acción que utilice la misma arquitectura y pueda fallar por el mismo motivo.
+
+==========================================================
+
+ANALIZAR
+
+- Todos los formularios
+- Todos los modales
+- Todos los componentes reutilizados
+- Todas las operaciones CRUD
+- Todos los endpoints
+- Todas las llamadas API
+- Middleware de autenticación
+- Middleware de autorización
+- Sistema RBAC
+- Permisos por Workspace
+- Organización activa
+- Contexto Multi-Tenant
+- Hooks reutilizados
+- Componentes reutilizados
+- Validaciones
+- Gestión de errores
+
+==========================================================
+
+REVISAR TODOS LOS MÓDULOS
+
+CRM
+
+Clientes
+
+Leads
+
+Presupuestos
+
+Facturas
+
+Calendario
+
+Conversaciones
+
+Autopilot
+
+Base de conocimiento
+
+Agentes IA
+
+Integraciones
+
+Usuarios
+
+Workspaces
+
+Configuración
+
+Automatizaciones
+
+Documentos
+
+Portal Cliente
+
+Cualquier módulo existente
+
+==========================================================
+
+COMPROBAR
+
+Crear
+
+Editar
+
+Eliminar
+
+Duplicar
+
+Guardar
+
+Cambiar estado
+
+Subir archivos
+
+Guardar configuración
+
+==========================================================
+
+DETECTAR
+
+403
+
+401
+
+404
+
+405
+
+409
+
+422
+
+500
+
+Errores silenciosos
+
+Permisos incorrectos
+
+Payload incorrecto
+
+Endpoints equivocados
+
+Problemas de Workspace
+
+Problemas de Organización
+
+Problemas de contexto
+
+Problemas de componentes reutilizados
+
+==========================================================
+
+PERMISOS
+
+Un usuario Owner debe poder utilizar todas las funciones de su Workspace.
+
+No quiero bloqueos incorrectos.
+
+Mantener la seguridad.
+
+Corregir únicamente la lógica.
+
+==========================================================
+
+LOGS
+
+Cada error debe registrar:
+
+Usuario
+
+Rol
+
+Workspace
+
+Endpoint
+
+Payload
+
+Respuesta
+
+Motivo exacto
+
+Nunca devolver únicamente:
+
+HTTP 403
+
+Debe indicar claramente la causa.
+
+==========================================================
+
+OBJETIVO FINAL
+
+No quiero una colección de parches.
+
+Quiero una única refactorización que elimine todos los errores repetitivos derivados de la misma arquitectura.
+
+Antes de modificar código:
+
+1. Auditar toda la plataforma.
+2. Agrupar los errores por causa raíz.
+3. Identificar componentes reutilizados.
+4. Aplicar una única solución global.
+5. Verificar automáticamente todos los módulos afectados.
+
+Al finalizar, generar un informe indicando:
+
+- Problemas encontrados.
+- Módulos afectados.
+- Causa raíz.
+- Correcciones aplicadas.
+- Riesgos detectados.
+- Pruebas realizadas.

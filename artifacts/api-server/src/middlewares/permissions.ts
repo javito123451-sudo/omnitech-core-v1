@@ -268,8 +268,8 @@ export function hasPermission(req: Request, perm: Permission): boolean {
 
 export function requirePermission(...required: Permission[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Must have org context first
-    if (!req.orgId && !req.supportSession) {
+    // Must have org context first (SUPER_ADMIN bypasses this guard too)
+    if (!req.orgId && !req.supportSession && !(req as any).isSuperAdmin) {
       const ctx = {
         user:     req.clerkUserId ?? "unknown",
         role:     req.effectiveRole ?? req.orgRole ?? "none",

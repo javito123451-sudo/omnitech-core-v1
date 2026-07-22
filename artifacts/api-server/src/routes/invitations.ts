@@ -3,8 +3,8 @@ import { Router } from "express";
 import { clerkClient } from "@clerk/express";
 import { db, orgInvitationsTable, organizationsTable, usersTable, orgMembersTable } from "@workspace/db";
 import { eq, and, isNull, count } from "drizzle-orm";
-import { requireAuth, requireSuperAdmin } from "../middlewares/auth";
-import { requirePermission } from "../middlewares/permissions";
+import { requireAuth, requireSuperAdmin, resolveOrg } from "../middlewares/auth";
+import { requirePermission, resolvePermissions } from "../middlewares/permissions";
 
 export const invitationsRouter = Router();
 
@@ -28,7 +28,9 @@ invitationsRouter.get("/:token", async (req, res) => {
 
 // ── POST /api/invitations — create invitation by role type ───────────
 // Types: admin, vendedor, cliente, usuario_cliente, member
-invitationsRouter.post("/", requirePermission("workspace.manage"), async (req, res) => {
+// Note: registered before the global auth middleware in routes/index.ts, so
+// we apply the full auth chain explicitly here.
+invitationsRouter.post("/", requireAuth, resolveOrg, resolvePermissions, requirePermission("workspace.manage"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const inviterId = req.userId!;
