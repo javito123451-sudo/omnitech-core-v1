@@ -1,0 +1,79 @@
+La corrección aplicada NO ha solucionado el problema.
+
+He realizado la prueba y el bot sigue respondiendo únicamente a mi número de WhatsApp. Cualquier otro usuario escribe al mismo número de WhatsApp Business y no recibe respuesta.
+
+A partir de este momento, no quiero más cambios por prueba y error.
+
+NO implementes ninguna corrección hasta identificar con certeza la causa raíz del problema.
+
+No quiero:
+- Cambios preventivos.
+- Soluciones "por si acaso".
+- Modificaciones de arquitectura.
+- Código añadido sin evidencia.
+- Creación automática de contactos o clientes.
+
+La arquitectura de OmniTech Core debe mantenerse intacta.
+
+Recuerda que OmniTech es una plataforma SaaS multiempresa.
+
+El flujo correcto debe ser:
+
+1. Cualquier usuario escribe al número de WhatsApp Business.
+2. Meta envía el webhook.
+3. OmniTech identifica la organización mediante el phone_number_id del número de WhatsApp Business.
+4. Se crea o recupera una conversación temporal (NO un contacto ni un cliente).
+5. La IA procesa el mensaje.
+6. Se envía la respuesta.
+7. Solo si posteriormente existe una conversión real, se creará un contacto o lead en el CRM.
+
+Ahora necesito un diagnóstico completo.
+
+Revisa absolutamente todo el recorrido del mensaje desde que entra por Meta hasta que debería salir la respuesta.
+
+Analiza:
+
+- Recepción del webhook.
+- Validación del webhook.
+- Resolución del Workspace mediante phone_number_id.
+- Contexto de la organización.
+- Creación o recuperación de la conversación.
+- Ejecución de la IA.
+- Construcción de la respuesta.
+- Envío mediante la API de WhatsApp.
+- Gestión de errores.
+- Logs.
+- Middleware.
+- Permisos.
+- Configuración.
+- Tokens.
+- Caché.
+- Variables de entorno.
+
+Busca específicamente cualquier dependencia del número del remitente:
+
+- Comparaciones con mi número.
+- Whitelists.
+- Números hardcodeados.
+- Filtros temporales de desarrollo.
+- Restricciones ocultas.
+- Consultas SQL incorrectas.
+- Condiciones que solo permitan responder a determinados usuarios.
+
+No quiero hipótesis.
+
+Para cada posible causa necesito:
+
+1. Evidencia mediante logs.
+2. Archivo exacto.
+3. Función implicada.
+4. Línea aproximada donde ocurre.
+5. Explicación técnica.
+6. Motivo por el que solo responde a mi número.
+7. Impacto del fallo.
+8. Solución mínima necesaria.
+9. Cómo verificar que realmente queda solucionado.
+
+Si no tienes evidencia suficiente para confirmar una causa, indícalo claramente y continúa investigando. No implementes ningún cambio hasta demostrar cuál es el problema real.
+
+El objetivo es corregir la causa raíz manteniendo una arquitectura limpia, escalable y estable para toda la plataforma OmniTech Core.
