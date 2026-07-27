@@ -1,0 +1,45 @@
+Has mezclado dos conceptos que deben ser completamente independientes: el enrutamiento de la conversación y el CRM.
+
+No quiero una corrección para este caso concreto. Quiero una auditoría completa del flujo de entrada de mensajes para toda OmniTech Core.
+
+Actualmente el comportamiento es incorrecto.
+
+Un usuario que escribe al WhatsApp de una organización NO debe depender de si existe como cliente en otro Workspace ni de ningún registro previo en el CRM.
+
+No tiene ninguna lógica que el sistema consulte primero otras organizaciones o intente resolver el remitente a través de la tabla de clientes para decidir si responde.
+
+Quiero que audites todo el flujo y corrijas la arquitectura.
+
+El flujo correcto debe ser:
+
+1. Llega un webhook desde Meta.
+2. Se identifica la integración mediante el phone_number_id (o el identificador propio del canal).
+3. Se resuelve la organización propietaria de esa integración.
+4. A partir de ese momento TODO el procesamiento queda aislado dentro de ese Workspace.
+5. Se crea o recupera la conversación de ESA organización.
+6. La IA responde utilizando exclusivamente la configuración, conocimiento, instrucciones y contexto de ESA organización.
+7. Solo después, y únicamente dentro de ese Workspace, si existe un contacto relacionado, se vincula a la conversación.
+8. Si no existe ningún contacto, la conversación debe funcionar exactamente igual.
+9. En ningún caso se deben consultar clientes, conversaciones o datos de otros Workspaces para decidir si se responde.
+
+Quiero que revises especialmente cualquier consulta que utilice:
+- número de teléfono,
+- cliente,
+- contacto,
+- conversación,
+- email,
+- sender,
+- from,
+- wa_id,
+- phone,
+- o cualquier identificador global.
+
+Ninguna consulta puede cruzar información entre organizaciones.
+
+Toda búsqueda debe estar siempre limitada por el organization_id o el workspace_id correspondiente.
+
+Si detectas consultas sin ese aislamiento, corrígelas.
+
+Además, realiza una auditoría de seguridad para confirmar que no existe ninguna fuga de datos entre organizaciones.
+
+No implementes parches. Corrige el flujo oficial de OmniTech Core para que sea el comportamiento estándar de toda la plataforma SaaS.

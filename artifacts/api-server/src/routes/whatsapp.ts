@@ -485,12 +485,15 @@ async function processIncomingMessage(payload: {
 
   const auditOrgId = resolvedOrgId ?? 1;
 
-  // ── PASO 3: Buscar contacto existente ──────────────────────────────────────
-  console.log(`[WA] PASO 3 — Buscando contacto para +${normalizedIncoming}…`);
+  // ── PASO 3: Buscar contacto existente — SOLO en el org dueño de la línea ──
+  // CRÍTICO: filtrar por auditOrgId para evitar fuga de datos entre workspaces.
+  // Un número que escribe a OmniTech pero existe como cliente de otra org
+  // debe tratarse como contacto anónimo para OmniTech.
+  console.log(`[WA] PASO 3 — Buscando contacto para +${normalizedIncoming} en org=${auditOrgId}…`);
   const allWithPhone = await db
     .select()
     .from(clientsTable)
-    .where(isNotNull(clientsTable.phone));
+    .where(and(isNotNull(clientsTable.phone), eq(clientsTable.orgId, auditOrgId)));
 
   let client = allWithPhone.find((c) =>
     c.phone ? normalizePhone(c.phone) === normalizedIncoming : false,
@@ -499,7 +502,7 @@ async function processIncomingMessage(payload: {
   if (client) {
     console.log(`[WA]   ✅ Cliente CRM vinculado: id=${client.id} name="${client.name}" org=${client.orgId}`);
   } else {
-    console.log(`[WA]   ℹ️  Número desconocido — la conversación continúa sin registro CRM`);
+    console.log(`[WA]   ℹ️  Número no encontrado en org=${auditOrgId} — conversación anónima`);
   }
 
   // Log message_received with structured payload
