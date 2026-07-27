@@ -497,50 +497,9 @@ async function processIncomingMessage(payload: {
   ) ?? null;
 
   if (client) {
-    console.log(`[WA]   ✅ Contacto encontrado: id=${client.id} name="${client.name}" org=${client.orgId}`);
+    console.log(`[WA]   ✅ Cliente CRM vinculado: id=${client.id} name="${client.name}" org=${client.orgId}`);
   } else {
-    console.log(`[WA]   ℹ️  Contacto no encontrado — se creará automáticamente`);
-  }
-
-  // ── PASO 4: Auto-crear cliente si no existe ────────────────────────────────
-  if (!client) {
-    const displayName = contactName?.trim() || `WhatsApp +${normalizedIncoming}`;
-    console.log(`[WA] PASO 4 — Creando contacto automático: "${displayName}" en org=${auditOrgId}`);
-    try {
-      const [newClient] = await db.insert(clientsTable).values({
-        orgId:  auditOrgId,
-        name:   displayName,
-        phone:  `+${fromPhone.replace(/\D/g, "")}`,
-        status: "lead",
-        tags:   "whatsapp,auto-creado",
-        notes:  `Cliente creado automáticamente al contactar por WhatsApp el ${new Date().toLocaleDateString("es-ES")}`,
-      }).returning();
-      client = newClient ?? null;
-      if (client) {
-        console.log(`[WA]   ✅ Contacto creado: id=${client.id} name="${displayName}" org=${auditOrgId}`);
-      } else {
-        console.error(`[WA]   ❌ INSERT no devolvió filas`);
-      }
-    } catch (err) {
-      console.error(`[WA]   ❌ Error creando contacto automático:`, err);
-    }
-  } else {
-    console.log(`[WA] PASO 4 — Contacto ya existía, no se crea`);
-  }
-
-  // If we still have no client (insert failed), log and bail
-  if (!client) {
-    console.error(`[WA] ❌ ABORT — Sin contacto. No se puede procesar el mensaje de +${normalizedIncoming}`);
-    logIntegrationEvent({
-      orgId:           auditOrgId,
-      integrationSlug: "whatsapp",
-      direction:       "inbound",
-      eventType:       "message_unknown_sender",
-      status:          "error",
-      summary:         `No se pudo crear contacto para +${normalizedIncoming}: "${text.slice(0, 80)}"`,
-      payloadJson:     { phone: fromPhone, phoneNorm: normalizedIncoming, messageText: text.slice(0, 200) },
-    });
-    return;
+    console.log(`[WA]   ℹ️  Número desconocido — la conversación continúa sin registro CRM`);
   }
 
   // Log message_received with structured payload
@@ -548,12 +507,12 @@ async function processIncomingMessage(payload: {
     phone:       fromPhone,
     phoneNorm:   normalizedIncoming,
     messageText: text.slice(0, 200),
-    clientFound: true,
-    clientId:    client.id,
-    clientName:  client.name,
+    clientFound: client !== null,
+    clientId:    client?.id ?? null,
+    clientName:  client?.name ?? null,
   };
 
-  const orgId = client.orgId;
+  const orgId = auditOrgId;
 
   // Lookup org name for AI context
   let orgName = "Nuestro negocio";
@@ -568,7 +527,7 @@ async function processIncomingMessage(payload: {
   let savedInboundId: number | undefined;
   const [savedInbound] = await db.insert(messagesTable).values({
     orgId,
-    clientId:  client.id,
+    clientId:  client?.id ?? null,
     content:   text,
     direction: "inbound",
     channel:   "whatsapp",
@@ -576,46 +535,48 @@ async function processIncomingMessage(payload: {
     status:    "received",
   }).returning({ id: messagesTable.id });
   savedInboundId = savedInbound?.id;
-  console.log(`[WA Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client.id}`);
+  console.log(`[WA Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client?.id ?? "null (anónimo)"}`);
 
-  // ── Phase 3: Lead Intelligence detection (same as Telegram) ───────────────
-  const trimmedLower = text.toLowerCase();
-  let newLeadScore: string | null = null;
-  if (LEAD_HOT_RE.test(trimmedLower)) {
-    newLeadScore = "caliente";
-  } else if (LEAD_WARM_RE.test(trimmedLower) && client.leadScore !== "caliente") {
-    newLeadScore = "tibio";
-  }
-  if (newLeadScore && newLeadScore !== client.leadScore) {
-    db.update(clientsTable)
-      .set({ leadScore: newLeadScore, leadIntent: text.slice(0, 500), updatedAt: new Date() })
-      .where(eq(clientsTable.id, client.id))
-      .catch((e) => console.error("[Lead Intelligence] update error:", e));
-    logIntegrationEvent({
-      orgId, integrationSlug: "whatsapp", direction: "inbound",
-      eventType: "lead_detected", status: "processed",
-      summary:   `Lead ${newLeadScore} detectado · ${client.name}: "${text.slice(0, 80)}"`,
-      payloadJson: { phone: fromPhone, leadScore: newLeadScore, clientId: client.id },
-    });
+  // ── Phase 3: Lead Intelligence — solo si existe cliente CRM vinculado ──────
+  if (client) {
+    const trimmedLower = text.toLowerCase();
+    let newLeadScore: string | null = null;
+    if (LEAD_HOT_RE.test(trimmedLower)) {
+      newLeadScore = "caliente";
+    } else if (LEAD_WARM_RE.test(trimmedLower) && client.leadScore !== "caliente") {
+      newLeadScore = "tibio";
+    }
+    if (newLeadScore && newLeadScore !== client.leadScore) {
+      db.update(clientsTable)
+        .set({ leadScore: newLeadScore, leadIntent: text.slice(0, 500), updatedAt: new Date() })
+        .where(eq(clientsTable.id, client.id))
+        .catch((e) => console.error("[Lead Intelligence] update error:", e));
+      logIntegrationEvent({
+        orgId, integrationSlug: "whatsapp", direction: "inbound",
+        eventType: "lead_detected", status: "processed",
+        summary:   `Lead ${newLeadScore} detectado · ${client.name}: "${text.slice(0, 80)}"`,
+        payloadJson: { phone: fromPhone, leadScore: newLeadScore, clientId: client.id },
+      });
+    }
   }
 
   // 3. Log activity
   await db.insert(activityTable).values({
     orgId,
     type:        "whatsapp_received",
-    description: `Mensaje de ${client.name} vía WhatsApp: "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
-    clientName:  client.name,
+    description: `Mensaje vía WhatsApp de +${normalizedIncoming}${client ? ` (${client.name})` : ""}: "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
+    clientName:  client?.name ?? null,
   }).catch(() => {/* non-critical */});
 
   logAuditSystem({
     actorClerkId: `system:whatsapp:${orgId}`,
     action:    "whatsapp_message_received",
     resource:  "whatsapp_message",
-    resourceId: String(client.id),
+    resourceId: String(client?.id ?? "unknown"),
     orgId,
     details: {
-      clientId:   client.id,
-      clientName: client.name,
+      clientId:   client?.id ?? null,
+      clientName: client?.name ?? null,
       phone:      fromPhone.slice(-9),
       preview:    text.slice(0, 120),
       result:     "success",
@@ -630,19 +591,21 @@ async function processIncomingMessage(payload: {
   const isAccepted = ACCEPTANCE_RE.test(trimmed);
   const isRejected = !isAccepted && REJECTION_RE.test(trimmed);
 
-  // 5. Find the most recent sent/pending quote for this client
-  const [quote] = await db
-    .select()
-    .from(quotesTable)
-    .where(
-      and(
-        eq(quotesTable.orgId,    orgId),
-        eq(quotesTable.clientId, client.id),
-        inArray(quotesTable.status, ["sent", "pending"]),
-      ),
-    )
-    .orderBy(desc(quotesTable.updatedAt))
-    .limit(1);
+  // 5. Find the most recent sent/pending quote — solo si existe cliente CRM vinculado
+  const [quote] = client
+    ? await db
+        .select()
+        .from(quotesTable)
+        .where(
+          and(
+            eq(quotesTable.orgId,    orgId),
+            eq(quotesTable.clientId, client.id),
+            inArray(quotesTable.status, ["sent", "pending"]),
+          ),
+        )
+        .orderBy(desc(quotesTable.updatedAt))
+        .limit(1)
+    : [undefined];
 
   const quotePayload = {
     quoteFound:    !!quote,
@@ -659,7 +622,7 @@ async function processIncomingMessage(payload: {
     direction:       "inbound",
     eventType:       "message_received",
     status:          "processed",
-    summary:         `Mensaje de ${client.name} (+${fromPhone.slice(-9)}): "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
+    summary:         `Mensaje de ${client?.name ?? `+${fromPhone.slice(-9)}`} (+${fromPhone.slice(-9)}): "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`,
     payloadJson:     {
       ...basePayload,
       ...quotePayload,
@@ -669,8 +632,8 @@ async function processIncomingMessage(payload: {
     },
   });
 
-  // ── 7. Keyword path: acceptance / rejection with a pending quote ──────────────
-  if ((isAccepted || isRejected) && quote) {
+  // ── 7. Keyword path: acceptance / rejection con presupuesto — requiere cliente CRM ──
+  if (client && (isAccepted || isRejected) && quote) {
 
     const newQuoteStatus = isAccepted ? "accepted" : "rejected";
     const activityType   = isAccepted ? "quote_accepted" : "quote_rejected";
@@ -787,7 +750,8 @@ async function processIncomingMessage(payload: {
   }
 
   // ── 8. AI reply for all other messages (no keyword match, or keyword without quote) ──
-  console.log(`[WA] PASO 7 — Llamada a la IA para ${client.name} (+${normalizedIncoming}) org=${orgId}`);
+  const senderLabel = client?.name ?? `+${normalizedIncoming}`;
+  console.log(`[WA] PASO 7 — Llamada a la IA para ${senderLabel} org=${orgId}`);
   const aiReply = await generateWhatsAppAIReply({
     orgId,
     orgName,
@@ -798,31 +762,35 @@ async function processIncomingMessage(payload: {
   });
 
   if (!aiReply) {
-    console.warn(`[WA] PASO 7 ❌ Sin respuesta de IA para ${client.name} — OPENAI_API_KEY no configurada o error`);
+    console.warn(`[WA] PASO 7 ❌ Sin respuesta de IA para ${senderLabel} — OPENAI_API_KEY no configurada o error`);
     logIntegrationEvent({
       orgId,
       integrationSlug: "whatsapp",
       direction:       "outbound",
       eventType:       "ai_reply_skipped",
       status:          "error",
-      summary:         `Sin respuesta IA para ${client.name} (+${normalizedIncoming}) — revisar OPENAI_API_KEY`,
-      payloadJson:     { phone: fromPhone, clientId: client.id, clientName: client.name },
+      summary:         `Sin respuesta IA para ${senderLabel} — revisar OPENAI_API_KEY`,
+      payloadJson:     { phone: fromPhone, clientId: client?.id ?? null, clientName: client?.name ?? null },
     });
     return;
   }
 
   console.log(`[WA] PASO 8 — Respuesta de IA generada (${aiReply.length} chars): "${aiReply.slice(0, 80)}${aiReply.length > 80 ? "…" : ""}"`);
 
-  // Store AI reply in messages table
-  await db.insert(messagesTable).values({
+  // Store AI reply in messages table — capture ID to update status if send fails
+  const savedOutboundRows = await db.insert(messagesTable).values({
     orgId,
-    clientId:  client.id,
+    clientId:  client?.id ?? null,
     content:   aiReply,
     direction: "outbound",
     channel:   "whatsapp",
     isAi:      true,
     status:    "sent",
-  }).catch((err) => console.error("[WA] AI message save failed:", err));
+  }).returning({ id: messagesTable.id }).catch((err) => {
+    console.error("[WA] AI message save failed:", err);
+    return [] as { id: number }[];
+  });
+  const savedOutboundId = savedOutboundRows[0]?.id;
 
   // Send via WhatsApp Business API
   console.log(`[WA] PASO 9 — Enviando respuesta a +${normalizedIncoming} vía WhatsApp org=${orgId}…`);
@@ -831,15 +799,12 @@ async function processIncomingMessage(payload: {
   // Update message status if send failed
   if (!aiSent) {
     console.error(`[WA] PASO 9 ❌ Envío fallido a +${normalizedIncoming} — revisar credenciales WhatsApp para org=${orgId}`);
-    await db.update(messagesTable)
-      .set({ status: "failed" })
-      .where(and(
-        eq(messagesTable.orgId,     orgId),
-        eq(messagesTable.clientId,  client.id),
-        eq(messagesTable.direction, "outbound"),
-        eq(messagesTable.isAi,      true),
-      ))
-      .catch(() => {});
+    if (savedOutboundId) {
+      await db.update(messagesTable)
+        .set({ status: "failed" })
+        .where(eq(messagesTable.id, savedOutboundId))
+        .catch(() => {});
+    }
   } else {
     console.log(`[WA] PASO 9 ✅ Respuesta enviada a +${normalizedIncoming}`);
   }
@@ -850,16 +815,16 @@ async function processIncomingMessage(payload: {
     direction:       "outbound",
     eventType:       aiSent ? "ai_reply_sent" : "ai_reply_failed",
     status:          aiSent ? "processed" : "error",
-    summary:         `IA ${aiSent ? "respondió" : "NO enviada"} a ${client.name}: "${aiReply.slice(0, 80)}${aiReply.length > 80 ? "…" : ""}"`,
-    payloadJson:     { phone: fromPhone, clientId: client.id, clientName: client.name, aiReply, sent: aiSent },
+    summary:         `IA ${aiSent ? "respondió" : "NO enviada"} a ${senderLabel}: "${aiReply.slice(0, 80)}${aiReply.length > 80 ? "…" : ""}"`,
+    payloadJson:     { phone: fromPhone, clientId: client?.id ?? null, clientName: client?.name ?? null, aiReply, sent: aiSent },
   });
 
   if (aiSent) {
     await db.insert(activityTable).values({
       orgId,
       type:        "whatsapp_sent",
-      description: `IA respondió a ${client.name} vía WhatsApp: "${aiReply.slice(0, 80)}${aiReply.length > 80 ? "…" : ""}"`,
-      clientName:  client.name,
+      description: `IA respondió a ${senderLabel} vía WhatsApp: "${aiReply.slice(0, 80)}${aiReply.length > 80 ? "…" : ""}"`,
+      clientName:  client?.name ?? null,
     }).catch(() => {});
   }
 

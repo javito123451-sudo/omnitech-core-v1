@@ -956,6 +956,19 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info("[Migration] ✅ FIX-AE: Legacy send_whatsapp tasks migrated → send_notification");
     }
 
+    // ── FIX-AG: messages.client_id → nullable (conversations decoupled from CRM)
+    // WhatsApp conversations no longer require a CRM client record to exist.
+    // Inbound/outbound messages from unknown numbers are stored with client_id = NULL.
+    {
+      await db.execute(sql`
+        ALTER TABLE messages ALTER COLUMN client_id DROP NOT NULL
+      `);
+      await db.execute(sql`
+        ALTER TABLE messages ALTER COLUMN client_id SET DEFAULT NULL
+      `);
+      logger.info("[Migration] ✅ FIX-AG: messages.client_id is now nullable — conversations decoupled from CRM");
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

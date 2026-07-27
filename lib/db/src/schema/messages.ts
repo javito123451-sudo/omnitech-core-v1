@@ -11,8 +11,7 @@ export const messagesTable = pgTable("messages", {
     .default(1)
     .references(() => organizationsTable.id, { onDelete: "cascade" }),
   clientId: integer("client_id")
-    .notNull()
-    .references(() => clientsTable.id, { onDelete: "cascade" }),
+    .references(() => clientsTable.id, { onDelete: "set null" }),
   content: text("content").notNull(),
   direction: text("direction").notNull().default("outbound"),
   channel: text("channel").default("telegram"),
