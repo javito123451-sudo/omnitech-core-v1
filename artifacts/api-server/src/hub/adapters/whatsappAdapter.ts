@@ -199,9 +199,12 @@ const WhatsAppAdapter: IntegrationAdapter = {
       message:   msg.text?.body ?? "",
       providerId: msg.id,
       metadata: {
-        timestamp: msg.timestamp,
-        profileName: contact?.profile?.name,
-        waId: contact?.wa_id,
+        timestamp:    msg.timestamp,
+        profileName:  contact?.profile?.name,
+        waId:         contact?.wa_id,
+        // Critical: pass through the business phone number ID so the webhook
+        // handler can resolve WHICH org this message belongs to.
+        phoneNumberId: value.metadata?.phone_number_id,
       },
       raw: payload,
     };
@@ -217,6 +220,7 @@ interface MetaWebhookPayload {
       field: string;
       value: {
         messaging_product?: string;
+        metadata?: { display_phone_number?: string; phone_number_id?: string };
         contacts?: Array<{ profile: { name: string }; wa_id: string }>;
         messages?: Array<{
           from: string;

@@ -81,24 +81,63 @@ function normalizePhone(phone: string): string {
 
 // ── Send WhatsApp message with full logging ───────────────────────────────────
 /**
- * sendAutoReply — now routes through IntegrationManager.
- * Ava never talks directly to WhatsApp; always goes through the Hub.
+ * sendAutoReply — routes through IntegrationManager (DB credentials first),
+ * then falls back to env-var credentials if the org has no DB integration row.
+ * This ensures the bot replies even when a new contact was auto-assigned to an
+ * org that stores credentials only in env vars.
  */
 export async function sendAutoReply(orgId: number, toPhone: string, message: string): Promise<boolean> {
   const toClean = toPhone.replace(/\D/g, "");
-  console.log(`[waSend] → to=+${toClean.slice(-9)} | org=${orgId} | text="${message.slice(0, 60)}..."`);
+  console.log(`[waSend] → to=+${toClean.slice(-9)} | org=${orgId} | text="${message.slice(0, 60)}…"`);
 
+  // 1. Try IntegrationManager (uses DB credentials per-org)
   const result = await IntegrationManager.send(orgId, "whatsapp", {
     to:      toClean,
     message,
   });
 
   if (result.success) {
-    console.log(`[waSend] ✅ enviado a +${toClean.slice(-9)} | msgId=${result.providerId ?? "?"}`);
+    console.log(`[waSend] ✅ enviado (DB creds) a +${toClean.slice(-9)} | msgId=${result.providerId ?? "?"}`);
     return true;
   }
-  console.error(`[waSend] ❌ ${result.error}`);
-  return false;
+
+  console.warn(`[waSend] ⚠️  IntegrationManager falló (org=${orgId}): ${result.error} — probando env vars…`);
+
+  // 2. Fallback: env-var credentials (backward compat / single-tenant setups)
+  const phoneNumberId = process.env["WHATSAPP_BUSINESS_PHONE_ID"];
+  const accessToken   = process.env["WHATSAPP_ACCESS_TOKEN"];
+
+  if (!phoneNumberId || !accessToken) {
+    console.error(`[waSend] ❌ Sin credenciales de env var — no se puede enviar a +${toClean.slice(-9)}`);
+    console.error(`[waSend]    Causa: org=${orgId} no tiene fila en org_integrations.whatsapp y WHATSAPP_BUSINESS_PHONE_ID/WHATSAPP_ACCESS_TOKEN no están configuradas`);
+    return false;
+  }
+
+  try {
+    const r = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type":  "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to:   toClean,
+        type: "text",
+        text: { body: message },
+      }),
+    });
+    const data = await r.json() as { messages?: { id: string }[]; error?: { message: string } };
+    if (r.ok) {
+      console.log(`[waSend] ✅ enviado (env creds fallback) a +${toClean.slice(-9)} | msgId=${data.messages?.[0]?.id ?? "?"}`);
+      return true;
+    }
+    console.error(`[waSend] ❌ Meta API error (env fallback): ${data.error?.message ?? `HTTP ${r.status}`}`);
+    return false;
+  } catch (err) {
+    console.error(`[waSend] ❌ Error de red (env fallback):`, err);
+    return false;
+  }
 }
 
 // ── AI reply generation for WhatsApp messages — Ava V2 pipeline (same as Telegram)
@@ -400,15 +439,54 @@ async function downloadWhatsAppAudio(
 
 // ── Core: process one incoming WhatsApp message ───────────────────────────────
 async function processIncomingMessage(payload: {
-  fromPhone:    string;
-  text:         string;
-  waMessageId:  string;
-  contactName?: string; // from Meta contacts[] array
+  fromPhone:     string;
+  text:          string;
+  waMessageId:   string;
+  contactName?:  string; // from Meta contacts[] array
+  phoneNumberId?: string; // Meta business phone_number_id — used to resolve org
 }): Promise<void> {
-  const { fromPhone, text, contactName } = payload;
+  const { fromPhone, text, contactName, phoneNumberId } = payload;
   const normalizedIncoming = normalizePhone(fromPhone);
 
-  // 1. Find client by phone (across all orgs — normalize & compare last 9 digits)
+  console.log(`[WA] ──────────────────────────────────────────────`);
+  console.log(`[WA] PASO 1 — Webhook recibido`);
+  console.log(`[WA]   Número remitente : +${normalizedIncoming} (raw: ${fromPhone})`);
+  console.log(`[WA]   Nombre contacto  : ${contactName ?? "(sin nombre)"}`);
+  console.log(`[WA]   phone_number_id  : ${phoneNumberId ?? "(no disponible)"}`);
+  console.log(`[WA]   Mensaje          : "${text.slice(0, 120)}${text.length > 120 ? "…" : ""}"`);
+
+  // ── PASO 2: Resolver el org correcto desde phone_number_id ─────────────────
+  // This is the org whose WhatsApp line received the message.
+  // Without this, new clients get assigned to the wrong org and sends fail.
+  console.log(`[WA] PASO 2 — Resolviendo Workspace…`);
+  let resolvedOrgId: number | null = null;
+  if (phoneNumberId) {
+    const creds = await resolveOrgFromPhoneNumberId(phoneNumberId);
+    if (creds) {
+      resolvedOrgId = creds.orgId;
+      console.log(`[WA]   ✅ Workspace encontrado por phone_number_id: org=${resolvedOrgId}`);
+    } else {
+      console.warn(`[WA]   ⚠️  No se encontró org para phone_number_id=${phoneNumberId} — se usará fallback`);
+    }
+  } else {
+    console.warn(`[WA]   ⚠️  phone_number_id no disponible en el webhook — se usará fallback`);
+  }
+
+  // Fallback: first org in DB (only if phone_number_id resolution failed)
+  if (!resolvedOrgId) {
+    try {
+      const [firstOrg] = await db.select({ id: organizationsTable.id }).from(organizationsTable).limit(1);
+      if (firstOrg?.id) {
+        resolvedOrgId = firstOrg.id;
+        console.log(`[WA]   ℹ️  Fallback: usando primer org en DB id=${resolvedOrgId}`);
+      }
+    } catch { /* non-critical */ }
+  }
+
+  const auditOrgId = resolvedOrgId ?? 1;
+
+  // ── PASO 3: Buscar contacto existente ──────────────────────────────────────
+  console.log(`[WA] PASO 3 — Buscando contacto para +${normalizedIncoming}…`);
   const allWithPhone = await db
     .select()
     .from(clientsTable)
@@ -418,17 +496,16 @@ async function processIncomingMessage(payload: {
     c.phone ? normalizePhone(c.phone) === normalizedIncoming : false,
   ) ?? null;
 
-  // Resolve the real first org for audit events (not hardcoded 1)
-  let auditOrgId = 1;
-  try {
-    const [firstOrg] = await db.select({ id: organizationsTable.id }).from(organizationsTable).limit(1);
-    if (firstOrg?.id) auditOrgId = firstOrg.id;
-  } catch { /* non-critical */ }
+  if (client) {
+    console.log(`[WA]   ✅ Contacto encontrado: id=${client.id} name="${client.name}" org=${client.orgId}`);
+  } else {
+    console.log(`[WA]   ℹ️  Contacto no encontrado — se creará automáticamente`);
+  }
 
-  // 2. Auto-create client if not found (like Telegram does)
+  // ── PASO 4: Auto-crear cliente si no existe ────────────────────────────────
   if (!client) {
     const displayName = contactName?.trim() || `WhatsApp +${normalizedIncoming}`;
-    console.log(`[WhatsApp Webhook] Número desconocido +${normalizedIncoming} — creando cliente automáticamente: "${displayName}"`);
+    console.log(`[WA] PASO 4 — Creando contacto automático: "${displayName}" en org=${auditOrgId}`);
     try {
       const [newClient] = await db.insert(clientsTable).values({
         orgId:  auditOrgId,
@@ -439,21 +516,28 @@ async function processIncomingMessage(payload: {
         notes:  `Cliente creado automáticamente al contactar por WhatsApp el ${new Date().toLocaleDateString("es-ES")}`,
       }).returning();
       client = newClient ?? null;
-      console.log(`[WhatsApp Webhook] ✅ Cliente auto-creado: id=${client?.id} name="${displayName}"`);
+      if (client) {
+        console.log(`[WA]   ✅ Contacto creado: id=${client.id} name="${displayName}" org=${auditOrgId}`);
+      } else {
+        console.error(`[WA]   ❌ INSERT no devolvió filas`);
+      }
     } catch (err) {
-      console.error("[WhatsApp Webhook] ❌ Error creando cliente automático:", err);
+      console.error(`[WA]   ❌ Error creando contacto automático:`, err);
     }
+  } else {
+    console.log(`[WA] PASO 4 — Contacto ya existía, no se crea`);
   }
 
   // If we still have no client (insert failed), log and bail
   if (!client) {
+    console.error(`[WA] ❌ ABORT — Sin contacto. No se puede procesar el mensaje de +${normalizedIncoming}`);
     logIntegrationEvent({
       orgId:           auditOrgId,
       integrationSlug: "whatsapp",
       direction:       "inbound",
       eventType:       "message_unknown_sender",
       status:          "error",
-      summary:         `No se pudo crear cliente para +${normalizedIncoming}: "${text.slice(0, 80)}"`,
+      summary:         `No se pudo crear contacto para +${normalizedIncoming}: "${text.slice(0, 80)}"`,
       payloadJson:     { phone: fromPhone, phoneNorm: normalizedIncoming, messageText: text.slice(0, 200) },
     });
     return;
@@ -477,6 +561,8 @@ async function processIncomingMessage(payload: {
     const [org] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId));
     if (org?.name) orgName = org.name;
   } catch { /* non-critical */ }
+
+  console.log(`[WA] PASO 5 — Workspace confirmado: id=${orgId} name="${orgName}"`);
 
   // 2. Store the inbound message — use .returning() to get ID for history exclusion
   let savedInboundId: number | undefined;
@@ -701,7 +787,7 @@ async function processIncomingMessage(payload: {
   }
 
   // ── 8. AI reply for all other messages (no keyword match, or keyword without quote) ──
-  console.log(`[WhatsApp Webhook] Generando respuesta IA para ${client.name} (+${fromPhone.slice(-9)})`);
+  console.log(`[WA] PASO 7 — Llamada a la IA para ${client.name} (+${normalizedIncoming}) org=${orgId}`);
   const aiReply = await generateWhatsAppAIReply({
     orgId,
     orgName,
@@ -712,9 +798,20 @@ async function processIncomingMessage(payload: {
   });
 
   if (!aiReply) {
-    console.warn(`[WhatsApp Webhook] Sin respuesta IA para ${client.name} — OPENAI_API_KEY no configurada o error`);
+    console.warn(`[WA] PASO 7 ❌ Sin respuesta de IA para ${client.name} — OPENAI_API_KEY no configurada o error`);
+    logIntegrationEvent({
+      orgId,
+      integrationSlug: "whatsapp",
+      direction:       "outbound",
+      eventType:       "ai_reply_skipped",
+      status:          "error",
+      summary:         `Sin respuesta IA para ${client.name} (+${normalizedIncoming}) — revisar OPENAI_API_KEY`,
+      payloadJson:     { phone: fromPhone, clientId: client.id, clientName: client.name },
+    });
     return;
   }
+
+  console.log(`[WA] PASO 8 — Respuesta de IA generada (${aiReply.length} chars): "${aiReply.slice(0, 80)}${aiReply.length > 80 ? "…" : ""}"`);
 
   // Store AI reply in messages table
   await db.insert(messagesTable).values({
@@ -725,13 +822,15 @@ async function processIncomingMessage(payload: {
     channel:   "whatsapp",
     isAi:      true,
     status:    "sent",
-  }).catch((err) => console.error("[WhatsApp Webhook] AI message save failed:", err));
+  }).catch((err) => console.error("[WA] AI message save failed:", err));
 
   // Send via WhatsApp Business API
+  console.log(`[WA] PASO 9 — Enviando respuesta a +${normalizedIncoming} vía WhatsApp org=${orgId}…`);
   const aiSent = await sendAutoReply(orgId, fromPhone, aiReply);
 
   // Update message status if send failed
   if (!aiSent) {
+    console.error(`[WA] PASO 9 ❌ Envío fallido a +${normalizedIncoming} — revisar credenciales WhatsApp para org=${orgId}`);
     await db.update(messagesTable)
       .set({ status: "failed" })
       .where(and(
@@ -741,6 +840,8 @@ async function processIncomingMessage(payload: {
         eq(messagesTable.isAi,      true),
       ))
       .catch(() => {});
+  } else {
+    console.log(`[WA] PASO 9 ✅ Respuesta enviada a +${normalizedIncoming}`);
   }
 
   logIntegrationEvent({
@@ -762,7 +863,7 @@ async function processIncomingMessage(payload: {
     }).catch(() => {});
   }
 
-  console.log(`[WhatsApp Webhook] ${aiSent ? "✅" : "❌"} AI reply to ${client.name} | sent=${aiSent}`);
+  console.log(`[WA] ──────────────── FIN procesamiento +${normalizedIncoming} ${aiSent ? "✅ OK" : "❌ SEND FAILED"} ────`);
 }
 
 // ── GET /whatsapp/webhook — Meta hub verification (PUBLIC, no auth) ────────────
@@ -842,10 +943,13 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
     const received = await IntegrationManager.receive("whatsapp", body);
     if (received) {
       await processIncomingMessage({
-        fromPhone:    received.from,
-        text:         received.message,
-        waMessageId:  received.providerId ?? undefined,
-        contactName:  (received.metadata?.profileName as string) ?? undefined,
+        fromPhone:     received.from,
+        text:          received.message,
+        waMessageId:   received.providerId ?? undefined,
+        contactName:   (received.metadata?.profileName as string) ?? undefined,
+        // Pass the business phone_number_id so processIncomingMessage can resolve
+        // the correct org — critical for multi-tenant and for new contacts.
+        phoneNumberId: (received.metadata?.phoneNumberId as string) ?? undefined,
       }).catch((err) => console.error("[WhatsApp Webhook] Processing error:", err));
       return;
     }
@@ -854,6 +958,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
         const value = change.value;
+        const phoneNumberId = value.metadata?.phone_number_id;
 
         // ── Status updates (delivered, read, failed, sent) ──────────────────
         for (const status of value.statuses ?? []) {
@@ -881,10 +986,11 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
           if (msg.type === "text") {
             // ── Text → standard AI pipeline ────────────────────────────────
             await processIncomingMessage({
-              fromPhone:    msg.from,
-              text:         msg.text?.body ?? "",
-              waMessageId:  msg.id,
-              contactName:  contactNameMap[msg.from],
+              fromPhone:     msg.from,
+              text:          msg.text?.body ?? "",
+              waMessageId:   msg.id,
+              contactName:   contactNameMap[msg.from],
+              phoneNumberId,
             }).catch((err) =>
               console.error("[WhatsApp Webhook] Processing error:", err),
             );
@@ -923,10 +1029,11 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
                 }
                 console.log(`[WhatsApp Webhook] 🎤 Voice from +${String(msg.from).slice(-9)}: "${transcript.slice(0, 80)}"`);
                 await processIncomingMessage({
-                  fromPhone:   msg.from,
-                  text:        transcript,
-                  waMessageId: msg.id,
-                  contactName: contactNameMap[msg.from],
+                  fromPhone:     msg.from,
+                  text:          transcript,
+                  waMessageId:   msg.id,
+                  contactName:   contactNameMap[msg.from],
+                  phoneNumberId: phoneNumberId ?? undefined,
                 });
               } catch (err) {
                 console.error("[WhatsApp Webhook] Audio processing error:", err);
