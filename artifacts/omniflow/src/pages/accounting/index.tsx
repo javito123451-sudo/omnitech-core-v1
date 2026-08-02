@@ -24,7 +24,7 @@ const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; minRole: "mem
 const ROLE_LEVEL: Record<string, number> = {
   member: 0, manager: 1, admin: 2, owner: 2, SUPER_ADMIN: 2,
 };
-
+ 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function AccountingPage() {
