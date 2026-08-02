@@ -12,24 +12,29 @@ import SimulatorIVA from "./SimulatorIVA";
 import SimulatorIRPF from "./SimulatorIRPF";
 import SimulatorRenta from "./SimulatorRenta";
 import TaxDocuments from "./Documents";
+import Verifactu from "./Verifactu";
 
 type Tab =
+  | "dashboard"
+  | "calendar"
+  type Tab =
   | "dashboard"
   | "calendar"
   | "simulator-iva"
   | "simulator-irpf"
   | "simulator-renta"
-  | "documents";
+  | "documents"
+  | "verifactu";
 
 const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; minRole: string }[] = [
-  { id: "dashboard",       label: "Dashboard",     icon: LayoutDashboard, minRole: "member" },
-  { id: "calendar",        label: "Calendario",    icon: CalendarDays,    minRole: "member" },
-  { id: "simulator-iva",   label: "IVA",           icon: Percent,         minRole: "member" },
-  { id: "simulator-irpf",  label: "IRPF",          icon: Wallet,          minRole: "member" },
-  { id: "simulator-renta", label: "Renta",         icon: Receipt,         minRole: "member" },
-  { id: "documents",       label: "Documentos",    icon: FileText,        minRole: "member" },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, minRole: "member" },
+  { id: "calendar", label: "Calendario", icon: CalendarDays, minRole: "member" },
+  { id: "simulator-iva", label: "IVA", icon: Percent, minRole: "member" },
+  { id: "simulator-irpf", label: "IRPF", icon: Wallet, minRole: "member" },
+  { id: "simulator-renta", label: "Renta", icon: Receipt, minRole: "member" },
+  { id: "documents", label: "Documentos", icon: FileText, minRole: "member" },
+  { id: "verifactu", label: "Verifactu", icon: ShieldCheck, color: "text-emerald-600", minRole: "member" },
 ];
-
 const ROLE_LEVEL: Record<string, number> = {
   member: 0, read_only: 0, vendedor: 0, manager: 1, admin: 2, owner: 2, SUPER_ADMIN: 2,
 };
