@@ -14,9 +14,7 @@ import SimulatorRenta from "./SimulatorRenta";
 import TaxDocuments from "./Documents";
 import Verifactu from "./Verifactu";
 
-type Tab =
-  | "dashboard"
-  | "calendar"
+
   type Tab =
   | "dashboard"
   | "calendar"
