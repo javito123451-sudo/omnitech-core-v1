@@ -103,6 +103,7 @@ export default function TaxPage() {
         {activeTab === "simulator-irpf" && <SimulatorIRPF />}
         {activeTab === "simulator-renta" && <SimulatorRenta />}
         {activeTab === "documents" && <TaxDocuments />}
+        {activeTab === "verifactu" && <Verifactu />}
       </div>
     </div>
   );
