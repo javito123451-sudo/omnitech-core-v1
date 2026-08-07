@@ -10,6 +10,7 @@ import {
   encryptCredentials,
 } from "../utils/integrationCreds";
 import { IntegrationRegistry } from "./integrationRegistry";
+import { isActionAdapter } from "./types";
 import type {
   IntegrationAdapter,
   AdapterContext,
@@ -19,6 +20,9 @@ import type {
   IntegrationHealth,
   ValidationResult,
   IntegrationRecord,
+  ActionResult,
+  ActionDefinition,
+  ResourceDefinition,
 } from "./types";
 
 export { IntegrationRegistry };
@@ -256,6 +260,16 @@ export const IntegrationManager = {
       return { success: false, error: err };
     }
 
+    if (!("send" in adapter)) {
+      const err = `Adapter "${slug}" is action-shaped, not messaging — use executeAction() instead`;
+      await logEvent({
+        orgId, integrationSlug: slug, direction: "outbound",
+        eventType: "send_failed", status: "error",
+        summary: err, errorMessage: err,
+      });
+      return { success: false, error: err };
+    }
+
     const ctx = buildContext(row);
     const t0 = Date.now();
     const result = await adapter.send(ctx, payload);
@@ -268,7 +282,7 @@ export const IntegrationManager = {
       summary: result.success
         ? `Message sent to ${payload.to} (${durationMs}ms)`
         : `Send failed: ${result.error}`,
-      errorMessage: result.error ?? null,
+      errorMessage: result.error ?? undefined,
       payloadJson: { to: payload.to, durationMs, providerId: result.providerId },
     });
 
@@ -285,7 +299,75 @@ export const IntegrationManager = {
       console.warn(`[IntegrationManager] receive() — no adapter for "${slug}"`);
       return null;
     }
+    if (!("receive" in adapter)) {
+      console.warn(`[IntegrationManager] receive() — adapter "${slug}" is action-shaped, not messaging`);
+      return null;
+    }
     return adapter.receive(rawPayload);
+  },
+
+  // ── executeAction() — run a declared action on an action-shaped adapter ────
+  async executeAction(
+    orgId: number,
+    slug: string,
+    actionSlug: string,
+    input: Record<string, unknown>,
+  ): Promise<ActionResult> {
+    const adapter = IntegrationRegistry.get(slug);
+    if (!adapter) {
+      const err = `No adapter registered for "${slug}"`;
+      await logEvent({
+        orgId, integrationSlug: slug, direction: "outbound",
+        eventType: "action_failed", status: "error",
+        summary: err, errorMessage: err,
+      });
+      return { success: false, error: err, errorCode: "ADAPTER_NOT_FOUND" };
+    }
+
+    if (!isActionAdapter(adapter)) {
+      const err = `Adapter "${slug}" does not implement ActionAdapter (it's messaging-shaped)`;
+      return { success: false, error: err, errorCode: "NOT_ACTION_ADAPTER" };
+    }
+
+    if (!adapter.actions.some((a) => a.slug === actionSlug)) {
+      return { success: false, error: `Action "${actionSlug}" not declared on adapter "${slug}"`, errorCode: "ACTION_NOT_FOUND" };
+    }
+
+    const row = await getOrgIntegration(orgId, slug);
+    if (!row) {
+      const err = `Integration "${slug}" not configured for org ${orgId}`;
+      await logEvent({
+        orgId, integrationSlug: slug, direction: "outbound",
+        eventType: "action_failed", status: "error",
+        summary: err, errorMessage: err,
+      });
+      return { success: false, error: err, errorCode: "NOT_CONFIGURED" };
+    }
+
+    const ctx = buildContext(row);
+    const t0 = Date.now();
+    const result = await adapter.executeAction(ctx, actionSlug, input);
+    const durationMs = Date.now() - t0;
+
+    await logEvent({
+      orgId, integrationSlug: slug, direction: "outbound",
+      eventType: result.success ? "action_executed" : "action_failed",
+      status: result.success ? "processed" : "error",
+      summary: result.success
+        ? `Action "${actionSlug}" executed (${durationMs}ms)`
+        : `Action "${actionSlug}" failed: ${result.error}`,
+      errorMessage: result.error ?? undefined,
+      payloadJson: { actionSlug, durationMs },
+    });
+
+    return { ...result, durationMs };
+  },
+
+  // ── capabilities() — declared actions/resources/events for an action adapter ─
+  capabilities(slug: string): { actions: ActionDefinition[]; resources: ResourceDefinition[] } | null {
+    const adapter = IntegrationRegistry.get(slug);
+    if (!adapter || !isActionAdapter(adapter)) return null;
+    return { actions: adapter.actions, resources: adapter.resources };
   },
 
   // ── refreshCredentials() — rotate tokens if needed ─────────────────────────
