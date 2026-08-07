@@ -5,7 +5,8 @@
     "tsBuildInfoFile": ".tsbuildinfo",
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "lib": ["es2022", "dom"]
   },
   "include": ["src"],
   "references": [
@@ -14,12 +15,6 @@
     },
     {
       "path": "../../lib/api-zod"
-    },
-    {
-      "path": "../../lib/integrations/core"
-    },
-    {
-      "path": "../../lib/integrations/connector-verifactu"
     }
   ]
 }
