@@ -1,48 +1,21 @@
 /**
- * VeriFactu service — la única puerta de entrada al conector desde el resto de
- * la aplicación. Construye el InvoiceInput del conector a partir de datos YA
- * existentes (invoicesTable + invoiceItemsTable + organizationsTable), nunca
- * pide datos de factura duplicados. Bootstrapea el IntegrationRegistry del
- * Core una única vez por proceso.
+ * VeriFactu service — la única puerta de entrada desde el resto de la
+ * aplicación al adapter VeriFactu del hub. Construye el InvoiceInput a
+ * partir de datos YA existentes (invoicesTable + invoiceItemsTable +
+ * organizationsTable.taxId), nunca pide datos de factura duplicados.
+ *
+ * Toda la resolución de config/credenciales por org (org_integrations,
+ * descifrado AES-256-GCM) la hace IntegrationManager internamente — este
+ * servicio no la duplica.
  */
-import { db, invoicesTable, invoiceItemsTable } from "@workspace/db";
+import { db, invoicesTable, invoiceItemsTable, organizationsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import {
-  IntegrationRegistry,
-  ConnectorFactory,
-  ExecutionDispatcher,
-  HealthEngine,
-  ContextProviderRegistry,
-  NO_RETRY,
-  type ConnectorContext,
-} from "@workspace/connector-core";
-import { verifactuManifest, HttpAeatClient, createVerifactuModule } from "@workspace/connector-verifactu";
-import type { InvoiceInput } from "@workspace/connector-verifactu";
+import { IntegrationManager } from "../hub";
+import type { InvoiceInput } from "../hub/adapters/verifactu/domain";
 import { PgVerifactuChainStore } from "./verifactuChainStore";
-import { PgVerifactuContextProvider } from "./verifactuContextProvider";
 
-// ── Bootstrap (una vez por proceso) ────────────────────────────────────────────
+const VERIFACTU_SLUG = "verifactu";
 const chainStore = new PgVerifactuChainStore();
-
-// verifactuManifest.load() no admite parámetros — construimos un manifiesto
-// equivalente que inyecta nuestro ChainStore real en lugar del InMemoryChainStore
-// de test/demo, reutilizando el resto del manifiesto (acciones, config, etc. sin duplicar).
-const wiredManifest = {
-  ...verifactuManifest,
-  load: () => createVerifactuModule({ chainStore, aeatClient: new HttpAeatClient() }),
-};
-
-const registry = new IntegrationRegistry();
-registry.bootstrap([wiredManifest]);
-
-const factory = new ConnectorFactory(registry);
-const dispatcher = new ExecutionDispatcher(registry, factory);
-const healthEngine = new HealthEngine(registry, factory);
-
-const contextProviders = new ContextProviderRegistry();
-contextProviders.register(new PgVerifactuContextProvider());
-
-// ── Construcción de InvoiceInput desde datos existentes ────────────────────────
 
 export class InvoiceNotFoundError extends Error {
   constructor(invoiceId: number) {
@@ -64,11 +37,14 @@ async function buildInvoiceInput(orgId: number, invoiceId: number): Promise<Invo
     .where(eq(invoiceItemsTable.invoiceId, invoiceId))
     .orderBy(invoiceItemsTable.orderIndex);
 
-  const taxRate = Number(invoice.taxRate) / 100; // invoicesTable guarda el tipo como porcentaje (21), el conector espera fracción (0.21)
+  const taxRate = Number(invoice.taxRate) / 100; // invoicesTable guarda el tipo como porcentaje (21), VeriFactu espera fracción (0.21)
 
-  const ctx = await contextProviders.buildContext(orgId, "verifactu");
-  const issuerNif = ctx.credentials["issuerNif"];
-  if (!issuerNif) {
+  const [org] = await db
+    .select({ taxId: organizationsTable.taxId, legalName: organizationsTable.legalName, name: organizationsTable.name })
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId));
+
+  if (!org?.taxId) {
     throw new Error(
       "El org no tiene NIF configurado (organizations.tax_id vacío). Complétalo antes de generar registros VeriFactu.",
     );
@@ -77,8 +53,8 @@ async function buildInvoiceInput(orgId: number, invoiceId: number): Promise<Invo
   return {
     invoiceNumber: invoice.invoiceNumber,
     issueDate: invoice.createdAt.toISOString().slice(0, 10),
-    issuerNif,
-    issuerName: (ctx.config["issuerName"] as string) ?? undefined,
+    issuerNif: org.taxId,
+    issuerName: org.legalName ?? org.name,
     invoiceType: "F1",
     lines: items.map((item) => ({
       description: item.description,
@@ -93,12 +69,12 @@ async function buildInvoiceInput(orgId: number, invoiceId: number): Promise<Invo
 
 export async function generateVerifactuRecord(orgId: number, invoiceId: number) {
   const invoiceInput = await buildInvoiceInput(orgId, invoiceId);
-  const ctx: ConnectorContext = await contextProviders.buildContext(orgId, "verifactu");
-
-  const result = await dispatcher.dispatch(ctx, "generate_invoice_record", invoiceInput as unknown as Record<string, unknown>, {
-    retry: NO_RETRY, // generar un registro nunca debe reintentarse solo — un reintento crearía un segundo registro en la cadena
-  });
-  return result;
+  return IntegrationManager.executeAction(
+    orgId,
+    VERIFACTU_SLUG,
+    "generate_invoice_record",
+    invoiceInput as unknown as Record<string, unknown>,
+  );
 }
 
 export async function submitVerifactuRecord(orgId: number, invoiceId: number) {
@@ -108,10 +84,12 @@ export async function submitVerifactuRecord(orgId: number, invoiceId: number) {
     .where(and(eq(invoicesTable.orgId, orgId), eq(invoicesTable.id, invoiceId)));
   if (!invoice) throw new InvoiceNotFoundError(invoiceId);
 
-  const ctx = await contextProviders.buildContext(orgId, "verifactu");
-  const result = await dispatcher.dispatch(ctx, "submit_record", { invoiceNumber: invoice.invoiceNumber });
+  const result = await IntegrationManager.executeAction(orgId, VERIFACTU_SLUG, "submit_record", {
+    invoiceNumber: invoice.invoiceNumber,
+  });
 
-  const mode = (ctx.config["mode"] as string) ?? "no_verifactu";
+  const mode = (result.output as { mode?: string } | undefined)?.mode ?? "no_verifactu";
+
   await chainStore.markSubmitted(orgId, invoiceId, {
     accepted: result.success,
     aeatStatus: (result.output as { aeatStatus?: string } | undefined)?.aeatStatus,
@@ -132,6 +110,5 @@ export async function listVerifactuRecords(orgId: number) {
 }
 
 export async function checkVerifactuHealth(orgId: number) {
-  const ctx = await contextProviders.buildContext(orgId, "verifactu");
-  return healthEngine.check(ctx);
+  return IntegrationManager.healthCheck(orgId, VERIFACTU_SLUG);
 }

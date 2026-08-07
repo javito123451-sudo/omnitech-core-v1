@@ -12,7 +12,8 @@
  */
 import { db, verifactuRecordsTable, invoicesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
-import type { ChainStore, InvoiceRecord } from "@workspace/connector-verifactu";
+import type { ChainStore } from "../hub/adapters/verifactu/chainStore";
+import type { InvoiceRecord } from "../hub/adapters/verifactu/domain";
 
 export class InvoiceNotFoundForChainError extends Error {
   constructor(orgId: number, invoiceNumber: string) {
