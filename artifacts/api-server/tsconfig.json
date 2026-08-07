@@ -14,6 +14,12 @@
     },
     {
       "path": "../../lib/api-zod"
+    },
+    {
+      "path": "../../lib/integrations/core"
+    },
+    {
+      "path": "../../lib/integrations/connector-verifactu"
     }
   ]
 }
