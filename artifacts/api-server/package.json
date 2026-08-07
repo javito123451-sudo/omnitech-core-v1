@@ -17,8 +17,6 @@
     "@types/node-cron": "^3.0.11",
     "@types/pdf-parse": "^1.1.5",
     "@workspace/api-zod": "workspace:*",
-    "@workspace/connector-core": "workspace:*",
-    "@workspace/connector-verifactu": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
