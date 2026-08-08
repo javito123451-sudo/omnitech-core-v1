@@ -19,5 +19,7 @@
  * Nota de despliegue: el proyecto en Vercel debe tener Framework Preset =
  * "Other" (no "Express") para que reconozca esta carpeta /api como
  * funciones serverless en vez de intentar compilar todo src/ con tsc.
+ * Además, Output Directory debe fijarse a "." — un proyecto solo-API no
+ * genera ninguna carpeta "public", así que hay que decírselo explícitamente.
  */
 export { default } from "../src/app";
