@@ -135,22 +135,24 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   });
 
   // Build para Vercel: SOLO la app de Express (sin listen, sin schedulers),
-  // como función serverless. Generado directamente aquí con esbuild — sin
-  // comprobación de tipos — para no arrastrar al compilador de funciones de
-  // Vercel los errores de TypeScript preexistentes en el resto del árbol de
-  // rutas (ver auditoría de migración, ago 2026). Este archivo es un
-  // artefacto de build, no se comitea (ver .gitignore).
+  // como función serverless en api/index.mjs. Generado directamente aquí con
+  // esbuild — sin comprobación de tipos — para no arrastrar al compilador de
+  // funciones de Vercel los errores de TypeScript preexistentes en el resto
+  // del árbol de rutas (ver auditoría de migración, ago 2026). Este archivo
+  // es un artefacto de build, no se comitea (ver .gitignore).
   //
-  // Nombre "[[...slug]].mjs" (catch-all opcional): es la convención propia
-  // de Vercel para que UNA función capture cualquier ruta bajo /api/* sin
-  // depender de "rewrites" en vercel.json. Los rewrites personalizados
-  // resultaron tener menos prioridad que el sistema de archivos estáticos
-  // de Vercel, causando que /api/healthz devolviera la página estática en
-  // vez de ejecutar la función — este catch-all nativo evita ese problema
-  // de raíz. outdir (no outfile): el plugin de pino genera varios archivos
-  // worker internamente, y esbuild exige outdir en cuanto hay más de un
-  // archivo de salida. El entrypoint se llama app.mjs por defecto (mismo
-  // nombre que src/app.ts) — se renombra después al nombre catch-all.
+  // CORRECCIÓN (2º intento): se probó "[[...slug]].mjs" (catch-all opcional)
+  // pensando que era convención nativa de Vercel — en realidad es sintaxis
+  // específica de Next.js, no reconocida en proyectos sin ese framework.
+  // Volviendo a "index.mjs" + rewrite en vercel.json (config real de la
+  // plataforma Vercel, no de un framework). El problema original de que el
+  // rewrite no funcionaba era, en realidad, por la presencia de
+  // public/index.html actuando como fallback estático — ya eliminado.
+  //
+  // outdir (no outfile): el plugin de pino genera varios archivos worker
+  // internamente, y esbuild exige outdir en cuanto hay más de un archivo de
+  // salida. El entrypoint se llama app.mjs por defecto (mismo nombre que
+  // src/app.ts) — se renombra después a index.mjs.
   const apiDir = path.resolve(artifactDir, "api");
   await esbuild({
     ...commonOptions,
@@ -159,7 +161,7 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     outExtension: { ".js": ".mjs" },
     sourcemap: false,
   });
-  await rename(path.resolve(apiDir, "app.mjs"), path.resolve(apiDir, "[[...slug]].mjs"));
+  await rename(path.resolve(apiDir, "app.mjs"), path.resolve(apiDir, "index.mjs"));
 }
 
 buildAll().catch((err) => {
