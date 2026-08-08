@@ -49,7 +49,7 @@ interface RecurringRow {
   next_run_at: string;
 }
 
-async function processDueTemplates(): Promise<void> {
+export async function processDueTemplates(): Promise<void> {
   const result = await db.execute(sql`
     SELECT id, org_id, client_id, description, frequency, currency, tax_rate, items, send_on_create, next_run_at
     FROM recurring_invoices
