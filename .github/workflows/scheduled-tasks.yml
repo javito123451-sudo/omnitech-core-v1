@@ -32,9 +32,13 @@ jobs:
     steps:
       - name: Disparar recurring-invoices
         run: |
-          curl -sf -X POST "${{ secrets.API_BASE_URL }}/api/internal/cron/recurring-invoices" \
+          http_code=$(curl -s -o /tmp/response.txt -w "%{http_code}" -X POST \
+            "${{ secrets.API_BASE_URL }}/api/internal/cron/recurring-invoices" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
-            --max-time 30
+            --max-time 30)
+          echo "HTTP $http_code"
+          cat /tmp/response.txt
+          if [ "$http_code" -ge 400 ]; then exit 1; fi
 
   autopilot:
     if: github.event.schedule == '*/5 * * * *' || github.event_name == 'workflow_dispatch'
@@ -42,9 +46,13 @@ jobs:
     steps:
       - name: Disparar autopilot
         run: |
-          curl -sf -X POST "${{ secrets.API_BASE_URL }}/api/internal/cron/autopilot" \
+          http_code=$(curl -s -o /tmp/response.txt -w "%{http_code}" -X POST \
+            "${{ secrets.API_BASE_URL }}/api/internal/cron/autopilot" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
-            --max-time 30
+            --max-time 30)
+          echo "HTTP $http_code"
+          cat /tmp/response.txt
+          if [ "$http_code" -ge 400 ]; then exit 1; fi
 
   daily-backup:
     if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
@@ -52,6 +60,10 @@ jobs:
     steps:
       - name: Disparar daily-backup
         run: |
-          curl -sf -X POST "${{ secrets.API_BASE_URL }}/api/internal/cron/daily-backup" \
+          http_code=$(curl -s -o /tmp/response.txt -w "%{http_code}" -X POST \
+            "${{ secrets.API_BASE_URL }}/api/internal/cron/daily-backup" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
-            --max-time 60
+            --max-time 60)
+          echo "HTTP $http_code"
+          cat /tmp/response.txt
+          if [ "$http_code" -ge 400 ]; then exit 1; fi
