@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, rename } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -14,13 +14,10 @@ async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
 
-  await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+  const commonOptions = {
     platform: "node",
     bundle: true,
     format: "esm",
-    outdir: distDir,
-    outExtension: { ".js": ".mjs" },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
     // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
@@ -107,7 +104,6 @@ async function buildAll() {
       "multer",
       "csv-parse",
     ],
-    sourcemap: "linked",
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
       esbuildPluginPino({ transports: ["pino-pretty"] })
@@ -123,7 +119,39 @@ globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
+  };
+
+  // Build tradicional: servidor persistente para Replit/local (node ./dist/index.mjs).
+  // Incluye app.listen() y arranca los schedulers en proceso.
+  await esbuild({
+    ...commonOptions,
+    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    outdir: distDir,
+    outExtension: { ".js": ".mjs" },
+    sourcemap: "linked",
   });
+
+  // Build para Vercel: SOLO la app de Express (sin listen, sin schedulers),
+  // como función serverless en api/index.mjs. Generado directamente aquí con
+  // esbuild — sin comprobación de tipos — para no arrastrar al compilador de
+  // funciones de Vercel los errores de TypeScript preexistentes en el resto
+  // del árbol de rutas (ver auditoría de migración, ago 2026). Este archivo
+  // es un artefacto de build, no se comitea (ver .gitignore).
+  //
+  // outdir (no outfile): el plugin de pino genera varios archivos worker
+  // internamente (pino-worker.mjs, pino-file.mjs, etc.), y esbuild exige
+  // outdir en cuanto hay más de un archivo de salida. El entrypoint se
+  // llama app.mjs por defecto (mismo nombre que src/app.ts) — se renombra
+  // a index.mjs después, que es el nombre que Vercel espera para /api.
+  const apiDir = path.resolve(artifactDir, "api");
+  await esbuild({
+    ...commonOptions,
+    entryPoints: [path.resolve(artifactDir, "src/app.ts")],
+    outdir: apiDir,
+    outExtension: { ".js": ".mjs" },
+    sourcemap: false,
+  });
+  await rename(path.resolve(apiDir, "app.mjs"), path.resolve(apiDir, "index.mjs"));
 }
 
 buildAll().catch((err) => {
