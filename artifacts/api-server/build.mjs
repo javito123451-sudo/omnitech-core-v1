@@ -135,17 +135,22 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   });
 
   // Build para Vercel: SOLO la app de Express (sin listen, sin schedulers),
-  // como función serverless en api/index.mjs. Generado directamente aquí con
-  // esbuild — sin comprobación de tipos — para no arrastrar al compilador de
-  // funciones de Vercel los errores de TypeScript preexistentes en el resto
-  // del árbol de rutas (ver auditoría de migración, ago 2026). Este archivo
-  // es un artefacto de build, no se comitea (ver .gitignore).
+  // como función serverless. Generado directamente aquí con esbuild — sin
+  // comprobación de tipos — para no arrastrar al compilador de funciones de
+  // Vercel los errores de TypeScript preexistentes en el resto del árbol de
+  // rutas (ver auditoría de migración, ago 2026). Este archivo es un
+  // artefacto de build, no se comitea (ver .gitignore).
   //
-  // outdir (no outfile): el plugin de pino genera varios archivos worker
-  // internamente (pino-worker.mjs, pino-file.mjs, etc.), y esbuild exige
-  // outdir en cuanto hay más de un archivo de salida. El entrypoint se
-  // llama app.mjs por defecto (mismo nombre que src/app.ts) — se renombra
-  // a index.mjs después, que es el nombre que Vercel espera para /api.
+  // Nombre "[[...slug]].mjs" (catch-all opcional): es la convención propia
+  // de Vercel para que UNA función capture cualquier ruta bajo /api/* sin
+  // depender de "rewrites" en vercel.json. Los rewrites personalizados
+  // resultaron tener menos prioridad que el sistema de archivos estáticos
+  // de Vercel, causando que /api/healthz devolviera la página estática en
+  // vez de ejecutar la función — este catch-all nativo evita ese problema
+  // de raíz. outdir (no outfile): el plugin de pino genera varios archivos
+  // worker internamente, y esbuild exige outdir en cuanto hay más de un
+  // archivo de salida. El entrypoint se llama app.mjs por defecto (mismo
+  // nombre que src/app.ts) — se renombra después al nombre catch-all.
   const apiDir = path.resolve(artifactDir, "api");
   await esbuild({
     ...commonOptions,
@@ -154,7 +159,7 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     outExtension: { ".js": ".mjs" },
     sourcemap: false,
   });
-  await rename(path.resolve(apiDir, "app.mjs"), path.resolve(apiDir, "index.mjs"));
+  await rename(path.resolve(apiDir, "app.mjs"), path.resolve(apiDir, "[[...slug]].mjs"));
 }
 
 buildAll().catch((err) => {

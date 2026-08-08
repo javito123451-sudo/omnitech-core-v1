@@ -9,7 +9,7 @@ out-tsc
 .expo-shared
 
 # artefacto de build generado por build.mjs para el deploy serverless en Vercel
-artifacts/api-server/api/index.mjs
+artifacts/api-server/api/*.mjs
 
 # dependencies
 node_modules
