@@ -15,5 +15,9 @@
  * vercel.json (junto a este archivo) reescribe TODAS las rutas hacia esta
  * función, para que Express siga viendo la URL completa (incluido el
  * prefijo /api que ya usan sus propias rutas internas).
+ *
+ * Nota de despliegue: el proyecto en Vercel debe tener Framework Preset =
+ * "Other" (no "Express") para que reconozca esta carpeta /api como
+ * funciones serverless en vez de intentar compilar todo src/ con tsc.
  */
 export { default } from "../src/app";
