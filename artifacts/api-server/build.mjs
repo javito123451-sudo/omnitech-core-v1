@@ -8,6 +8,9 @@ import { rm, rename } from "node:fs/promises";
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
+// Trigger de redeploy tras completar variables de entorno en Vercel (ago 2026):
+// Clerk, OpenAI, WhatsApp, Telegram, Neon (DATABASE_URL pooled), CRON_SECRET.
+
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
