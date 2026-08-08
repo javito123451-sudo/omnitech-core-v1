@@ -22,4 +22,4 @@
  * Además, Output Directory debe fijarse a "." — un proyecto solo-API no
  * genera ninguna carpeta "public", así que hay que decírselo explícitamente.
  */
-export { default } from "../src/app";
+export { default } from "../src/app.js";
