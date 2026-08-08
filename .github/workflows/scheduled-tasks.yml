@@ -1,23 +1,27 @@
 name: Cron — tareas programadas de OmniTech-Core
 
 # Sustituye a los node-cron / setInterval que corrían DENTRO del proceso de
-# Express en Replit. En un hosting serverless (Vercel) el proceso no vive
-# para siempre, así que algo EXTERNO tiene que disparar estas tareas — ese
-# "algo" es este workflow. Las frecuencias son idénticas a las que ya tenías:
+# Express en Replit. En un hosting con procesos efímeros (o en frío) el
+# proceso no vive para siempre, así que algo EXTERNO tiene que disparar
+# estas tareas — ese "algo" es este workflow. Frecuencias:
 #   - recurring-invoices : cada 15 minutos (antes: cron.schedule("*/15 * * * *"))
-#   - autopilot          : cada minuto     (antes: cron.schedule("* * * * *"))
+#   - autopilot          : cada 5 minutos  (antes: cron.schedule("* * * * *") —
+#                           GitHub Actions no permite más de una vez cada 5
+#                           min; "* * * * *" se ignora en silencio, nunca
+#                           llegó a dispararse. Confirmado: 0 ejecuciones
+#                           registradas mientras estuvo así.)
 #   - daily-backup        : una vez al día  (antes: setInterval(..., 24h))
 #
 # Requiere dos secrets configurados en Settings → Secrets and variables →
 # Actions de este repositorio:
-#   API_BASE_URL  → ej. https://omnitech-core-v1-api-server.vercel.app
+#   API_BASE_URL  → URL del backend (Render)
 #   CRON_SECRET   → el mismo valor que CRON_SECRET en las variables de
-#                   entorno del proyecto de Vercel (ver internalCron.ts)
+#                   entorno del servicio en Render (ver internalCron.ts)
 
 on:
   schedule:
     - cron: "*/15 * * * *"   # recurring-invoices
-    - cron: "* * * * *"      # autopilot
+    - cron: "*/5 * * * *"    # autopilot
     - cron: "0 3 * * *"      # daily-backup — 03:00 UTC, hora tranquila
   workflow_dispatch: {}       # permite disparo manual desde la pestaña Actions, útil para probar
 
@@ -33,7 +37,7 @@ jobs:
             --max-time 30
 
   autopilot:
-    if: github.event.schedule == '* * * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '*/5 * * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Disparar autopilot
