@@ -39,10 +39,12 @@ import { adsRouter } from "./ads";
 import { leadsRouter } from "./leads";
 import { timeRouter }  from "./time";
 import { aceRouter } from "./ace";
+import { internalCronRouter } from "./internalCron";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use("/internal/cron", internalCronRouter);
 router.use("/auth", authRouter);
 
 // ── Client portal — public GET endpoints (no Clerk auth on reads) ─────────────

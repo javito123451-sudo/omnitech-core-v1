@@ -314,26 +314,26 @@ export function getDiskUsage(): number {
   }
 }
 
+export async function runDailyBackupJob(): Promise<void> {
+  console.log("[BackupScheduler] Starting daily backup run…");
+  try {
+    await runBackup("full_db", null, "auto:scheduler");
+    await runBackup("config",  null, "auto:scheduler");
+    await runBackup("audit",   null, "auto:scheduler");
+    const pruned = await applyRetention();
+    console.log(`[BackupScheduler] Daily backup completed. Pruned ${pruned} expired backups.`);
+  } catch (err) {
+    console.error("[BackupScheduler] Daily backup failed:", String(err));
+  }
+}
+
 export function scheduleAutoBackups(): void {
   const DAY_MS = 24 * 60 * 60 * 1000;
 
-  const runDailyBackup = async () => {
-    console.log("[BackupScheduler] Starting daily backup run…");
-    try {
-      await runBackup("full_db", null, "auto:scheduler");
-      await runBackup("config",  null, "auto:scheduler");
-      await runBackup("audit",   null, "auto:scheduler");
-      const pruned = await applyRetention();
-      console.log(`[BackupScheduler] Daily backup completed. Pruned ${pruned} expired backups.`);
-    } catch (err) {
-      console.error("[BackupScheduler] Daily backup failed:", String(err));
-    }
-  };
-
   // Initial run after 90s (let server fully start), then every 24h
   setTimeout(() => {
-    runDailyBackup();
-    setInterval(runDailyBackup, DAY_MS);
+    runDailyBackupJob();
+    setInterval(runDailyBackupJob, DAY_MS);
   }, 90_000);
 
   console.log("[BackupScheduler] Auto-backup scheduler armed — first run in 90s, then daily.");

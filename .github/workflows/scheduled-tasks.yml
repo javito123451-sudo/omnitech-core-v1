@@ -1,0 +1,53 @@
+name: Cron — tareas programadas de OmniTech-Core
+
+# Sustituye a los node-cron / setInterval que corrían DENTRO del proceso de
+# Express en Replit. En un hosting serverless (Vercel) el proceso no vive
+# para siempre, así que algo EXTERNO tiene que disparar estas tareas — ese
+# "algo" es este workflow. Las frecuencias son idénticas a las que ya tenías:
+#   - recurring-invoices : cada 15 minutos (antes: cron.schedule("*/15 * * * *"))
+#   - autopilot          : cada minuto     (antes: cron.schedule("* * * * *"))
+#   - daily-backup        : una vez al día  (antes: setInterval(..., 24h))
+#
+# Requiere dos secrets configurados en Settings → Secrets and variables →
+# Actions de este repositorio:
+#   API_BASE_URL  → ej. https://omnitech-core-v1-api-server.vercel.app
+#   CRON_SECRET   → el mismo valor que CRON_SECRET en las variables de
+#                   entorno del proyecto de Vercel (ver internalCron.ts)
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # recurring-invoices
+    - cron: "* * * * *"      # autopilot
+    - cron: "0 3 * * *"      # daily-backup — 03:00 UTC, hora tranquila
+  workflow_dispatch: {}       # permite disparo manual desde la pestaña Actions, útil para probar
+
+jobs:
+  recurring-invoices:
+    if: github.event.schedule == '*/15 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar recurring-invoices
+        run: |
+          curl -sf -X POST "${{ secrets.API_BASE_URL }}/api/internal/cron/recurring-invoices" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 30
+
+  autopilot:
+    if: github.event.schedule == '* * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar autopilot
+        run: |
+          curl -sf -X POST "${{ secrets.API_BASE_URL }}/api/internal/cron/autopilot" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 30
+
+  daily-backup:
+    if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar daily-backup
+        run: |
+          curl -sf -X POST "${{ secrets.API_BASE_URL }}/api/internal/cron/daily-backup" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 60
