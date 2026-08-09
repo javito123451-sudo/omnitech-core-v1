@@ -1,5 +1,24 @@
 name: Cron — tareas programadas de OmniTech-Core
 
+# DESACTIVADO (ago 2026) — este workflow está deshabilitado manualmente en
+# GitHub (Settings → Actions → este workflow → "Disable workflow"), no
+# borrado, por si en el futuro se vuelve a necesitar.
+#
+# Motivo: se construyó pensando en un hosting serverless (Vercel), donde el
+# proceso no vive para siempre y algo EXTERNO tiene que disparar las tareas
+# programadas. Tras migrar el backend a Render (proceso persistente, igual
+# que Replit), el cron interno original (node-cron dentro de src/index.ts —
+# recurringInvoiceScheduler, autopilotScheduler, backupEngine) ya cubre esto
+# de sobra por sí solo. Tener ambos mecanismos activos a la vez duplicaba
+# cada tarea (factura recurrente generada dos veces, etc.) — confirmado en
+# los logs de arranque de Render, donde el scheduler interno decía
+# "Scheduler started (every 15 min)" mientras este workflow llamaba a la
+# misma ruta con la misma frecuencia.
+#
+# Si en el futuro se vuelve a un hosting serverless, reactivar este workflow
+# (y volver a comprobar que las rutas /api/internal/cron/* siguen existiendo
+# en el backend).
+#
 # Sustituye a los node-cron / setInterval que corrían DENTRO del proceso de
 # Express en Replit. En un hosting con procesos efímeros (o en frío) el
 # proceso no vive para siempre, así que algo EXTERNO tiene que disparar
