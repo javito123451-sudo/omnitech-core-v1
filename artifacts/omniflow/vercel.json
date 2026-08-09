@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://omnitech-core-api.onrender.com/api/:path*" }
+    { "source": "/api/:path*", "destination": "https://omnitech-core-api.onrender.com/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
