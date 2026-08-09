@@ -988,6 +988,21 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info("[Migration] ✅ FIX-AG: messages.client_id is now nullable — conversations decoupled from CRM");
     }
 
+    // ── FIX-AI: support_sessions table (workspace impersonation by SUPER_ADMIN) ──
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS support_sessions (
+        id              SERIAL PRIMARY KEY,
+        admin_clerk_id  TEXT NOT NULL,
+        org_id          INTEGER NOT NULL,
+        org_name        TEXT,
+        reason          TEXT,
+        status          TEXT NOT NULL DEFAULT 'active',
+        started_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        ended_at        TIMESTAMP
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS support_sessions_admin_idx ON support_sessions(admin_clerk_id, status)`);
+    logger.info("[Migration] ✅ FIX-AI: support_sessions table ensured");
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
