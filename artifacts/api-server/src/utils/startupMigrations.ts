@@ -1017,6 +1017,28 @@ export async function runStartupMigrations(): Promise<void> {
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS verifactu_registered_at TIMESTAMP
     `);
     logger.info("[Migration] ✅ FIX-AJ: Verifactu columns on invoices ensured");
+
+    // ── FIX-AK: import_jobs table (Omni Import AI history/tracking) ──
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS import_jobs (
+        id SERIAL PRIMARY KEY,
+        org_id INTEGER NOT NULL,
+        user_clerk_id TEXT,
+        status TEXT NOT NULL DEFAULT 'completed',
+        file_name TEXT,
+        file_type TEXT,
+        detected_type TEXT,
+        confidence_pct INTEGER,
+        raw_text TEXT,
+        extracted_data JSONB,
+        suggested_dest TEXT,
+        records_created INTEGER DEFAULT 0,
+        errors TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    logger.info("[Migration] ✅ FIX-AK: import_jobs table ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
