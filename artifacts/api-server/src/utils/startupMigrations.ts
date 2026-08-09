@@ -1,4 +1,4 @@
-import { db } from "@workspace/db";
+Aimport { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { bumpOrgModuleVersion } from "../lib/moduleVersion";
@@ -722,6 +722,25 @@ export async function runStartupMigrations(): Promise<void> {
       `);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_csl_campaign ON campaign_send_logs(campaign_id)`);
       logger.info("[Migration] ✅ FIX-AA: campaign_send_logs table + campaign columns ensured");
+    }
+    // ── FIX-AH: Ensure UNIQUE constraint on module_configs(org_id, module_slug) ──
+    // Required for ON CONFLICT (org_id, module_slug) in FIX-AB and the modules
+    // toggle route. Missing on databases created fresh outside the original
+    // Replit environment.
+    {
+      const constraintExists = await db.execute(sql`
+        SELECT 1 FROM pg_constraint WHERE conname = 'module_configs_org_module_unique'
+      `);
+      if ((constraintExists as { rows: unknown[] }).rows.length === 0) {
+        await db.execute(sql`
+          ALTER TABLE module_configs
+          ADD CONSTRAINT module_configs_org_module_unique
+          UNIQUE (org_id, module_slug)
+        `);
+        logger.info("[Migration] ✅ FIX-AH: module_configs unique constraint created");
+      } else {
+        logger.info("[Migration] ✅ FIX-AH: module_configs unique constraint already exists");
+      }
     }
 
     // ── FIX-AB: Seed module_configs for every org based on their plan ─────────
