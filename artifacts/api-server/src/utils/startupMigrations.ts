@@ -1003,6 +1003,20 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS support_sessions_admin_idx ON support_sessions(admin_clerk_id, status)`);
     logger.info("[Migration] ✅ FIX-AI: support_sessions table ensured");
+    // ── FIX-AJ: Verifactu columns on invoices (hash chain + QR per RD 1007/2023) ──
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS verifactu_hash TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS verifactu_hash_anterior TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS verifactu_qr_url TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS verifactu_registered_at TIMESTAMP
+    `);
+    logger.info("[Migration] ✅ FIX-AJ: Verifactu columns on invoices ensured");
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
