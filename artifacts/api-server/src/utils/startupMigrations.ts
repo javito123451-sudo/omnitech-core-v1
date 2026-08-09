@@ -1,4 +1,4 @@
-Aimport { db } from "@workspace/db";
+import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { bumpOrgModuleVersion } from "../lib/moduleVersion";
