@@ -656,3 +656,132 @@ taxRouter.get("/calculations", requirePermission("tax.read"), async (req, res) =
     res.status(500).json({ error: String(err) });
   }
 });
+
+
+// ── GET /api/tax/verifactu ──────────────────────────────────────────────────────────────
+// Lists invoices for this org with their Verifactu registration status.
+taxRouter.get("/verifactu", requirePermission("tax.read"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+
+    const rows = await db.execute(sql`
+      SELECT id, invoice_number, status, total, currency, created_at,
+             verifactu_hash, verifactu_hash_anterior, verifactu_qr_url, verifactu_registered_at
+      FROM invoices
+      WHERE org_id = ${orgId}
+      ORDER BY created_at DESC
+    `);
+    const invoices = (rows as { rows: any[] }).rows;
+
+    const registered = invoices.filter(i => i.verifactu_registered_at !== null);
+    const pending     = invoices.filter(i => i.verifactu_registered_at === null);
+
+    res.json({
+      total: invoices.length,
+      registeredCount: registered.length,
+      pendingCount: pending.length,
+      invoices: invoices.map(i => ({
+        id: i.id,
+        invoiceNumber: i.invoice_number,
+        status: i.status,
+        total: i.total,
+        currency: i.currency,
+        createdAt: i.created_at,
+        verifactuHash: i.verifactu_hash,
+        verifactuHashAnterior: i.verifactu_hash_anterior,
+        verifactuQrUrl: i.verifactu_qr_url,
+        verifactuRegisteredAt: i.verifactu_registered_at,
+      })),
+    });
+  } catch (err) {
+    console.error("[Verifactu] GET /verifactu error:", String(err));
+    res.status(500).json({ error: "No se pudo cargar el estado de Verifactu" });
+  }
+});
+
+// ── POST /api/tax/verifactu/register/:invoiceId ─────────────────────────────────────────
+// Computes the chained SHA-256 hash for this invoice (chained to the previous
+// registered invoice in the org), builds the AEAT QR validation URL, and
+// stores the result. Idempotent-ish: re-registering overwrites with a fresh
+// hash chained to whatever is currently last (safe for a single-writer flow).
+taxRouter.post("/verifactu/register/:invoiceId", requirePermission("tax.write"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const invoiceId = Number(req.params.invoiceId);
+    if (!Number.isInteger(invoiceId)) {
+      return res.status(400).json({ error: "ID de factura inválido" });
+    }
+
+    const invRows = await db.execute(sql`
+      SELECT id, invoice_number, total, status
+      FROM invoices
+      WHERE id = ${invoiceId} AND org_id = ${orgId}
+      LIMIT 1
+    `);
+    const invoice = (invRows as { rows: any[] }).rows[0];
+    if (!invoice) {
+      return res.status(404).json({ error: "Factura no encontrada" });
+    }
+    if (invoice.status === "draft") {
+      return res.status(400).json({ error: "No se puede registrar en Verifactu una factura en borrador. Emítela primero." });
+    }
+
+    // Find the last chained hash for this org (chain integrity requires strict order).
+    const prevRows = await db.execute(sql`
+      SELECT verifactu_hash
+      FROM invoices
+      WHERE org_id = ${orgId} AND verifactu_registered_at IS NOT NULL
+      ORDER BY verifactu_registered_at DESC
+      LIMIT 1
+    `);
+    const prevHash = (prevRows as { rows: Array<{ verifactu_hash: string }> }).rows[0]?.verifactu_hash ?? "";
+
+    const orgRows = await db.execute(sql`
+      SELECT tax_id, legal_name, name FROM organizations WHERE id = ${orgId} LIMIT 1
+    `);
+    const org = (orgRows as { rows: any[] }).rows[0];
+    const nif = org?.tax_id ?? "";
+
+    const timestamp = new Date().toISOString();
+    const payload = `${invoice.invoice_number}|${invoice.total}|${nif}|${prevHash}|${timestamp}`;
+
+    const crypto = await import("node:crypto");
+    const hash = crypto.createHash("sha256").update(payload).digest("hex").toUpperCase();
+
+    const qrUrl = `https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR` +
+      `?nif=${encodeURIComponent(nif)}` +
+      `&num=${encodeURIComponent(invoice.invoice_number)}` +
+      `&importe=${encodeURIComponent(invoice.total)}` +
+      `&hash=${encodeURIComponent(hash)}`;
+
+    await db.execute(sql`
+      UPDATE invoices
+      SET verifactu_hash = ${hash},
+          verifactu_hash_anterior = ${prevHash},
+          verifactu_qr_url = ${qrUrl},
+          verifactu_registered_at = NOW()
+      WHERE id = ${invoiceId} AND org_id = ${orgId}
+    `);
+
+    await logAudit({
+      actorClerkId: req.clerkUserId!,
+      action: "verifactu_invoice_registered",
+      resource: "invoice",
+      resourceId: invoiceId,
+      orgId,
+      details: { invoiceNumber: invoice.invoice_number, hash },
+      req,
+    });
+
+    res.json({
+      success: true,
+      invoiceId,
+      verifactuHash: hash,
+      verifactuHashAnterior: prevHash,
+      verifactuQrUrl: qrUrl,
+    });
+  } catch (err) {
+    console.error("[Verifactu] POST /verifactu/register error:", String(err));
+    res.status(500).json({ error: "No se pudo registrar la factura en Verifactu" });
+  }
+});
