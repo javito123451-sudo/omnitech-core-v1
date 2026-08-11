@@ -2249,7 +2249,7 @@ router.post("/", requirePermission("ai.write"), async (req, res) => {
           // ── User is answering the pending question ─────────────────────
 
           // Abort keywords — user wants to cancel the flow
-          if (/\b(cancela[r]?(\s+eso)?|olvida(\s+(eso|lo))?|no\s+importa|d[eé]jalo|para|stop|abort|nada)\b/i.test(lastUserMessage)) {
+          if (/^\s*(cancela[r]?(\s+eso)?|olvida(\s+(eso|lo))?|no\s+importa|d[eé]jalo|stop|abort)\s*[.!¡]?\s*$/i.test(lastUserMessage)) {
             clearPendingSkill(orgId, convUserId);
             await streamText("De acuerdo, lo dejo. ¿En qué más puedo ayudarte? 😊");
             return;
