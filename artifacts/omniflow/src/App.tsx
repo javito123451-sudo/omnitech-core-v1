@@ -36,6 +36,7 @@ import IntegrationsPage from "@/pages/integrations";
 import OmniIntegrationWizard from "@/pages/omni-integration-wizard";
 import WhatsAppLogsPage from "@/pages/whatsapp-logs";
 import TelegramInboxPage from "@/pages/telegram-inbox";
+import WhatsAppInboxPage from "@/pages/whatsapp-inbox";
 import TelegramSettingsPage from "@/pages/telegram-settings";
 import TelegramDiagnosticoPage from "@/pages/telegram-diagnostico";
 import KnowledgeBasePage from "@/pages/knowledge-base";
@@ -432,7 +433,7 @@ function AppRoutes() {
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>
-      </Route>
+   </Route>
       <Route path="/integrations/telegram/diagnostico">
         <ProtectedRoute>
           <MainLayout>
@@ -451,6 +452,15 @@ function AppRoutes() {
           </MainLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/whatsapp-inbox">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="whatsapp">
+              <WhatsAppInboxPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
       <Route path="/knowledge-base">
         <ProtectedRoute>
           <MainLayout>
@@ -460,7 +470,6 @@ function AppRoutes() {
           </MainLayout>
         </ProtectedRoute>
       </Route>
-      <Route path="/import">
         <ProtectedRoute>
           <MainLayout>
             <ModuleGuard moduleKey="omni_import_ai">
