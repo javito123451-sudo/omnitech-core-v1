@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { logAiCall } from "../utils/aiUsageLogger";
 import {
-  db, clientsTable, appointmentsTable, quotesTable, activityTable,
+  db, clientsTable, appointmentsTable, quotesTable, activityTable, paymentsTable,
 } from "@workspace/db";
-import { eq, and, desc, gte } from "drizzle-orm";
+import { eq, and, desc, gte, sum } from "drizzle-orm";
 import { getProviderSingleton } from "../ai/types";
 import { requirePermission } from "../middlewares/permissions";
 
@@ -47,6 +47,19 @@ function daysDiff(a: Date, b: Date) {
   return Math.round((a.getTime() - b.getTime()) / 86_400_000);
 }
 
+// FIX-AR: "Ingresos confirmados" must reflect real money collected (payments
+// registered against invoices in Omni Accounting), not "quotes the client
+// verbally accepted". A quote's status stays "accepted" forever even after
+// it's converted to an invoice and that invoice remains unpaid — so summing
+// accepted-quote totals silently counted uncollected money as "confirmed".
+async function getRealConfirmedValue(orgId: number): Promise<number> {
+  const [{ total }] = await db
+    .select({ total: sum(paymentsTable.amount) })
+    .from(paymentsTable)
+    .where(eq(paymentsTable.orgId, orgId));
+  return parseFloat(String(total ?? 0));
+}
+
 function buildMonthlyForecast(
   quotes: (typeof quotesTable.$inferSelect)[],
   now: Date,
@@ -82,7 +95,7 @@ executiveRouter.get("/", requirePermission("analytics.read"), async (req, res) =
   const thirtyAgo      = new Date(now.getTime() - 30  * 86_400_000);
   const sevenFromNow   = new Date(now.getTime() + 7   * 86_400_000);
 
-  const [allClients, allQuotes, allAppointments, recentActivity] = await Promise.all([
+  const [allClients, allQuotes, allAppointments, recentActivity, confirmedValue] = await Promise.all([
     db.select().from(clientsTable).where(eq(clientsTable.orgId, orgId)),
     db.select().from(quotesTable).where(eq(quotesTable.orgId, orgId)),
     db.select().from(appointmentsTable).where(eq(appointmentsTable.orgId, orgId))
@@ -90,6 +103,7 @@ executiveRouter.get("/", requirePermission("analytics.read"), async (req, res) =
     db.select().from(activityTable)
        .where(and(eq(activityTable.orgId, orgId), gte(activityTable.createdAt, thirtyAgo)))
        .orderBy(desc(activityTable.createdAt)).limit(50),
+    getRealConfirmedValue(orgId),
   ]);
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
@@ -99,7 +113,8 @@ executiveRouter.get("/", requirePermission("analytics.read"), async (req, res) =
   const sentQuotes      = allQuotes.filter(q => q.status === "sent");
   const pendingQuotes   = allQuotes.filter(q => q.status === "pending");
   const pipelineValue   = pipelineQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
-  const confirmedValue  = acceptedQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  // FIX-AR: confirmedValue now comes from getRealConfirmedValue() (real payments)
+  // instead of `acceptedQuotes.reduce(...)` — kept acceptedQuotes for other uses below.
   const totalSent       = sentQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
   const totalPendingVal = pendingQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
   const activeClients   = allClients.filter(c => c.status === "active").length;
@@ -363,17 +378,17 @@ executiveRouter.post("/report", requirePermission("analytics.read"), async (req,
   const thirtyAgo    = new Date(now.getTime() - 30 * 86_400_000);
   const sevenFromNow = new Date(now.getTime() + 7  * 86_400_000);
 
-  const [allClients, allQuotes, allAppointments, recentActivity] = await Promise.all([
+  const [allClients, allQuotes, allAppointments, recentActivity, confirmedValue] = await Promise.all([
     db.select().from(clientsTable).where(eq(clientsTable.orgId, orgId)),
     db.select().from(quotesTable).where(eq(quotesTable.orgId, orgId)),
     db.select().from(appointmentsTable).where(eq(appointmentsTable.orgId, orgId)).orderBy(desc(appointmentsTable.startTime)),
     db.select().from(activityTable).where(and(eq(activityTable.orgId, orgId), gte(activityTable.createdAt, thirtyAgo))).orderBy(desc(activityTable.createdAt)).limit(30),
+    getRealConfirmedValue(orgId),
   ]);
 
   const pipelineQuotes  = allQuotes.filter(q => ["draft", "sent"].includes(q.status));
-  const acceptedQuotes  = allQuotes.filter(q => q.status === "accepted");
   const pipelineValue   = pipelineQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
-  const confirmedValue  = acceptedQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  // FIX-AR: confirmedValue now comes from getRealConfirmedValue() (real payments)
   const sentTotal       = allQuotes.filter(q => q.status === "sent").reduce((s, q) => s + (q.total ?? 0), 0);
   const draftTotal      = allQuotes.filter(q => q.status === "draft").reduce((s, q) => s + (q.total ?? 0), 0);
   const activeClients   = allClients.filter(c => c.status === "active");
@@ -402,7 +417,7 @@ executiveRouter.post("/report", requirePermission("analytics.read"), async (req,
     clientSummary,
     "",
     "PIPELINE Y PRESUPUESTOS:",
-    `Pipeline total: €${pipelineValue.toLocaleString("es-ES")} | Confirmado: €${confirmedValue.toLocaleString("es-ES")}`,
+    `Pipeline total: €${pipelineValue.toLocaleString("es-ES")} | Confirmado (cobrado real): €${confirmedValue.toLocaleString("es-ES")}`,
     `Escenario conservador 30d: €${Math.round(sentTotal * 0.35 + draftTotal * 0.10).toLocaleString("es-ES")}`,
     `Escenario base 30d: €${Math.round(sentTotal * 0.55 + draftTotal * 0.20).toLocaleString("es-ES")}`,
     `Escenario optimista 30d: €${Math.round(sentTotal * 0.75 + draftTotal * 0.35).toLocaleString("es-ES")}`,
@@ -497,17 +512,17 @@ executiveRouter.post("/ceo", requirePermission("analytics.read"), async (req, re
   const thirtyAgo    = new Date(now.getTime() - 30 * 86_400_000);
   const sevenFromNow = new Date(now.getTime() + 7  * 86_400_000);
 
-  const [allClients, allQuotes, allAppointments, recentActivity] = await Promise.all([
+  const [allClients, allQuotes, allAppointments, recentActivity, confirmedValue] = await Promise.all([
     db.select().from(clientsTable).where(eq(clientsTable.orgId, orgId)),
     db.select().from(quotesTable).where(eq(quotesTable.orgId, orgId)),
     db.select().from(appointmentsTable).where(eq(appointmentsTable.orgId, orgId)).orderBy(desc(appointmentsTable.startTime)),
     db.select().from(activityTable).where(and(eq(activityTable.orgId, orgId), gte(activityTable.createdAt, thirtyAgo))).orderBy(desc(activityTable.createdAt)).limit(20),
+    getRealConfirmedValue(orgId),
   ]);
 
   const pipelineQuotes  = allQuotes.filter(q => ["draft", "sent"].includes(q.status));
-  const acceptedQuotes  = allQuotes.filter(q => q.status === "accepted");
   const pipelineValue   = pipelineQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
-  const confirmedValue  = acceptedQuotes.reduce((s, q) => s + (q.total ?? 0), 0);
+  // FIX-AR: confirmedValue now comes from getRealConfirmedValue() (real payments)
   const inactiveClients = allClients.filter(c => ["inactive", "churned"].includes(c.status));
   const leads           = allClients.filter(c => c.status === "lead");
   const overdueAppts    = allAppointments.filter(a => a.status === "pending" && a.startTime < now);
@@ -531,7 +546,7 @@ executiveRouter.post("/ceo", requirePermission("analytics.read"), async (req, re
     "HOY: " + fmtDate(now),
     "",
     "RESUMEN NEGOCIO:",
-    `Pipeline: €${pipelineValue.toLocaleString("es-ES")} | Confirmado: €${confirmedValue.toLocaleString("es-ES")}`,
+    `Pipeline: €${pipelineValue.toLocaleString("es-ES")} | Confirmado (cobrado real): €${confirmedValue.toLocaleString("es-ES")}`,
     `Clientes totales: ${allClients.length} | Activos: ${allClients.filter(c => c.status === "active").length} | Leads: ${leads.length} | En riesgo: ${inactiveClients.length}`,
     `Citas vencidas: ${overdueAppts.length} | Presupuestos expirando esta semana: ${expiringQuotes.length}`,
     `Actividad 30d: ${recentActivity.length} registros`,
