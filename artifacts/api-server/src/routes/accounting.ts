@@ -843,11 +843,15 @@ accountingRouter.get("/summary", requirePermission("accounting.read"), async (re
     .where(and(eq(invoicesTable.orgId, orgId), gte(invoicesTable.createdAt, startOfYear)));
 
   // IVA soportado = IVA paid on expenses with a tax_rate > 0 (use stored rate per expense)
-  const [{ ivaSoportado }] = await db.execute(sql`
+  // FIX-AL: db.execute() returns { rows: [...] }, not a plain array — the previous
+  // code destructured it directly as [{ ivaSoportado }], which threw at runtime
+  // (not iterable) and made the whole /summary endpoint return 500.
+  const ivaSoportadoRows = await db.execute(sql`
     SELECT COALESCE(SUM(amount * tax_rate / 100), 0)::numeric AS "ivaSoportado"
     FROM expenses
     WHERE org_id = ${orgId} AND tax_rate > 0 AND expense_date >= ${startOfYear}
-  `) as unknown as [{ ivaSoportado: string }];
+  `);
+  const ivaSoportado = (ivaSoportadoRows as unknown as { rows: Array<{ ivaSoportado: string }> }).rows[0]?.ivaSoportado ?? "0";
 
   // Tasa de cobro = paid invoices / total invoiced this year
   const totalInvoiced = invoiceStats.reduce((acc, s) => acc + parseFloat(String(s.total ?? 0)), 0);
