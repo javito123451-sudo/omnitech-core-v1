@@ -134,6 +134,7 @@ const moreItems: MoreItem[] = [
   { icon: Settings,        label: "Configuración",   href: "/settings",       group: "Sistema" },
   { icon: Zap,             label: "Ava Autopilot",   href: "/automations",    group: "Sistema",    moduleKey: "automations" },
   { icon: Receipt,         label: "Contabilidad",    href: "/accounting",     group: "Finanzas",   moduleKey: "omni_accounting" },
+  { icon: ShieldCheck,     label: "OmniTax",         href: "/tax",            group: "Finanzas",   moduleKey: "omni_tax" },
   { icon: Target,          label: "Pipeline",        href: "/pipeline",       group: "Análisis",   moduleKey: "crm" },
   { icon: Megaphone,       label: "Omni Marketing Hub", href: "/marketing",   group: "Marketing",  moduleKey: "omni_marketing" },
   { icon: Radio,           label: "OmniAds",            href: "/ads",         group: "Marketing",  moduleKey: "omni_ads" },
