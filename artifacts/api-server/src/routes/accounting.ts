@@ -190,14 +190,23 @@ accountingRouter.get("/invoices", requirePermission("accounting.read"), async (r
     .where(countWhere);
 
   // Fetch payment notification pending flags for these invoices in one query
+  // FIX-AM: ANY(${ids}) array-binding is unreliable on the neon-http driver and
+  // was throwing at runtime, turning the whole /invoices list into a 500.
+  // Ids come from our own prior query (not raw user input), so building the
+  // IN (...) list directly is safe here. Wrapped in try/catch so this
+  // secondary lookup can never take down the primary invoice list.
   const ids = rows.map(r => r.id);
   let paymentPendingMap: Record<number, boolean> = {};
   if (ids.length > 0) {
-    const flagRows = await db.execute(sql`
-      SELECT id, payment_notification_pending FROM invoices WHERE id = ANY(${ids})
-    `) as unknown as { rows: Array<{ id: number; payment_notification_pending: boolean }> };
-    for (const fr of flagRows.rows) {
-      paymentPendingMap[fr.id] = Boolean(fr.payment_notification_pending);
+    try {
+      const flagRows = await db.execute(
+        sql.raw(`SELECT id, payment_notification_pending FROM invoices WHERE id IN (${ids.join(",")})`)
+      ) as unknown as { rows: Array<{ id: number; payment_notification_pending: boolean }> };
+      for (const fr of flagRows.rows) {
+        paymentPendingMap[fr.id] = Boolean(fr.payment_notification_pending);
+      }
+    } catch (err) {
+      console.error("[Accounting][invoices] payment_notification_pending lookup failed:", String(err));
     }
   }
 
