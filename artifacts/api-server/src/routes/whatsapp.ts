@@ -1165,6 +1165,132 @@ whatsappRouter.post("/generate", requirePermission("whatsapp.write"), async (req
   });
 });
 
+// ── POST /verify — FIX-AS: comprueba que las credenciales de Meta son válidas ─
+// Mirrors telegram.ts POST /verify. WhatsApp has no "getMe" — the closest
+// equivalent is reading the phone number's own profile fields from Graph API.
+whatsappRouter.post("/verify", requirePermission("whatsapp.write"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const creds = await getWhatsAppCreds(orgId);
+
+    if (!creds) {
+      res.json({ success: false, message: "No hay credenciales guardadas. Guarda Phone Number ID y Access Token primero." });
+      return;
+    }
+
+    const metaRes = await fetch(
+      `https://graph.facebook.com/v19.0/${creds.phoneNumberId}?fields=verified_name,display_phone_number,quality_rating`,
+      { headers: { Authorization: `Bearer ${creds.accessToken}` } },
+    );
+    const metaData = await metaRes.json() as {
+      verified_name?: string; display_phone_number?: string; quality_rating?: string;
+      error?: { message: string };
+    };
+
+    if (!metaRes.ok || metaData.error) {
+      await logIntegrationEvent({
+        orgId, integrationSlug: "whatsapp", direction: "outbound",
+        eventType: "test_failed", status: "error",
+        summary: "Verificación fallida — credenciales inválidas",
+        errorMessage: metaData.error?.message ?? "Meta rechazó las credenciales",
+        payloadJson: JSON.stringify(metaData),
+      });
+      res.json({ success: false, message: `Credenciales inválidas: ${metaData.error?.message ?? "Error desconocido"}` });
+      return;
+    }
+
+    const verifiedName = metaData.verified_name ?? "Sin nombre verificado";
+    const displayPhone = metaData.display_phone_number ?? "?";
+
+    await logIntegrationEvent({
+      orgId, integrationSlug: "whatsapp", direction: "outbound",
+      eventType: "test_ok", status: "processed",
+      summary: `Número verificado — ${verifiedName} (+${displayPhone})`,
+      payloadJson: JSON.stringify(metaData),
+    });
+
+    res.json({
+      success: true,
+      message: `Número verificado: ${verifiedName} (+${displayPhone})`,
+      verifiedName,
+      displayPhoneNumber: displayPhone,
+      qualityRating: metaData.quality_rating ?? null,
+      credSource: creds.source,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: String(err) });
+  }
+});
+
+// ── GET /status — FIX-AS: estado + stats, mismo shape que telegram.ts /status ─
+whatsappRouter.get("/status", requirePermission("whatsapp.read"), async (req, res) => {
+  const orgId = req.orgId!;
+  try {
+    const creds = await getWhatsAppCreds(orgId);
+
+    // Bot/number info (best-effort — do not fail the whole endpoint if Meta is down)
+    let botInfo: Record<string, unknown> | null = null;
+    if (creds) {
+      try {
+        const r = await fetch(
+          `https://graph.facebook.com/v19.0/${creds.phoneNumberId}?fields=verified_name,display_phone_number,quality_rating`,
+          { headers: { Authorization: `Bearer ${creds.accessToken}` } },
+        );
+        const j = await r.json() as Record<string, unknown> & { error?: unknown };
+        if (r.ok && !j["error"]) botInfo = j;
+      } catch { /* ignore */ }
+    }
+
+    // NOTE: unlike Telegram, Meta does not expose a per-credential "current
+    // webhook URL" via a simple Graph API call — the webhook is configured
+    // once at the App level in Meta for Developers, not per phone number.
+    // We surface the URL our own backend expects, for the person to compare
+    // against what's registered in Meta.
+    const expectedWebhookUrl =
+      (process.env.PUBLIC_URL ?? "https://www.omnitech-core.com") + "/api/whatsapp/webhook";
+
+    const events = await db
+      .select()
+      .from(integrationEventsTable)
+      .where(eq(integrationEventsTable.integrationSlug, "whatsapp"));
+
+    const orgEvents = events.filter((e) => e.orgId === orgId || e.orgId === 0);
+
+    const totalMessages   = orgEvents.filter((e) => e.eventType === "message_received").length;
+    const totalReplied    = orgEvents.filter((e) => e.eventType === "ai_reply_sent" || e.eventType === "message_sent").length;
+    const totalAccepted   = orgEvents.filter((e) => e.eventType === "quote_accepted").length;
+    const contactsCreated = orgEvents.filter((e) => e.eventType === "contact_created").length;
+
+    const phones = new Set<string>();
+    for (const e of orgEvents) {
+      if (e.payloadJson) {
+        try {
+          const p = JSON.parse(e.payloadJson as string) as { phone?: string; phoneNorm?: string };
+          if (p.phoneNorm) phones.add(p.phoneNorm);
+          else if (p.phone) phones.add(String(p.phone));
+        } catch { /* ignore */ }
+      }
+    }
+
+    res.json({
+      connected:       !!creds,
+      hasCredentials:  !!creds,
+      credSource:      creds?.source ?? null,
+      botInfo,
+      expectedWebhookUrl,
+      stats: {
+        totalMessages,
+        totalReplied,
+        totalAccepted,
+        contactsCreated,
+        uniqueConversations: phones.size,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // ── POST /send — WhatsApp Business API ────────────────────────────────────────
 // Reads credentials from org_integrations first, falls back to env vars
 whatsappRouter.post("/send", requirePermission("whatsapp.write"), async (req, res) => {
