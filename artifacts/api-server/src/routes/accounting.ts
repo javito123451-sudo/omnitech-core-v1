@@ -68,6 +68,19 @@ function checkRole(
   return true;
 }
 
+// FIX-AN: Verifactu inalterabilidad — once an invoice has been registered
+// (verifactu_hash IS NOT NULL), the RD 1007/2023 regulation requires the
+// underlying invoice data to remain unchanged, since the hash is a
+// cryptographic fingerprint of that exact data. Editing or deleting a
+// registered invoice would silently invalidate its hash chain. This helper
+// is checked before any mutation (PATCH/DELETE) on an invoice.
+async function isVerifactuLocked(invoiceId: number): Promise<boolean> {
+  const rows = await db.execute(sql`
+    SELECT verifactu_hash FROM invoices WHERE id = ${invoiceId} LIMIT 1
+  `) as unknown as { rows: Array<{ verifactu_hash: string | null }> };
+  return rows.rows[0]?.verifactu_hash != null;
+}
+
 async function enrichInvoice(inv: typeof invoicesTable.$inferSelect) {
   const items = await db
     .select()
@@ -280,6 +293,14 @@ accountingRouter.patch("/invoices/:id", requirePermission("accounting.write"), a
     .where(and(eq(invoicesTable.id, id), eq(invoicesTable.orgId, orgId)));
   if (!existing) { res.status(404).json({ error: "Factura no encontrada" }); return; }
 
+  // FIX-AN: block edits to line items/amounts once registered in Verifactu.
+  // Status-only changes (e.g. marking as paid) are still allowed since they
+  // don't affect the hashed invoice data.
+  if (items?.length && await isVerifactuLocked(id)) {
+    res.status(423).json({ error: "Esta factura ya está registrada en Verifactu y no se pueden modificar sus líneas o importes. Solo se permite cambiar su estado (ej. pagada)." });
+    return;
+  }
+
   const updateData: Partial<typeof invoicesTable.$inferInsert> = {};
   if (status)   updateData.status  = status;
   if (notes !== undefined) updateData.notes = notes;
@@ -348,6 +369,13 @@ accountingRouter.delete("/invoices/:id", requirePermission("accounting.write"), 
   const [inv] = await db.select().from(invoicesTable)
     .where(and(eq(invoicesTable.id, id), eq(invoicesTable.orgId, orgId)));
   if (!inv) { res.status(404).json({ error: "Factura no encontrada" }); return; }
+
+  // FIX-AN: Verifactu inalterabilidad — a registered invoice cannot be deleted.
+  if (await isVerifactuLocked(id)) {
+    res.status(423).json({ error: "Esta factura ya está registrada en Verifactu y no se puede eliminar (requisito de inalterabilidad, RD 1007/2023)." });
+    return;
+  }
+
   await db.delete(invoicesTable).where(eq(invoicesTable.id, id));
   await logAudit({ actorClerkId: req.clerkUserId!, action: "invoice_deleted", resource: "invoice", resourceId: id, orgId, severity: "warning", req });
   res.json({ ok: true });
