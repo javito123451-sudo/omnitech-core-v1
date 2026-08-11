@@ -64,6 +64,11 @@ const PATTERNS: Pattern[] = [
           /\b(?:cita|reuni[oó]n)\s+con\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|para|hoy|ma\u00f1ana|\d|a\s+las?)|\s*$)/i,
         );
         if (withMatch?.[1]) return withMatch[1].trim();
+        // FIX-AQ: "cita para [Name]" — igual de común y antes no se reconocía
+        const paraMatch = text.match(
+          /\b(?:cita|reuni[oó]n)\s+para\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|hoy|ma\u00f1ana|pasado\s+ma\u00f1ana|\d|a\s+las?)|\s*$)/i,
+        );
+        if (paraMatch?.[1]) return paraMatch[1].trim();
         // "con [Name] el lunes"
         const genWith = text.match(
           /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|hoy|ma\u00f1ana|\d))/i,
@@ -97,10 +102,13 @@ const PATTERNS: Pattern[] = [
         return t ? t[1] : undefined;
       },
       client_name: (_m, text) => {
+        // FIX-AQ: previously stopped at the first space, truncating multi-word
+        // names ("Juan Perez" → "juan"). Now expands through spaces until a
+        // real boundary keyword appears.
         const m = text.match(
-          /\bde\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+          /\bde\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|hoy|ma\u00f1ana|pasado\s+ma\u00f1ana|a\s+las?|\ba\b|\d)|\s*$)/i,
         ) ?? text.match(
-          /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+          /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|hoy|ma\u00f1ana|pasado\s+ma\u00f1ana|a\s+las?|\ba\b|\d)|\s*$)/i,
         );
         return m?.[1]?.trim();
       },
@@ -120,10 +128,13 @@ const PATTERNS: Pattern[] = [
         return r ? r[1].trim() : undefined;
       },
       client_name: (_m, text) => {
+        // FIX-AQ: previously stopped at the first space, truncating multi-word
+        // names ("Maria Garcia" → "maria"). Now expands through spaces until a
+        // real boundary keyword appears.
         const m = text.match(
-          /\bde\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+          /\bde\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|hoy|ma\u00f1ana|pasado\s+ma\u00f1ana|a\s+las?|\ba\b|\d)|\s*$)/i,
         ) ?? text.match(
-          /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s|$)/i,
+          /\bcon\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|hoy|ma\u00f1ana|pasado\s+ma\u00f1ana|a\s+las?|\ba\b|\d)|\s*$)/i,
         );
         return m?.[1]?.trim();
       },
@@ -217,7 +228,8 @@ const PATTERNS: Pattern[] = [
     ],
     paramExtractors: {
       client_name: (_m, text) => {
-        const m = text.match(/\bpara\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?:\s|$)/i);
+        // FIX-AQ: same multi-word truncation fix as appointments
+        const m = text.match(/\bpara\s+([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{1,35}?)(?=\s+(?:el|la|con|por|de|hoy|ma\u00f1ana|\d)|\s*$)/i);
         return m?.[1]?.trim();
       },
     },
