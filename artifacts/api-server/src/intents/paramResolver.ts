@@ -31,6 +31,31 @@ export function extractParamFromText(
       // dd/mm/yyyy or dd-mm-yyyy
       const dmy = text.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
       if (dmy) return `${dmy[3]}-${dmy[2]!.padStart(2, "0")}-${dmy[1]!.padStart(2, "0")}`;
+      // FIX-AP: Spanish natural format "24 de agosto" or "24 de agosto de 2026" —
+      // previously unhandled, silently dropping the whole multi-step flow
+      // whenever a user typed a date this way (the most common way Spanish
+      // speakers say a date out loud).
+      const MONTHS: Record<string, number> = {
+        enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+        julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10,
+        noviembre: 11, diciembre: 12,
+      };
+      const monthNamePattern = Object.keys(MONTHS).join("|");
+      const naturalEs = text.match(
+        new RegExp(`\\b(\\d{1,2})\\s*(?:de\\s+)?(${monthNamePattern})\\b(?:\\s*(?:de\\s+)?(\\d{4}))?`, "i"),
+      );
+      if (naturalEs) {
+        const day = Number(naturalEs[1]);
+        const month = MONTHS[naturalEs[2]!.toLowerCase()]!;
+        const now = new Date();
+        let yr = naturalEs[3] ? Number(naturalEs[3]) : now.getFullYear();
+        // If no year given and that day/month already passed this year, assume next year
+        if (!naturalEs[3]) {
+          const candidate = new Date(yr, month - 1, day);
+          if (candidate < new Date(now.getFullYear(), now.getMonth(), now.getDate())) yr += 1;
+        }
+        return `${yr}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
       // relative keywords
       const now = new Date();
       if (/\bhoy\b/i.test(text))                 { return fmtDate(now); }
