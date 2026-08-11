@@ -6,6 +6,7 @@
  */
 
 import { Router } from "express";
+import multer from "multer";
 import { db } from "@workspace/db";
 import {
   taxObligationsTable, taxCalculationsTable, taxDocumentsTable,
@@ -19,6 +20,43 @@ import { logAudit } from "../utils/auditLogger";
 export const taxRouter = Router();
 
 const BASE = process.env.API_BASE_PATH ?? "";
+
+// ── Document upload config (FIX-AO) ─────────────────────────────────────────
+// Files are stored as base64 directly in tax_documents.file_data — no external
+// object storage (S3/R2) required. Fine for the volume of fiscal documents a
+// single SMB org generates; can be migrated to a bucket later without any
+// change to the frontend contract (same download endpoint).
+const TAX_DOC_ALLOWED_MIME = new Set([
+  "application/pdf",
+  "image/jpeg", "image/png", "image/webp", "image/heic",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+]);
+
+const taxDocUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB, matches frontend copy
+  fileFilter(_req, file, cb) {
+    if (TAX_DOC_ALLOWED_MIME.has(file.mimetype)) cb(null, true);
+    else cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}. Se aceptan PDF, Excel, CSV e imágenes.`));
+  },
+});
+
+function taxDocExt(filename: string): string {
+  return (filename.split(".").pop() ?? "").toLowerCase();
+}
+
+function taxDocMimeForExt(ext: string): string {
+  const map: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+    csv: "text/csv",
+  };
+  return map[ext] ?? "application/octet-stream";
+}
 
 // ── Helper: detectar tipo de contribuyente ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -561,6 +599,82 @@ taxRouter.post("/documents", requirePermission("tax.write"), async (req, res) =>
     res.json({ ...row, createdAt: row.createdAt.toISOString() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /api/tax/documents/upload — FIX-AO: real file upload (base64 in DB) ──────────
+// Connects the "Arrastra archivos aquí" placeholder to an actual working upload.
+// No external bucket needed: the file content is stored as base64 in
+// tax_documents.file_data. Download is served back via GET /documents/:id/file.
+taxRouter.post("/documents/upload", requirePermission("tax.write"), taxDocUpload.single("file"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const file = req.file;
+    if (!file) { res.status(400).json({ error: "No se ha enviado ningún archivo" }); return; }
+
+    const category   = (req.body?.category as string | undefined) || "other";
+    const fiscalYear = req.body?.fiscalYear ? Number(req.body.fiscalYear) : new Date().getFullYear();
+    const quarter    = req.body?.quarter ? Number(req.body.quarter) : null;
+
+    const ext = taxDocExt(file.originalname);
+    const base64 = file.buffer.toString("base64");
+
+    const insertResult = await db.execute(sql`
+      INSERT INTO tax_documents (org_id, name, file_type, file_size, file_data, category, fiscal_year, quarter, status)
+      VALUES (${orgId}, ${file.originalname}, ${ext}, ${file.size}, ${base64}, ${category}, ${fiscalYear}, ${quarter}, 'pending')
+      RETURNING id, org_id, name, file_type, file_size, category, fiscal_year, quarter, status, created_at
+    `) as unknown as { rows: Array<{ id: number; created_at: string }> };
+
+    const inserted = insertResult.rows[0];
+
+    await logAudit({
+      actorClerkId: req.clerkUserId ?? "unknown",
+      action: "tax_document_uploaded",
+      resource: "tax_document",
+      resourceId: inserted?.id,
+      orgId,
+      details: { name: file.originalname, category, fileSize: file.size },
+      req,
+    });
+
+    res.status(201).json({
+      id: inserted?.id,
+      name: file.originalname,
+      fileType: ext,
+      fileSize: file.size,
+      category,
+      fiscalYear,
+      quarter,
+      status: "pending",
+      createdAt: inserted?.created_at ?? new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("[TaxDocuments][upload] error:", String(err));
+    res.status(500).json({ error: err instanceof Error ? err.message : "No se pudo subir el documento" });
+  }
+});
+
+// ── GET /api/tax/documents/:id/file — serve stored file back ──────────────────────────
+taxRouter.get("/documents/:id/file", requirePermission("tax.read"), async (req, res) => {
+  try {
+    const orgId = req.orgId!;
+    const id = Number(req.params.id);
+
+    const rows = await db.execute(sql`
+      SELECT name, file_type, file_data FROM tax_documents
+      WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
+    `) as unknown as { rows: Array<{ name: string; file_type: string; file_data: string | null }> };
+
+    const doc = rows.rows[0];
+    if (!doc || !doc.file_data) { res.status(404).json({ error: "Documento no encontrado" }); return; }
+
+    const buffer = Buffer.from(doc.file_data, "base64");
+    res.setHeader("Content-Type", taxDocMimeForExt(doc.file_type));
+    res.setHeader("Content-Disposition", `inline; filename="${doc.name}"`);
+    res.end(buffer);
+  } catch (err) {
+    console.error("[TaxDocuments][download] error:", String(err));
+    res.status(500).json({ error: "No se pudo descargar el documento" });
   }
 });
 
