@@ -1039,6 +1039,12 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-AK: import_jobs table ensured");
 
+    // ── FIX-AO: file_data column on tax_documents (base64 storage, no external bucket needed) ──
+    await db.execute(sql`
+      ALTER TABLE tax_documents ADD COLUMN IF NOT EXISTS file_data TEXT
+    `);
+    logger.info("[Migration] ✅ FIX-AO: tax_documents.file_data column ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
