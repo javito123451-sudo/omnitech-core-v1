@@ -1524,3 +1524,142 @@ whatsappRouter.get("/audit", requirePermission("whatsapp.read"), async (req, res
     res.status(500).json({ error: String(err) });
   }
 });
+
+// ── GET /conversations — FIX-AT: Inbox list, mirrors telegram.ts ──────────────
+// Lists every client that has a phone number and at least one WhatsApp message.
+whatsappRouter.get("/conversations", requirePermission("whatsapp.read"), async (req, res) => {
+  const orgId = req.orgId!;
+  try {
+    const clients = await db
+      .select()
+      .from(clientsTable)
+      .where(and(
+        eq(clientsTable.orgId, orgId),
+        isNotNull(clientsTable.phone),
+      ));
+
+    const conversations = await Promise.all(clients.map(async (c) => {
+      const [lastMsg] = await db
+        .select()
+        .from(messagesTable)
+        .where(and(
+          eq(messagesTable.orgId, orgId),
+          eq(messagesTable.clientId, c.id),
+          eq(messagesTable.channel, "whatsapp"),
+        ))
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(1);
+
+      const countRows = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(and(
+          eq(messagesTable.orgId, orgId),
+          eq(messagesTable.clientId, c.id),
+          eq(messagesTable.channel, "whatsapp"),
+        ));
+
+      return {
+        clientId:             c.id,
+        clientName:           c.name,
+        phone:                c.phone,
+        leadScore:            c.leadScore ?? "cold",
+        leadIntent:           c.leadIntent,
+        status:               c.status,
+        company:              c.company,
+        email:                c.email,
+        lastMessage:          lastMsg?.content ?? null,
+        lastMessageAt:        lastMsg?.createdAt ?? null,
+        lastMessageDirection: lastMsg?.direction ?? null,
+        lastMessageIsAi:      lastMsg?.isAi ?? null,
+        messageCount:         countRows.length,
+      };
+    }));
+
+    // Only show clients that actually have at least one WhatsApp message —
+    // otherwise every phone-having client (even those never contacted via
+    // WhatsApp) would clutter the inbox.
+    const withMessages = conversations.filter((c) => c.messageCount > 0);
+
+    withMessages.sort((a, b) => {
+      if (!a.lastMessageAt && !b.lastMessageAt) return 0;
+      if (!a.lastMessageAt) return 1;
+      if (!b.lastMessageAt) return -1;
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+
+    res.json(withMessages);
+  } catch (err) {
+    console.error("[WhatsApp/conversations] error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── GET /conversations/:clientId — thread of messages ─────────────────────────
+whatsappRouter.get("/conversations/:clientId", requirePermission("whatsapp.read"), async (req, res) => {
+  const orgId    = req.orgId!;
+  const clientId = Number(req.params.clientId);
+  const limit    = Math.min(Number(req.query.limit ?? 100), 300);
+  try {
+    const msgs = await db
+      .select()
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.orgId, orgId),
+        eq(messagesTable.clientId, clientId),
+        eq(messagesTable.channel, "whatsapp"),
+      ))
+      .orderBy(asc(messagesTable.createdAt))
+      .limit(limit);
+    res.json(msgs);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── POST /conversations/:clientId/reply — manual CRM reply ────────────────────
+whatsappRouter.post("/conversations/:clientId/reply", requirePermission("whatsapp.write"), async (req, res) => {
+  const orgId    = req.orgId!;
+  const clientId = Number(req.params.clientId);
+  const { message } = req.body as { message: string };
+
+  if (!message?.trim()) {
+    res.status(400).json({ error: "Se requiere message." });
+    return;
+  }
+
+  try {
+    const client = await db.select().from(clientsTable)
+      .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, clientId)))
+      .then((r) => r[0] ?? null);
+
+    if (!client?.phone) {
+      res.status(404).json({ error: "Cliente sin número de teléfono registrado." });
+      return;
+    }
+
+    const sent = await sendAutoReply(orgId, client.phone, message.trim());
+
+    await db.insert(messagesTable).values({
+      orgId,
+      clientId,
+      content:   message.trim().slice(0, 2000),
+      direction: "outbound",
+      channel:   "whatsapp",
+      isAi:      false,
+      status:    sent ? "sent" : "failed",
+    });
+
+    await logIntegrationEvent({
+      orgId, integrationSlug: "whatsapp", direction: "outbound",
+      eventType: sent ? "message_sent" : "message_send_failed",
+      status:    sent ? "processed" : "error",
+      summary:   `Respuesta manual desde CRM → ${client.name}: "${message.slice(0, 80)}"`,
+      payloadJson: { clientId, phone: client.phone },
+    });
+
+    res.json({ success: sent });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
