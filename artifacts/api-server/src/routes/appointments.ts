@@ -43,8 +43,9 @@ appointmentsRouter.get("/", requirePermission("calendar.read"), async (req, res)
     res.json(
       rows.map((r) => ({
         ...r,
-        clientName: clientMap.get(r.clientId)?.name ?? null,
-        clientCompany: clientMap.get(r.clientId)?.company ?? null,
+        // Guest appointments (no CRM client) fall back to the stored guest_name.
+        clientName: r.clientId != null ? (clientMap.get(r.clientId)?.name ?? null) : (r.guestName ?? null),
+        clientCompany: r.clientId != null ? (clientMap.get(r.clientId)?.company ?? null) : null,
         startTime: r.startTime.toISOString(),
         endTime: r.endTime.toISOString(),
         createdAt: r.createdAt.toISOString(),
@@ -136,24 +137,29 @@ appointmentsRouter.patch("/:id", requirePermission("calendar.write"), async (req
       return;
     }
 
-    const [client] = await db
-      .select({ name: clientsTable.name, company: clientsTable.company })
-      .from(clientsTable)
-      .where(and(eq(clientsTable.id, appt.clientId), eq(clientsTable.orgId, orgId)));
+    // Guest appointments (no CRM client) have no row to look up here.
+    const [client] = appt.clientId != null
+      ? await db
+          .select({ name: clientsTable.name, company: clientsTable.company })
+          .from(clientsTable)
+          .where(and(eq(clientsTable.id, appt.clientId), eq(clientsTable.orgId, orgId)))
+      : [];
+
+    const resolvedClientName = client?.name ?? (appt.clientId == null ? appt.guestName ?? null : null);
 
     if (body.status === "completed") {
       await db.insert(activityTable).values({
         orgId,
         type: "appointment_completed",
         description: `Appointment "${appt.title}" completed`,
-        clientName: client?.name ?? null,
+        clientName: resolvedClientName,
         userId: req.userId,
       });
     }
 
     res.json({
       ...appt,
-      clientName: client?.name ?? null,
+      clientName: resolvedClientName,
       clientCompany: client?.company ?? null,
       startTime: appt.startTime.toISOString(),
       endTime: appt.endTime.toISOString(),

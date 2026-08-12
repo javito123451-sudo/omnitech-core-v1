@@ -1045,6 +1045,23 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-AO: tax_documents.file_data column ensured");
 
+    // ── FIX-AP: appointments guest booking — client_id nullable + guest contact columns ──
+    // Appointments no longer require a CRM client record. Guest bookings (from WhatsApp/
+    // Telegram users not yet in the CRM) store their contact data directly on the row.
+    await db.execute(sql`
+      ALTER TABLE appointments ALTER COLUMN client_id DROP NOT NULL
+    `);
+    await db.execute(sql`
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS guest_name TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS guest_phone TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS guest_email TEXT
+    `);
+    logger.info("[Migration] ✅ FIX-AP: appointments.client_id is now nullable + guest_name/guest_phone/guest_email columns ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
