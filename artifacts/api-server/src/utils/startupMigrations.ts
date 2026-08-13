@@ -1062,6 +1062,19 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-AP: appointments.client_id is now nullable + guest_name/guest_phone/guest_email columns ensured");
 
+    // ── FIX-AU: messages.external_id / external_name — guest conversation memory ──
+    // Guest conversations (no CRM client linked) need a stable identity to group
+    // messages by so the AI can build conversation history: phone number for
+    // WhatsApp, chat_id for Telegram. external_name stores the visible
+    // name/username when the channel provides one.
+    await db.execute(sql`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS external_id TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS external_name TEXT
+    `);
+    logger.info("[Migration] ✅ FIX-AU: messages.external_id / external_name columns ensured — guest conversation history now works");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

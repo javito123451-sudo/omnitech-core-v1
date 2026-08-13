@@ -12,6 +12,12 @@ export const messagesTable = pgTable("messages", {
     .references(() => organizationsTable.id, { onDelete: "cascade" }),
   clientId: integer("client_id")
     .references(() => clientsTable.id, { onDelete: "set null" }),
+  // Guest conversations (no CRM client linked): identity of the sender on the
+  // external channel — phone number for WhatsApp, chat_id for Telegram — plus
+  // their visible name/username when available. Both nullable; only used when
+  // clientId is null.
+  externalId: text("external_id"),
+  externalName: text("external_name"),
   content: text("content").notNull(),
   direction: text("direction").notNull().default("outbound"),
   channel: text("channel").default("telegram"),
