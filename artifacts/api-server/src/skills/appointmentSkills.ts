@@ -64,9 +64,9 @@ async function createAppointment(
   const location        = params["location"]    ? String(params["location"])    : null;
   const apptType        = String(params["type"]  ?? "meeting");
   const clientNameArg   = String(params["client_name"] ?? "");
-  const guestName       = params["guest_name"]  ? String(params["guest_name"]).trim()  : "";
-  const guestPhone      = params["guest_phone"] ? String(params["guest_phone"]).trim() : "";
-  const guestEmail      = params["guest_email"] ? String(params["guest_email"]).trim() : "";
+  const guestNameArg    = params["guest_name"]  ? String(params["guest_name"]).trim()  : "";
+  const guestPhoneArg   = params["guest_phone"] ? String(params["guest_phone"]).trim() : null;
+  const guestEmailArg   = params["guest_email"] ? String(params["guest_email"]).trim() : null;
 
   if (!dateStr) {
     return JSON.stringify({ error: "Falta la fecha de la cita (formato YYYY-MM-DD)." });
@@ -80,7 +80,9 @@ async function createAppointment(
   const startTime = madridLocalToUTC(dateStr, normalizedTime);
   const endTime   = new Date(startTime.getTime() + durationMinutes * 60_000);
 
-  // Resolve client: prefer context client, then search by name, then fall back to guest
+  // Resolve client: prefer context client, then search by name.
+  // If no client can be resolved, fall back to a guest booking (no CRM
+  // client is created) — requires at least guest_name.
   let resolvedClient = context.client ?? null;
   if (!resolvedClient && clientNameArg) {
     const matched = await db.select().from(clientsTable)
@@ -89,25 +91,17 @@ async function createAppointment(
     if (matched.length > 0) resolvedClient = matched[0]!;
   }
 
-  // Guest booking: no client identified/found in CRM, but guest contact data provided
-  const isGuest = !resolvedClient;
-  if (isGuest && !guestName) {
-    return JSON.stringify({
-      error: "No se pudo identificar el cliente. Proporciona client_name (cliente existente) o guest_name junto con guest_phone/guest_email para reservar como invitado.",
-    });
+  const isGuestBooking = !resolvedClient;
+  if (isGuestBooking && !guestNameArg) {
+    return JSON.stringify({ error: "No se pudo identificar el cliente. Proporciona client_name, guest_name (invitado sin cliente en el CRM), o inicia desde un canal vinculado." });
   }
-  if (isGuest && !guestPhone && !guestEmail) {
-    return JSON.stringify({ error: "Para reservar como invitado se necesita guest_phone o guest_email además de guest_name." });
-  }
-
-  const displayName = resolvedClient?.name ?? guestName;
 
   const [appointment] = await db.insert(appointmentsTable).values({
     orgId,
     clientId:    resolvedClient?.id ?? null,
-    guestName:   isGuest ? guestName  : null,
-    guestPhone:  isGuest ? (guestPhone || null) : null,
-    guestEmail:  isGuest ? (guestEmail || null) : null,
+    guestName:   isGuestBooking ? guestNameArg  : null,
+    guestPhone:  isGuestBooking ? guestPhoneArg : null,
+    guestEmail:  isGuestBooking ? guestEmailArg : null,
     title,
     description,
     startTime,
@@ -130,11 +124,12 @@ async function createAppointment(
 
   const localDate = apptDateDisplay(saved.startTime);
   const localTime = apptTimeDisplay(saved.startTime);
+  const displayName = resolvedClient?.name ?? guestNameArg;
 
   await db.insert(activityTable).values({
     orgId,
     type:        "appointment_scheduled",
-    description: `Cita "${title}" agendada con ${displayName}${isGuest ? " (invitado)" : ""} para el ${localDate} a las ${localTime}`,
+    description: `Cita "${title}" agendada con ${displayName}${isGuestBooking ? " (invitado)" : ""} para el ${localDate} a las ${localTime}`,
     clientName:  displayName,
   }).catch(() => {/* non-critical */});
 
@@ -150,8 +145,10 @@ async function createAppointment(
     success:       true,
     dbVerified:    true,
     appointmentId: saved.id,
+    isGuest:       isGuestBooking,
     clientName:    displayName,
-    isGuest,
+    guestPhone:    isGuestBooking ? guestPhoneArg : null,
+    guestEmail:    isGuestBooking ? guestEmailArg : null,
     title,
     date:          verifiedDate,
     time:          verifiedTime,
@@ -255,6 +252,9 @@ async function rescheduleAppointment(
   const [newAppt] = await db.insert(appointmentsTable).values({
     orgId,
     clientId:    existing.clientId,
+    guestName:   existing.guestName  ?? undefined,
+    guestPhone:  existing.guestPhone ?? undefined,
+    guestEmail:  existing.guestEmail ?? undefined,
     title:       existing.title,
     description: existing.description ?? undefined,
     type:        existing.type        ?? undefined,
@@ -470,6 +470,9 @@ async function getAppointments(
       clientId:      appointmentsTable.clientId,
       clientName:    clientsTable.name,
       clientCompany: clientsTable.company,
+      guestName:     appointmentsTable.guestName,
+      guestPhone:    appointmentsTable.guestPhone,
+      guestEmail:    appointmentsTable.guestEmail,
     })
     .from(appointmentsTable)
     .leftJoin(clientsTable, eq(appointmentsTable.clientId, clientsTable.id))
@@ -496,8 +499,9 @@ async function getAppointments(
       statusLabel:   { pending: "⏳ Pendiente", confirmed: "✅ Confirmada", completed: "✔️ Completada", cancelled: "❌ Cancelada" }[r.status] ?? r.status,
       type:          r.type ?? null,
       location:      r.location ?? null,
-      clientName:    r.clientName ?? null,
+      clientName:    r.clientName ?? r.guestName ?? null,
       clientCompany: r.clientCompany ?? null,
+      isGuest:       r.clientId == null,
     })),
   };
 
@@ -516,12 +520,12 @@ async function getAppointments(
 export const createAppointmentSkill: SkillDefinition = {
   id: "create_appointment",
   name: "Crear Cita",
-  description: "Crea una nueva cita en el CRM. Requiere fecha y hora, más un cliente existente (client_name/contexto) o datos de invitado (guest_name + guest_phone/guest_email) si no hay cliente.",
+  description: "Crea una nueva cita en el CRM. Requiere fecha y hora, y un cliente (client_name / contexto del canal) o datos de invitado (guest_name).",
   params: [
-    { name: "client_name", type: "string", description: "Nombre del cliente existente en el CRM (o usar contexto del canal)", required: false },
-    { name: "guest_name", type: "string", description: "Nombre completo del invitado, cuando NO hay cliente identificado ni encontrado en el CRM", required: false },
-    { name: "guest_phone", type: "string", description: "Teléfono del invitado (requerido si no se da guest_email, para citas de invitado)", required: false },
-    { name: "guest_email", type: "string", description: "Email del invitado (requerido si no se da guest_phone, para citas de invitado)", required: false },
+    { name: "client_name", type: "string", description: "Nombre del cliente (o usar contexto del canal)", required: false },
+    { name: "guest_name", type: "string", description: "Nombre del invitado, para citas sin cliente en el CRM (usar cuando no hay client_name ni contexto de cliente)", required: false },
+    { name: "guest_phone", type: "string", description: "Teléfono del invitado (opcional)", required: false },
+    { name: "guest_email", type: "string", description: "Email del invitado (opcional)", required: false },
     { name: "title", type: "string", description: "Título de la cita", default: "Cita" },
     { name: "date", type: "date", description: "Fecha (YYYY-MM-DD)", required: true },
     { name: "start_time", type: "time", description: "Hora de inicio (HH:MM)", default: "10:00" },
