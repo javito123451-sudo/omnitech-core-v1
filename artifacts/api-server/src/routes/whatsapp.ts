@@ -1695,9 +1695,11 @@ whatsappRouter.get("/conversations/:clientId", requirePermission("whatsapp.read"
 });
 
 // ── POST /conversations/:clientId/reply — manual CRM reply ────────────────────
+// Accepts a numeric CRM clientId, or "guest:<externalId>" (phone) for guest
+// conversations with no CRM client linked — see FIX-AU.
 whatsappRouter.post("/conversations/:clientId/reply", requirePermission("whatsapp.write"), async (req, res) => {
   const orgId    = req.orgId!;
-  const clientId = Number(req.params.clientId);
+  const rawParam = String(req.params.clientId ?? "");
   const { message } = req.body as { message: string };
 
   if (!message?.trim()) {
@@ -1706,6 +1708,36 @@ whatsappRouter.post("/conversations/:clientId/reply", requirePermission("whatsap
   }
 
   try {
+    if (rawParam.startsWith("guest:")) {
+      const externalId = rawParam.slice("guest:".length);
+
+      const sent = await sendAutoReply(orgId, externalId, message.trim());
+
+      await db.insert(messagesTable).values({
+        orgId,
+        clientId:     null,
+        externalId,
+        externalName: null,
+        content:      message.trim().slice(0, 2000),
+        direction:    "outbound",
+        channel:      "whatsapp",
+        isAi:         false,
+        status:       sent ? "sent" : "failed",
+      });
+
+      await logIntegrationEvent({
+        orgId, integrationSlug: "whatsapp", direction: "outbound",
+        eventType: sent ? "message_sent" : "message_send_failed",
+        status:    sent ? "processed" : "error",
+        summary:   `Respuesta manual desde CRM → invitado ${externalId}: "${message.slice(0, 80)}"`,
+        payloadJson: { externalId, phone: externalId },
+      });
+
+      res.json({ success: sent });
+      return;
+    }
+
+    const clientId = Number(rawParam);
     const client = await db.select().from(clientsTable)
       .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, clientId)))
       .then((r) => r[0] ?? null);

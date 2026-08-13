@@ -1866,9 +1866,11 @@ telegramRouter.get("/conversations/:clientId", requirePermission("telegram.read"
 });
 
 // ── POST /api/telegram/conversations/:clientId/reply — manual CRM reply ──────
+// Accepts a numeric CRM clientId, or "guest:<externalId>" (chat_id) for guest
+// conversations with no CRM client linked — see FIX-AU.
 telegramRouter.post("/conversations/:clientId/reply", requirePermission("telegram.write"), async (req, res) => {
   const orgId    = (req as any).orgId as number;
-  const clientId = Number(req.params.clientId);
+  const rawParam = String(req.params.clientId ?? "");
   const { message } = req.body as { message: string };
 
   if (!message?.trim()) {
@@ -1877,6 +1879,42 @@ telegramRouter.post("/conversations/:clientId/reply", requirePermission("telegra
   }
 
   try {
+    if (rawParam.startsWith("guest:")) {
+      const externalId = rawParam.slice("guest:".length);
+
+      const token = await getTelegramToken(orgId);
+      if (!token) {
+        res.status(404).json({ error: "Bot token no configurado." });
+        return;
+      }
+
+      const sent = await tgSend(token, Number(externalId), message.trim());
+
+      await db.insert(messagesTable).values({
+        orgId,
+        clientId:     null,
+        externalId,
+        externalName: null,
+        content:      message.trim().slice(0, 2000),
+        direction:    "outbound",
+        channel:      "telegram",
+        isAi:         false,
+        status:       sent ? "sent" : "failed",
+      });
+
+      await logIntegrationEvent({
+        orgId, integrationSlug: "telegram", direction: "outbound",
+        eventType: sent ? "message_sent" : "message_send_failed",
+        status:    sent ? "processed" : "error",
+        summary:   `Respuesta manual desde CRM → invitado ${externalId}: "${message.slice(0, 80)}"`,
+        payloadJson: { externalId, chatId: externalId },
+      });
+
+      res.json({ success: sent });
+      return;
+    }
+
+    const clientId = Number(rawParam);
     const client = await db.select().from(clientsTable)
       .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, clientId)))
       .then((r) => r[0] ?? null);
