@@ -19,7 +19,7 @@ import { eq, and, desc, asc, gt, isNotNull, isNull, ne, inArray } from "drizzle-
 //  Ava V2 imports
 // ═══════════════════════════════════════════════════════════════════════════
 import { getProviderSingleton } from "../ai/types";
-import { executeSkill, getOpenAIFunctions } from "../skills";
+import { executeSkill, getOpenAIFunctionsForChannel, isSkillAllowedForChannel } from "../skills";
 import { classifyIntent, intentToSkill, Intent } from "../intents/intentEngine";
 
 import {
@@ -239,8 +239,8 @@ FLUJO COMERCIAL ADAPTATIVO:
 3. Calificación → Entiende su situación: empresa, tamaño, necesidad urgente
 4. Recogida de datos → Solicita nombre completo, empresa, email y teléfono de forma natural
 5. Presentación → Presenta el servicio o módulo más adecuado a su necesidad
-6. Presupuesto/Demo → Ofrece demo, llamada o envío de propuesta personalizada
-7. Conversión → Cierra o escala: "Te pongo en contacto con uno de nuestros asesores ahora"
+6. Presupuesto/Demo → Ofrece agendar una demo o llamada con el equipo; si piden un presupuesto formal, NO lo crees tú — dile que un asesor se lo prepara y llama a escalate_to_human
+7. Conversión → Cierra agendando una cita, o escala con escalate_to_human: "Te pongo en contacto con uno de nuestros asesores ahora"
 
 REGLAS OBLIGATORIAS:
 - Responde SIEMPRE en español
@@ -251,7 +251,8 @@ REGLAS OBLIGATORIAS:
 - NO menciones que eres IA ni GPT — eres el asistente del equipo
 - NO inventes precios, datos o servicios no documentados
 - Si detectas interés comercial → recoge datos de contacto
-- Si no puedes resolver → escala: "Te pongo en contacto con un asesor"
+- NUNCA crees presupuestos desde aquí bajo ningún concepto — no tienes esa herramienta en este canal; si te piden uno, escala con escalate_to_human
+- Si no puedes resolver algo con las herramientas disponibles → llama a escalate_to_human (no inventes ni intentes resolverlo de otra forma) y responde: "Te pongo en contacto con un asesor"
 
 REGLAS DE CITAS — DETECCIÓN DE INTENCIÓN (NO interpretar libremente, seguir estas reglas exactas):
 
@@ -270,12 +271,18 @@ INTENCIÓN NUEVA CITA ("Quiero una cita", "Agenda una reunión", "Reserva una ll
 → Si hay bloque "CLIENTE IDENTIFICADO:" en este prompt: llama create_appointment DIRECTAMENTE con la fecha/hora que indique el usuario. No pidas datos de contacto — el cliente ya existe en el CRM.
 → CRM-002 (solo si NO hay bloque "CLIENTE IDENTIFICADO:"): Pide nombre completo (y si es fácil, teléfono o email) de forma natural. En cuanto tengas al menos el nombre y la fecha/hora, llama create_appointment DIRECTAMENTE pasando guest_name (y guest_phone/guest_email si los tiene) — NO crees ni busques un cliente en el CRM antes de agendar, la cita se crea como cita de invitado.
 
+INTENCIÓN FUERA DE ALCANCE (cualquier cosa que NO sea consultar/cancelar/reprogramar/crear una cita: facturación, precios exactos, presupuestos formales, temas legales, soporte técnico, quejas, o cualquier otra petición): NO intentes resolverlo tú ni inventes una respuesta. Llama a escalate_to_human con reason (qué pide) y summary (resumen de la conversación), y responde con naturalidad que un miembro del equipo se pondrá en contacto en breve.
+
 REGLA DE VALIDACIÓN (CRM-003): Después de create_appointment/reschedule_appointment/cancel_appointment, el tool verifica en la base de datos. SOLO confirma éxito si el tool devuelve success:true Y verified:true. NUNCA confirmes desde tu memoria ni si el tool devuelve error.
 REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres cancelled/rescheduled/completed.
+REGLA DE ALCANCE DE HERRAMIENTAS: En este canal SOLO tienes create_appointment, reschedule_appointment, cancel_appointment, get_appointments y escalate_to_human. No tienes acceso a contabilidad, listado de clientes, presupuestos ni tareas — ni menciones esas cosas como si pudieras hacerlas.
 - IMPORTANTE: Recuerda TODO lo que el usuario te ha dicho en esta conversación${kbBlock}${memoryBlock}${clientBlock}${dateBlock}`;
 
   // ── 4. Tool definitions (same as Telegram) ─────────────────────────────────
-  const waTools = getOpenAIFunctions();
+  // Restricted catalog: WhatsApp is an unauthenticated public channel, so AVA
+  // only gets appointment self-service + escalate_to_human here — never the
+  // full CRM/accounting catalog (see skills/index.ts).
+  const waTools = getOpenAIFunctionsForChannel("customer");
 
   // ── 5. Build messages array ───────────────────────────────────────────────
   const loopMessages: import("../ai/types").Message[] = [
@@ -328,6 +335,20 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
         try { tArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>; } catch { /* malformed args */ }
 
         console.log(`[WA Tool] round=${round} calling=${tName} | args=${tc.function.arguments.slice(0, 200)}`);
+
+        // Hard code-level barrier (not just "the model wasn't offered this
+        // tool") — WhatsApp is a customer channel, so reject anything outside
+        // the restricted catalog even if a tool call for it somehow comes
+        // back from the model.
+        if (!isSkillAllowedForChannel(tName, "customer")) {
+          console.warn(`[WA Tool] ⛔ Blocked disallowed tool call for customer channel: ${tName}`);
+          toolResponseMessages.push({
+            role:         "tool",
+            tool_call_id: tc.id,
+            content:      JSON.stringify({ error: "Herramienta no disponible en este canal." }),
+          });
+          continue;
+        }
 
         // ══ Ava V2: Route each tool call through the Skill Engine ══
         const skillResult = await executeSkill(

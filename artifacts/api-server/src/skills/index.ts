@@ -32,6 +32,8 @@ import {
 
 import { createTaskSkill, getTasksSkill } from "./taskSkills";
 
+import { escalateToHumanSkill } from "./escalationSkills";
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Registry
 // ═══════════════════════════════════════════════════════════════════════════
@@ -55,6 +57,7 @@ const SKILLS: SkillDefinition[] = [
   accountingSummarySkill,
   createTaskSkill,
   getTasksSkill,
+  escalateToHumanSkill,
 ];
 
 const SKILL_MAP: Map<string, SkillDefinition> = new Map(SKILLS.map(s => [s.id, s]));
@@ -162,8 +165,22 @@ export async function executeSkill(
   }
 }
 
-// OpenAI function-calling schema for LLM integration
-export function getOpenAIFunctions(): Array<{
+// ── Restricted catalog for external customer-facing channels ─────────────────
+// WhatsApp/Telegram talk to unauthenticated strangers off the internet — they
+// must NEVER get the full skill catalog (accounting, full CRM listing/detail,
+// client creation, quotes, tasks, etc.). Only appointment self-service +
+// escalation. The internal dashboard chat (routes/chat.ts) is protected by
+// requirePermission("ai.write") and keeps the full catalog via
+// getOpenAIFunctions() — do not restrict that one.
+const CUSTOMER_CHANNEL_SKILL_IDS = new Set([
+  "create_appointment",
+  "reschedule_appointment",
+  "cancel_appointment",
+  "get_appointments",
+  "escalate_to_human",
+]);
+
+type OpenAIFunctionSchema = Array<{
   type: "function";
   function: {
     name:        string;
@@ -174,8 +191,10 @@ export function getOpenAIFunctions(): Array<{
       required?:  string[];
     };
   };
-}> {
-  return SKILLS.map(s => {
+}>;
+
+function buildOpenAIFunctions(skills: SkillDefinition[]): OpenAIFunctionSchema {
+  return skills.map(s => {
     const properties: Record<string, unknown> = {};
     const required: string[] = [];
     for (const p of s.params) {
@@ -198,4 +217,29 @@ export function getOpenAIFunctions(): Array<{
       },
     };
   });
+}
+
+// OpenAI function-calling schema for LLM integration — full catalog.
+// Used by the internal dashboard chat (routes/chat.ts) only.
+export function getOpenAIFunctions(): OpenAIFunctionSchema {
+  return buildOpenAIFunctions(SKILLS);
+}
+
+// OpenAI function-calling schema scoped by channel:
+//  - "customer": WhatsApp/Telegram — restricted to appointment self-service +
+//    escalate_to_human, nothing else.
+//  - "internal": same full catalog as getOpenAIFunctions().
+export function getOpenAIFunctionsForChannel(channel: "customer" | "internal"): OpenAIFunctionSchema {
+  if (channel === "internal") return buildOpenAIFunctions(SKILLS);
+  return buildOpenAIFunctions(SKILLS.filter(s => CUSTOMER_CHANNEL_SKILL_IDS.has(s.id)));
+}
+
+// Hard, code-level gate — NOT just "the tool list we handed the model doesn't
+// include it". Callers (routes/whatsapp.ts, routes/telegram.ts) MUST check
+// this before calling executeSkill() for a tool call that came back from the
+// model, so a jailbroken/confused model emitting a disallowed function name
+// can't reach accounting/CRM/quote/task skills through a customer channel.
+export function isSkillAllowedForChannel(skillId: string, channel: "customer" | "internal"): boolean {
+  if (channel === "internal") return true;
+  return CUSTOMER_CHANNEL_SKILL_IDS.has(skillId);
 }
