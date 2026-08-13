@@ -470,6 +470,7 @@ function AppRoutes() {
           </MainLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/import">
         <ProtectedRoute>
           <MainLayout>
             <ModuleGuard moduleKey="omni_import_ai">
