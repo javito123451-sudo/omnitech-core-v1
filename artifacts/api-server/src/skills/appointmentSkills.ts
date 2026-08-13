@@ -96,12 +96,15 @@ async function createAppointment(
     return JSON.stringify({ error: "No se pudo identificar el cliente. Proporciona client_name, guest_name (invitado sin cliente en el CRM), o inicia desde un canal vinculado." });
   }
 
-  // Anchor the guest booking to the real channel identity (phone/chat_id) when
-  // the AI didn't extract an explicit guest_phone from the user's message.
-  // This is what lets reschedule/cancel later find the appointment reliably
-  // from context.guestIdentity, instead of depending on whatever text the
-  // guest happened to type in the booking message.
-  const effectiveGuestPhone = isGuestBooking ? (guestPhoneArg ?? context.guestIdentity ?? null) : null;
+  // Anchor the guest booking to the real, verified channel identity
+  // (phone/chat_id) whenever we have one — takes priority over whatever
+  // guest_phone text the AI may have extracted from the user's message,
+  // which could be mistyped, someone else's number, or otherwise
+  // unreliable. Only falls back to guestPhoneArg when there's no
+  // guestIdentity at all (e.g. booked outside a WhatsApp/Telegram thread).
+  // This is what lets reschedule/cancel later find the appointment
+  // reliably from context.guestIdentity.
+  const effectiveGuestPhone = isGuestBooking ? (context.guestIdentity ?? guestPhoneArg ?? null) : null;
 
   const [appointment] = await db.insert(appointmentsTable).values({
     orgId,
@@ -169,6 +172,87 @@ async function createAppointment(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Shared appointment resolution — cancel/reschedule
+//
+// Previously this always picked "the soonest active appointment" for the
+// identity in question. If the user actually had more than one active
+// appointment and only referred to one of them (e.g. "cancela mi cita del 15
+// de agosto"), that could silently cancel/reprogram the WRONG appointment —
+// AVA would then confirm it as a success with nobody noticing the mistake.
+//
+// Now: gather every active candidate for the identity (optionally narrowed
+// to one exact date), and only proceed automatically when there's exactly
+// one match. Zero matches → "not found". More than one → return the options
+// so the AI asks the user which one, instead of guessing.
+// ═══════════════════════════════════════════════════════════════════════════
+
+type AppointmentRow = typeof appointmentsTable.$inferSelect;
+
+interface AppointmentResolution {
+  appointment?: AppointmentRow;
+  ambiguous?:   AppointmentRow[];
+}
+
+async function findActiveAppointmentCandidates(
+  orgId:             number,
+  identityCondition: ReturnType<typeof eq>,
+  dateStr:           string | null,
+  futureOnly:        boolean,
+): Promise<AppointmentRow[]> {
+  const conditions = [
+    eq(appointmentsTable.orgId, orgId),
+    identityCondition,
+    inArray(appointmentsTable.status, ["pending", "confirmed"]),
+  ];
+  if (futureOnly) {
+    conditions.push(gte(appointmentsTable.startTime, new Date()));
+  }
+  if (dateStr) {
+    const [y, mo, d] = dateStr.split("-").map(Number);
+    if (y && mo && d) {
+      const dayStart = madridLocalToUTC(dateStr, "00:00");
+      const dayEnd   = new Date(dayStart.getTime() + 24 * 60 * 60_000);
+      conditions.push(gte(appointmentsTable.startTime, dayStart));
+      conditions.push(lt(appointmentsTable.startTime, dayEnd));
+    }
+  }
+  return db.select().from(appointmentsTable)
+    .where(and(...conditions))
+    .orderBy(asc(appointmentsTable.startTime));
+}
+
+async function resolveActiveAppointmentByIdentity(
+  orgId:             number,
+  identityCondition: ReturnType<typeof eq>,
+  dateStr:           string | null,
+): Promise<AppointmentResolution> {
+  // Prefer future appointments first (matches prior behaviour); only fall
+  // back to any active one (including past-due but not yet completed) if
+  // nothing upcoming matches.
+  let candidates = await findActiveAppointmentCandidates(orgId, identityCondition, dateStr, true);
+  if (candidates.length === 0) {
+    candidates = await findActiveAppointmentCandidates(orgId, identityCondition, dateStr, false);
+  }
+  if (candidates.length === 0) return {};
+  if (candidates.length === 1) return { appointment: candidates[0] };
+  return { ambiguous: candidates };
+}
+
+function ambiguousAppointmentsResult(candidates: AppointmentRow[], actionLabel: string): string {
+  return JSON.stringify({
+    success:             false,
+    needsClarification:  true,
+    error:               `Hay ${candidates.length} citas activas que coinciden — pregunta al usuario cuál antes de ${actionLabel}.`,
+    options: candidates.map(c => ({
+      appointmentId: c.id,
+      title:         c.title,
+      date:          apptDateDisplay(c.startTime),
+      time:          apptTimeDisplay(c.startTime),
+    })),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Skill: rescheduleAppointment
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -178,6 +262,7 @@ async function rescheduleAppointment(
   context: SkillContext,
 ): Promise<string> {
   const appointmentIdArg = params["appointment_id"] ? Number(params["appointment_id"]) : null;
+  const dateArg           = params["date"] ? String(params["date"]) : null;
   const newDateStr       = String(params["new_date"]       ?? "");
   const newStartTimeStr  = String(params["new_start_time"] ?? "10:00");
   const durationArg      = params["duration_minutes"] != null ? Number(params["duration_minutes"]) : null;
@@ -186,34 +271,22 @@ async function rescheduleAppointment(
     return JSON.stringify({ error: "Se necesitan new_date y new_start_time." });
   }
 
-  // Resolve appointment: explicit ID -> client context -> conversational lastAppointmentId
-  let existing: typeof appointmentsTable.$inferSelect | undefined;
+  // Resolve appointment: explicit ID -> client context -> conversational
+  // lastAppointmentId -> guest identity. `date`, when given, narrows the
+  // client/guest lookups to that exact day; if more than one active
+  // appointment still matches, we ask instead of guessing (see helper above).
+  let existing: AppointmentRow | undefined;
   if (appointmentIdArg) {
     [existing] = await db.select().from(appointmentsTable)
       .where(and(eq(appointmentsTable.id, appointmentIdArg), eq(appointmentsTable.orgId, orgId)));
   } else if (context.client) {
-    const now = new Date();
-    const candidates = await db.select().from(appointmentsTable)
-      .where(and(
-        eq(appointmentsTable.orgId, orgId),
-        eq(appointmentsTable.clientId, context.client.id),
-        inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        gte(appointmentsTable.startTime, now),
-      ))
-      .orderBy(asc(appointmentsTable.startTime))
-      .limit(1);
-    existing = candidates[0];
-    if (!existing) {
-      const all = await db.select().from(appointmentsTable)
-        .where(and(
-          eq(appointmentsTable.orgId, orgId),
-          eq(appointmentsTable.clientId, context.client.id),
-          inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        ))
-        .orderBy(asc(appointmentsTable.startTime))
-        .limit(1);
-      existing = all[0];
+    const resolution = await resolveActiveAppointmentByIdentity(
+      orgId, eq(appointmentsTable.clientId, context.client.id), dateArg,
+    );
+    if (resolution.ambiguous) {
+      return ambiguousAppointmentsResult(resolution.ambiguous, "reprogramarla");
     }
+    existing = resolution.appointment;
   }
   // Fallback: conversational reference to last queried appointment
   if (!existing && context.lastAppointmentId) {
@@ -228,32 +301,21 @@ async function rescheduleAppointment(
   // active guest appointment. Lets a guest write "cambia mi cita" in a brand
   // new conversation, without having mentioned the appointment moments before.
   if (!existing && !context.client && context.guestIdentity) {
-    const now = new Date();
-    const candidates = await db.select().from(appointmentsTable)
-      .where(and(
-        eq(appointmentsTable.orgId, orgId),
-        eq(appointmentsTable.guestPhone, context.guestIdentity),
-        inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        gte(appointmentsTable.startTime, now),
-      ))
-      .orderBy(asc(appointmentsTable.startTime))
-      .limit(1);
-    existing = candidates[0];
-    if (!existing) {
-      const all = await db.select().from(appointmentsTable)
-        .where(and(
-          eq(appointmentsTable.orgId, orgId),
-          eq(appointmentsTable.guestPhone, context.guestIdentity),
-          inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        ))
-        .orderBy(asc(appointmentsTable.startTime))
-        .limit(1);
-      existing = all[0];
+    const resolution = await resolveActiveAppointmentByIdentity(
+      orgId, eq(appointmentsTable.guestPhone, context.guestIdentity), dateArg,
+    );
+    if (resolution.ambiguous) {
+      return ambiguousAppointmentsResult(resolution.ambiguous, "reprogramarla");
     }
+    existing = resolution.appointment;
   }
 
   if (!existing) {
-    return JSON.stringify({ error: "No se encontró ninguna cita activa (pending/confirmed) para reprogramar." });
+    return JSON.stringify({
+      error: dateArg
+        ? `No se encontró ninguna cita activa (pending/confirmed) el ${dateArg} para reprogramar.`
+        : "No se encontró ninguna cita activa (pending/confirmed) para reprogramar.",
+    });
   }
   if (existing.status === "rescheduled" || existing.status === "cancelled") {
     return JSON.stringify({ error: `La cita #${existing.id} ya está "${existing.status}" y no se puede reprogramar.` });
@@ -360,36 +422,25 @@ async function cancelAppointment(
   context: SkillContext,
 ): Promise<string> {
   const appointmentIdArg = params["appointment_id"] ? Number(params["appointment_id"]) : null;
+  const dateArg           = params["date"] ? String(params["date"]) : null;
   const reason           = params["reason"] ? String(params["reason"]) : null;
 
-  // Resolve appointment: explicit ID -> client context -> conversational lastAppointmentId
-  let existing: typeof appointmentsTable.$inferSelect | undefined;
+  // Resolve appointment: explicit ID -> client context -> conversational
+  // lastAppointmentId -> guest identity. `date`, when given, narrows the
+  // client/guest lookups to that exact day; if more than one active
+  // appointment still matches, we ask instead of guessing (see helper above).
+  let existing: AppointmentRow | undefined;
   if (appointmentIdArg) {
     [existing] = await db.select().from(appointmentsTable)
       .where(and(eq(appointmentsTable.id, appointmentIdArg), eq(appointmentsTable.orgId, orgId)));
   } else if (context.client) {
-    const now = new Date();
-    const candidates = await db.select().from(appointmentsTable)
-      .where(and(
-        eq(appointmentsTable.orgId, orgId),
-        eq(appointmentsTable.clientId, context.client.id),
-        inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        gte(appointmentsTable.startTime, now),
-      ))
-      .orderBy(asc(appointmentsTable.startTime))
-      .limit(1);
-    existing = candidates[0];
-    if (!existing) {
-      const all = await db.select().from(appointmentsTable)
-        .where(and(
-          eq(appointmentsTable.orgId, orgId),
-          eq(appointmentsTable.clientId, context.client.id),
-          inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        ))
-        .orderBy(asc(appointmentsTable.startTime))
-        .limit(1);
-      existing = all[0];
+    const resolution = await resolveActiveAppointmentByIdentity(
+      orgId, eq(appointmentsTable.clientId, context.client.id), dateArg,
+    );
+    if (resolution.ambiguous) {
+      return ambiguousAppointmentsResult(resolution.ambiguous, "cancelarla");
     }
+    existing = resolution.appointment;
   }
   // Fallback: conversational reference to last queried appointment
   if (!existing && context.lastAppointmentId) {
@@ -404,32 +455,21 @@ async function cancelAppointment(
   // active guest appointment. Lets a guest write "cancela mi cita" in a brand
   // new conversation, without having mentioned the appointment moments before.
   if (!existing && !context.client && context.guestIdentity) {
-    const now = new Date();
-    const candidates = await db.select().from(appointmentsTable)
-      .where(and(
-        eq(appointmentsTable.orgId, orgId),
-        eq(appointmentsTable.guestPhone, context.guestIdentity),
-        inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        gte(appointmentsTable.startTime, now),
-      ))
-      .orderBy(asc(appointmentsTable.startTime))
-      .limit(1);
-    existing = candidates[0];
-    if (!existing) {
-      const all = await db.select().from(appointmentsTable)
-        .where(and(
-          eq(appointmentsTable.orgId, orgId),
-          eq(appointmentsTable.guestPhone, context.guestIdentity),
-          inArray(appointmentsTable.status, ["pending", "confirmed"]),
-        ))
-        .orderBy(asc(appointmentsTable.startTime))
-        .limit(1);
-      existing = all[0];
+    const resolution = await resolveActiveAppointmentByIdentity(
+      orgId, eq(appointmentsTable.guestPhone, context.guestIdentity), dateArg,
+    );
+    if (resolution.ambiguous) {
+      return ambiguousAppointmentsResult(resolution.ambiguous, "cancelarla");
     }
+    existing = resolution.appointment;
   }
 
   if (!existing) {
-    return JSON.stringify({ error: "No se encontró ninguna cita activa (pending/confirmed) para cancelar." });
+    return JSON.stringify({
+      error: dateArg
+        ? `No se encontró ninguna cita activa (pending/confirmed) el ${dateArg} para cancelar.`
+        : "No se encontró ninguna cita activa (pending/confirmed) para cancelar.",
+    });
   }
   if (existing.status === "cancelled") {
     return JSON.stringify({ error: `La cita #${existing.id} "${existing.title}" ya estaba cancelada.` });
@@ -543,17 +583,28 @@ async function getAppointments(
     .orderBy(orderDir)
     .limit(limit);
 
+  // customer channel = external, unauthenticated (WhatsApp/Telegram) — the
+  // only identity we can trust there is the CRM client or the verified
+  // channel identity. Internal callers (dashboard chat, channel unset) are
+  // already gated by requirePermission("ai.write") at the route level, so
+  // "no client / no guest identity" there means a legitimate org-wide query
+  // (e.g. "show me all appointments this week"), not an anonymous stranger.
+  const isCustomerChannel = context.channel === "whatsapp" || context.channel === "telegram";
+
   // If client context provided, filter to that client only. If it's a guest
   // (no CRM client) but we know their channel identity, filter to their own
-  // guest appointments only. Otherwise return nothing — previously this
-  // fell through to the unfiltered `rows`, leaking every appointment in the
-  // org to anyone who asked "what appointments do I have" with no identity
-  // attached (SECURITY FIX).
+  // guest appointments only. Otherwise: on a customer channel, return
+  // nothing — previously this fell through to the unfiltered `rows`, leaking
+  // every appointment in the org to anyone who asked "what appointments do I
+  // have" with no identity attached (SECURITY FIX). On internal channels,
+  // fall back to all org appointments as before.
   const filtered = context.client
     ? rows.filter(r => r.clientId === context.client!.id)
     : context.guestIdentity
       ? rows.filter(r => r.clientId == null && r.guestPhone === context.guestIdentity)
-      : [];
+      : isCustomerChannel
+        ? []
+        : rows;
 
   const result: Record<string, unknown> = {
     total: filtered.length,
@@ -613,6 +664,7 @@ export const rescheduleAppointmentSkill: SkillDefinition = {
   description: "Marca una cita como reprogramada y crea una nueva con fecha/hora diferente.",
   params: [
     { name: "appointment_id", type: "number", description: "ID de la cita (o se usa el cliente del contexto)", required: false },
+    { name: "date", type: "date", description: "Fecha de la cita a cancelar/reprogramar, si el usuario la mencionó. Ayuda a desambiguar cuando hay varias citas activas.", required: false },
     { name: "new_date", type: "date", description: "Nueva fecha (YYYY-MM-DD)", required: true },
     { name: "new_start_time", type: "time", description: "Nueva hora (HH:MM)", default: "10:00" },
     { name: "duration_minutes", type: "number", description: "Nueva duración (si no se usa la original)", required: false },
@@ -626,6 +678,7 @@ export const cancelAppointmentSkill: SkillDefinition = {
   description: "Cancela una cita activa. Se puede especificar ID o se usa el cliente del contexto.",
   params: [
     { name: "appointment_id", type: "number", description: "ID de la cita", required: false },
+    { name: "date", type: "date", description: "Fecha de la cita a cancelar/reprogramar, si el usuario la mencionó. Ayuda a desambiguar cuando hay varias citas activas.", required: false },
     { name: "reason", type: "string", description: "Motivo de la cancelación", required: false },
   ],
   execute: cancelAppointment,

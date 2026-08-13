@@ -158,6 +158,14 @@ paths:
           in: query
           schema:
             type: integer
+        - name: includeCancelled
+          in: query
+          description: >-
+            By default only pending/confirmed appointments are returned.
+            Set to true to also include cancelled and rescheduled ones
+            (e.g. for a full-history view).
+          schema:
+            type: boolean
       responses:
         "200":
           description: List of appointments
