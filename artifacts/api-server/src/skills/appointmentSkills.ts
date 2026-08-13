@@ -543,10 +543,17 @@ async function getAppointments(
     .orderBy(orderDir)
     .limit(limit);
 
-  // If client context provided, filter to that client only
+  // If client context provided, filter to that client only. If it's a guest
+  // (no CRM client) but we know their channel identity, filter to their own
+  // guest appointments only. Otherwise return nothing — previously this
+  // fell through to the unfiltered `rows`, leaking every appointment in the
+  // org to anyone who asked "what appointments do I have" with no identity
+  // attached (SECURITY FIX).
   const filtered = context.client
     ? rows.filter(r => r.clientId === context.client!.id)
-    : rows;
+    : context.guestIdentity
+      ? rows.filter(r => r.clientId == null && r.guestPhone === context.guestIdentity)
+      : [];
 
   const result: Record<string, unknown> = {
     total: filtered.length,
