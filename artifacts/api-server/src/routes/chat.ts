@@ -997,6 +997,7 @@ export async function executeCrmTool(
       }
       const apptsByClient = new Map<number, (typeof allAppointments[number])[]>();
       for (const a of allAppointments) {
+        if (a.clientId == null) continue; // guest appointment — not tied to a CRM client
         if (!apptsByClient.has(a.clientId)) apptsByClient.set(a.clientId, []);
         apptsByClient.get(a.clientId)!.push(a);
       }
@@ -1653,7 +1654,7 @@ export async function executeCrmTool(
             ))
             .orderBy(asc(appointmentsTable.startTime))
             .limit(20);
-          existing = futureActive.find(a => clientIds.includes(a.clientId));
+          existing = futureActive.find(a => a.clientId != null && clientIds.includes(a.clientId));
           if (!existing) {
             // Fallback: any active (including past)
             const anyActive = await db.select().from(appointmentsTable)
@@ -1663,7 +1664,7 @@ export async function executeCrmTool(
               ))
               .orderBy(asc(appointmentsTable.startTime))
               .limit(20);
-            existing = anyActive.find(a => clientIds.includes(a.clientId));
+            existing = anyActive.find(a => a.clientId != null && clientIds.includes(a.clientId));
           }
         }
       }
@@ -1793,7 +1794,7 @@ export async function executeCrmTool(
             ))
             .orderBy(asc(appointmentsTable.startTime))
             .limit(20);
-          existing = futureActive.find(a => clientIds.includes(a.clientId));
+          existing = futureActive.find(a => a.clientId != null && clientIds.includes(a.clientId));
           if (!existing) {
             const anyActive = await db.select().from(appointmentsTable)
               .where(and(
@@ -1802,7 +1803,7 @@ export async function executeCrmTool(
               ))
               .orderBy(asc(appointmentsTable.startTime))
               .limit(20);
-            existing = anyActive.find(a => clientIds.includes(a.clientId));
+            existing = anyActive.find(a => a.clientId != null && clientIds.includes(a.clientId));
           }
         }
       }

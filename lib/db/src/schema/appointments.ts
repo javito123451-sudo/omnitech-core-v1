@@ -14,9 +14,13 @@ export const appointmentsTable = pgTable("appointments", {
   description: text("description"),
   startTime: timestamp("start_time").notNull(),
   endTime: timestamp("end_time").notNull(),
+  // ── Client (nullable): appointments can belong to a CRM client OR a guest ──
   clientId: integer("client_id")
-    .notNull()
     .references(() => clientsTable.id, { onDelete: "cascade" }),
+  // ── Guest contact info (used when clientId is null — no CRM client created) ──
+  guestName: text("guest_name"),
+  guestPhone: text("guest_phone"),
+  guestEmail: text("guest_email"),
   status: text("status").notNull().default("pending"),
   type: text("type"),
   reminder: boolean("reminder").notNull().default(false),
