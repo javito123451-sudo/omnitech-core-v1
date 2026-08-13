@@ -96,12 +96,15 @@ async function createAppointment(
     return JSON.stringify({ error: "No se pudo identificar el cliente. Proporciona client_name, guest_name (invitado sin cliente en el CRM), o inicia desde un canal vinculado." });
   }
 
-  // Anchor the guest booking to the real channel identity (phone/chat_id) when
-  // the AI didn't extract an explicit guest_phone from the user's message.
-  // This is what lets reschedule/cancel later find the appointment reliably
-  // from context.guestIdentity, instead of depending on whatever text the
-  // guest happened to type in the booking message.
-  const effectiveGuestPhone = isGuestBooking ? (guestPhoneArg ?? context.guestIdentity ?? null) : null;
+  // Anchor the guest booking to the real, verified channel identity
+  // (phone/chat_id) whenever we have one — takes priority over whatever
+  // guest_phone text the AI may have extracted from the user's message,
+  // which could be mistyped, someone else's number, or otherwise
+  // unreliable. Only falls back to guestPhoneArg when there's no
+  // guestIdentity at all (e.g. booked outside a WhatsApp/Telegram thread).
+  // This is what lets reschedule/cancel later find the appointment
+  // reliably from context.guestIdentity.
+  const effectiveGuestPhone = isGuestBooking ? (context.guestIdentity ?? guestPhoneArg ?? null) : null;
 
   const [appointment] = await db.insert(appointmentsTable).values({
     orgId,
@@ -543,17 +546,28 @@ async function getAppointments(
     .orderBy(orderDir)
     .limit(limit);
 
+  // customer channel = external, unauthenticated (WhatsApp/Telegram) — the
+  // only identity we can trust there is the CRM client or the verified
+  // channel identity. Internal callers (dashboard chat, channel unset) are
+  // already gated by requirePermission("ai.write") at the route level, so
+  // "no client / no guest identity" there means a legitimate org-wide query
+  // (e.g. "show me all appointments this week"), not an anonymous stranger.
+  const isCustomerChannel = context.channel === "whatsapp" || context.channel === "telegram";
+
   // If client context provided, filter to that client only. If it's a guest
   // (no CRM client) but we know their channel identity, filter to their own
-  // guest appointments only. Otherwise return nothing — previously this
-  // fell through to the unfiltered `rows`, leaking every appointment in the
-  // org to anyone who asked "what appointments do I have" with no identity
-  // attached (SECURITY FIX).
+  // guest appointments only. Otherwise: on a customer channel, return
+  // nothing — previously this fell through to the unfiltered `rows`, leaking
+  // every appointment in the org to anyone who asked "what appointments do I
+  // have" with no identity attached (SECURITY FIX). On internal channels,
+  // fall back to all org appointments as before.
   const filtered = context.client
     ? rows.filter(r => r.clientId === context.client!.id)
     : context.guestIdentity
       ? rows.filter(r => r.clientId == null && r.guestPhone === context.guestIdentity)
-      : [];
+      : isCustomerChannel
+        ? []
+        : rows;
 
   const result: Record<string, unknown> = {
     total: filtered.length,
