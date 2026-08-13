@@ -123,7 +123,8 @@ export const DeleteClientParams = zod.object({
 export const ListAppointmentsQueryParams = zod.object({
   "from": zod.coerce.string().optional(),
   "to": zod.coerce.string().optional(),
-  "clientId": zod.coerce.number().optional()
+  "clientId": zod.coerce.number().optional(),
+  "includeCancelled": zod.coerce.boolean().optional().describe('By default only pending\/confirmed appointments are returned. Set to true to also include cancelled and rescheduled ones (e.g. for a full-history view).')
 })
 
 export const ListAppointmentsResponseItem = zod.object({

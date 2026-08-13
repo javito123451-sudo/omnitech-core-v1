@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, appointmentsTable, clientsTable, activityTable } from "@workspace/db";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, notInArray } from "drizzle-orm";
 import {
   ListAppointmentsQueryParams,
   CreateAppointmentBody,
@@ -26,6 +26,13 @@ appointmentsRouter.get("/", requirePermission("calendar.read"), async (req, res)
     }
     if (query.clientId) {
       filters.push(eq(appointmentsTable.clientId, Number(query.clientId)));
+    }
+    // Default to active appointments only (pending/confirmed) — same
+    // criterion the chat assistant already uses. A cancelled/rescheduled
+    // appointment used to show up in the Calendar identically to an active
+    // one. Pass ?includeCancelled=true to opt into the full history.
+    if (!query.includeCancelled) {
+      filters.push(notInArray(appointmentsTable.status, ["cancelled", "rescheduled"]));
     }
 
     const rows = await db

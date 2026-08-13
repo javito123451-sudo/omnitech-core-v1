@@ -10,4 +10,8 @@ export type ListAppointmentsParams = {
 from?: string;
 to?: string;
 clientId?: number;
+/**
+ * By default only pending/confirmed appointments are returned. Set to true to also include cancelled and rescheduled ones (e.g. for a full-history view).
+ */
+includeCancelled?: boolean;
 };
