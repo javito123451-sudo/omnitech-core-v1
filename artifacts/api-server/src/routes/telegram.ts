@@ -338,6 +338,10 @@ REGLA DE VISIBILIDAD: Citas activas = solo pending y confirmed. Nunca muestres c
             client: client ? { id: client.id, name: client.name } : null,
             channel: "telegram",
             lastAppointmentId,
+            // Always populated — lets guest (no-client) skills resolve "my
+            // appointment" from the sender's chat_id, not just from
+            // conversation-turn memory (see FIX-AU / guest appointment actions).
+            guestIdentity: String(chatId),
           },
         );
         if (skillResult.lastAppointmentId) {

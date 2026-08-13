@@ -96,11 +96,18 @@ async function createAppointment(
     return JSON.stringify({ error: "No se pudo identificar el cliente. Proporciona client_name, guest_name (invitado sin cliente en el CRM), o inicia desde un canal vinculado." });
   }
 
+  // Anchor the guest booking to the real channel identity (phone/chat_id) when
+  // the AI didn't extract an explicit guest_phone from the user's message.
+  // This is what lets reschedule/cancel later find the appointment reliably
+  // from context.guestIdentity, instead of depending on whatever text the
+  // guest happened to type in the booking message.
+  const effectiveGuestPhone = isGuestBooking ? (guestPhoneArg ?? context.guestIdentity ?? null) : null;
+
   const [appointment] = await db.insert(appointmentsTable).values({
     orgId,
     clientId:    resolvedClient?.id ?? null,
     guestName:   isGuestBooking ? guestNameArg  : null,
-    guestPhone:  isGuestBooking ? guestPhoneArg : null,
+    guestPhone:  effectiveGuestPhone,
     guestEmail:  isGuestBooking ? guestEmailArg : null,
     title,
     description,
@@ -147,7 +154,7 @@ async function createAppointment(
     appointmentId: saved.id,
     isGuest:       isGuestBooking,
     clientName:    displayName,
-    guestPhone:    isGuestBooking ? guestPhoneArg : null,
+    guestPhone:    effectiveGuestPhone,
     guestEmail:    isGuestBooking ? guestEmailArg : null,
     title,
     date:          verifiedDate,
@@ -214,6 +221,34 @@ async function rescheduleAppointment(
       .where(and(eq(appointmentsTable.id, context.lastAppointmentId), eq(appointmentsTable.orgId, orgId)));
     if (existing && existing.status !== "pending" && existing.status !== "confirmed") {
       existing = undefined; // Don't reuse cancelled/rescheduled appointments
+    }
+  }
+  // Guest fallback: no CRM client on this thread, but we know the channel
+  // identity (phone for WhatsApp, chat_id for Telegram) — find their nearest
+  // active guest appointment. Lets a guest write "cambia mi cita" in a brand
+  // new conversation, without having mentioned the appointment moments before.
+  if (!existing && !context.client && context.guestIdentity) {
+    const now = new Date();
+    const candidates = await db.select().from(appointmentsTable)
+      .where(and(
+        eq(appointmentsTable.orgId, orgId),
+        eq(appointmentsTable.guestPhone, context.guestIdentity),
+        inArray(appointmentsTable.status, ["pending", "confirmed"]),
+        gte(appointmentsTable.startTime, now),
+      ))
+      .orderBy(asc(appointmentsTable.startTime))
+      .limit(1);
+    existing = candidates[0];
+    if (!existing) {
+      const all = await db.select().from(appointmentsTable)
+        .where(and(
+          eq(appointmentsTable.orgId, orgId),
+          eq(appointmentsTable.guestPhone, context.guestIdentity),
+          inArray(appointmentsTable.status, ["pending", "confirmed"]),
+        ))
+        .orderBy(asc(appointmentsTable.startTime))
+        .limit(1);
+      existing = all[0];
     }
   }
 
@@ -362,6 +397,34 @@ async function cancelAppointment(
       .where(and(eq(appointmentsTable.id, context.lastAppointmentId), eq(appointmentsTable.orgId, orgId)));
     if (existing && existing.status !== "pending" && existing.status !== "confirmed") {
       existing = undefined;
+    }
+  }
+  // Guest fallback: no CRM client on this thread, but we know the channel
+  // identity (phone for WhatsApp, chat_id for Telegram) — find their nearest
+  // active guest appointment. Lets a guest write "cancela mi cita" in a brand
+  // new conversation, without having mentioned the appointment moments before.
+  if (!existing && !context.client && context.guestIdentity) {
+    const now = new Date();
+    const candidates = await db.select().from(appointmentsTable)
+      .where(and(
+        eq(appointmentsTable.orgId, orgId),
+        eq(appointmentsTable.guestPhone, context.guestIdentity),
+        inArray(appointmentsTable.status, ["pending", "confirmed"]),
+        gte(appointmentsTable.startTime, now),
+      ))
+      .orderBy(asc(appointmentsTable.startTime))
+      .limit(1);
+    existing = candidates[0];
+    if (!existing) {
+      const all = await db.select().from(appointmentsTable)
+        .where(and(
+          eq(appointmentsTable.orgId, orgId),
+          eq(appointmentsTable.guestPhone, context.guestIdentity),
+          inArray(appointmentsTable.status, ["pending", "confirmed"]),
+        ))
+        .orderBy(asc(appointmentsTable.startTime))
+        .limit(1);
+      existing = all[0];
     }
   }
 

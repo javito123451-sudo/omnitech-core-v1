@@ -33,6 +33,12 @@ export interface SkillContext {
   meta?: Record<string, unknown>;
   // Last appointment referenced in this conversation (for resolving "that appointment", "tomorrow's", etc.)
   lastAppointmentId?: number;
+  // Identity of the sender on the external channel — phone number for WhatsApp,
+  // chat_id for Telegram. Always populated when the request comes from a
+  // channel webhook, regardless of whether a CRM client is linked. Lets guest
+  // (no-client) skills like reschedule/cancel resolve "my appointment" from
+  // the sender's identity instead of only from conversation-turn memory.
+  guestIdentity?: string;
 }
 
 export interface SkillResult {
