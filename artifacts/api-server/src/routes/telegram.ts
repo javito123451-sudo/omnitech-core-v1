@@ -5,7 +5,7 @@ import {
   clientsTable, quotesTable, agentMemoryTable, organizationsTable, messagesTable,
   knowledgeBaseTable, appointmentsTable, activityTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, isNotNull, ne, ilike, gte, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, isNotNull, isNull, ne, ilike, gte, inArray } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 import { transcribeAudio } from "../utils/transcribeAudio";
 
@@ -137,10 +137,11 @@ async function generateTelegramAIReply(params: {
   orgName:       string;
   text:          string;
   senderName:    string;
+  chatId:        number; // guest identity — used to build history when no CRM client is linked
   excludeMsgId?: number;  // ID of the just-saved inbound message — exclude from history
   client:        { id: number; name: string; status: string; leadScore?: string | null; company?: string | null; tags?: string | null; notes?: string | null } | null;
 }): Promise<string | null> {
-  const { orgId, orgName, text, senderName, excludeMsgId, client } = params;
+  const { orgId, orgName, text, senderName, chatId, excludeMsgId, client } = params;
 
   // ── 1. Fetch concurrently: KB, memory, and conversation history ──────────────
   const [kbEntries, memories, rawHistoryRows] = await Promise.all([
@@ -169,7 +170,17 @@ async function generateTelegramAIReply(params: {
           )
           .orderBy(desc(messagesTable.createdAt))
           .limit(20)
-      : Promise.resolve([]),
+      // No CRM client linked (guest conversation) — build history from external_id
+      // (chat_id) instead, so the AI still remembers what the guest said earlier.
+      : db.select()
+          .from(messagesTable)
+          .where(
+            excludeMsgId
+              ? and(eq(messagesTable.orgId, orgId), eq(messagesTable.externalId, String(chatId)), eq(messagesTable.channel, "telegram"), ne(messagesTable.id, excludeMsgId))
+              : and(eq(messagesTable.orgId, orgId), eq(messagesTable.externalId, String(chatId)), eq(messagesTable.channel, "telegram")),
+          )
+          .orderBy(desc(messagesTable.createdAt))
+          .limit(20),
   ]);
 
   // Build chronological history (oldest → newest)
@@ -973,7 +984,7 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
   // ID of the just-saved inbound message (used to exclude it from history query)
   let savedInboundId: number | undefined;
 
-  // 2. If client found, link telegram_chat_id and save inbound message to messages table
+  // 2. If client found, link telegram_chat_id
   if (client) {
     // Persist chat_id on client if not already set
     if (!client.telegramChatId || client.telegramChatId !== chatIdStr) {
@@ -981,19 +992,29 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
         .set({ telegramChatId: chatIdStr, updatedAt: new Date() })
         .where(eq(clientsTable.id, client.id));
     }
-    // Save inbound message — use .returning() to get ID for history exclusion
-    const [savedInbound] = await db.insert(messagesTable).values({
-      orgId,
-      clientId:  client.id,
-      content:   text.slice(0, 2000),
-      direction: "inbound",
-      channel:   "telegram",
-      isAi:      false,
-      status:    "received",
-    }).returning({ id: messagesTable.id });
-    savedInboundId = savedInbound?.id;
-    console.log(`[TG Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client.id}`);
+  }
 
+  // Save inbound message — ALWAYS, regardless of whether a CRM client is linked.
+  // Previously this insert lived inside `if (client)`, so anonymous/guest messages
+  // were never persisted at all (unlike WhatsApp, where they at least made it into
+  // the messages table). That silently dropped guest conversations and also meant
+  // there was no history for the AI to build guest memory from. Uses .returning()
+  // to get the ID for history exclusion.
+  const [savedInbound] = await db.insert(messagesTable).values({
+    orgId,
+    clientId:     client?.id ?? null,
+    externalId:   chatIdStr,
+    externalName: senderName || username || null,
+    content:      text.slice(0, 2000),
+    direction:    "inbound",
+    channel:      "telegram",
+    isAi:         false,
+    status:       "received",
+  }).returning({ id: messagesTable.id });
+  savedInboundId = savedInbound?.id;
+  console.log(`[TG Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client?.id ?? "null (anónimo)"}`);
+
+  if (client) {
     // ── Phase 3: Lead Intelligence detection ─────────────────────────────────
     const trimmedLower = text.toLowerCase();
     let newLeadScore: string | null = null;
@@ -1072,6 +1093,7 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
       orgName,
       text,
       senderName,
+      chatId,
       excludeMsgId: savedInboundId,
       client: client ?? null,
     });
@@ -1084,18 +1106,19 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
     const sent = await tgSend(token, chatId, replyText);
 
     if (aiReply) {
-      // Save AI reply to messages table (only when client is known)
-      if (client) {
-        await db.insert(messagesTable).values({
-          orgId,
-          clientId:  client.id,
-          content:   aiReply.slice(0, 2000),
-          direction: "outbound",
-          channel:   "telegram",
-          isAi:      true,
-          status:    sent ? "sent" : "failed",
-        });
-      }
+      // Save AI reply to messages table — always, even for guest (no-client)
+      // conversations, so the guest thread has a full history (see FIX-AU).
+      await db.insert(messagesTable).values({
+        orgId,
+        clientId:     client?.id ?? null,
+        externalId:   chatIdStr,
+        externalName: senderName || username || null,
+        content:      aiReply.slice(0, 2000),
+        direction:    "outbound",
+        channel:      "telegram",
+        isAi:         true,
+        status:       sent ? "sent" : "failed",
+      });
       logIntegrationEvent({
         orgId, integrationSlug: "telegram", direction: "outbound",
         eventType: sent ? "ai_reply_sent" : "ai_reply_failed",
@@ -1579,24 +1602,25 @@ telegramRouter.post("/send", requirePermission("telegram.write"), async (req, re
       return;
     }
 
-    // Save to messages table
+    // Save to messages table — always, even when the chat_id has no CRM client
+    // linked, so guest threads sent to from here still show up in their history.
     try {
       const client = await db.select().from(clientsTable).where(and(
         eq(clientsTable.orgId, orgId),
         eq(clientsTable.telegramChatId, String(chatId)),
       )).then((r) => r[0] ?? null);
 
-      if (client) {
-        await db.insert(messagesTable).values({
-          orgId:     orgId,
-          clientId:  client.id,
-          channel:   "telegram",
-          direction: "outbound",
-          content:   message.trim().slice(0, 2000),
-          status:    "sent",
-          isAi:      false,
-        });
-      }
+      await db.insert(messagesTable).values({
+        orgId:        orgId,
+        clientId:     client?.id ?? null,
+        externalId:   String(chatId),
+        externalName: client?.name ?? null,
+        channel:      "telegram",
+        direction:    "outbound",
+        content:      message.trim().slice(0, 2000),
+        status:       "sent",
+        isAi:         false,
+      });
     } catch { /* non-critical */ }
 
     await logIntegrationEvent({
@@ -1742,15 +1766,59 @@ telegramRouter.get("/conversations", requirePermission("telegram.read"), async (
       };
     }));
 
-    conversations.sort((a, b) => {
+    // ── Guest conversations — no CRM client linked, grouped by external_id (chat_id) ──
+    // Anonymous Telegram chats (FIX-AU). Without this block guest threads never
+    // showed up in the inbox even after their messages started being saved.
+    const guestMessages = await db
+      .select()
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.orgId, orgId),
+        eq(messagesTable.channel, "telegram"),
+        isNull(messagesTable.clientId),
+        isNotNull(messagesTable.externalId),
+      ))
+      .orderBy(desc(messagesTable.createdAt));
+
+    const guestGroups = new Map<string, typeof guestMessages>();
+    for (const m of guestMessages) {
+      const key = m.externalId as string;
+      const arr = guestGroups.get(key);
+      if (arr) arr.push(m); else guestGroups.set(key, [m]);
+    }
+
+    const guestConversations = Array.from(guestGroups.entries()).map(([externalId, msgs]) => {
+      const lastMsg = msgs[0]; // guestMessages is already ordered desc → first is newest per group
+      const named = msgs.find((m) => m.externalName);
+      return {
+        clientId:             null as number | null,
+        clientName:           named?.externalName ?? externalId,
+        chatId:               externalId,
+        leadScore:            null as string | null,
+        leadIntent:           null as string | null,
+        status:               "guest",
+        company:              null as string | null,
+        phone:                null as string | null,
+        email:                null as string | null,
+        lastMessage:          lastMsg?.content ?? null,
+        lastMessageAt:        lastMsg?.createdAt ?? null,
+        lastMessageDirection: lastMsg?.direction ?? null,
+        lastMessageIsAi:      lastMsg?.isAi ?? null,
+        messageCount:         msgs.length,
+      };
+    });
+
+    const allConversations = [...conversations, ...guestConversations];
+
+    allConversations.sort((a, b) => {
       if (!a.lastMessageAt && !b.lastMessageAt) return 0;
       if (!a.lastMessageAt) return 1;
       if (!b.lastMessageAt) return -1;
       return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
     });
 
-    console.log(`[Telegram/conversations] returning ${conversations.length} conversations`);
-    res.json(conversations);
+    console.log(`[Telegram/conversations] returning ${allConversations.length} conversations (${guestConversations.length} guest)`);
+    res.json(allConversations);
   } catch (err) {
     console.error("[Telegram/conversations] error:", err);
     res.status(500).json({ error: String(err) });
@@ -1758,11 +1826,30 @@ telegramRouter.get("/conversations", requirePermission("telegram.read"), async (
 });
 
 // ── GET /api/telegram/conversations/:clientId — messages thread ───────────────
+// Accepts a numeric CRM clientId, or "guest:<externalId>" (chat_id) for
+// anonymous guest conversations with no CRM client linked — see FIX-AU.
 telegramRouter.get("/conversations/:clientId", requirePermission("telegram.read"), async (req, res) => {
   const orgId    = (req as any).orgId as number;
-  const clientId = Number(req.params.clientId);
+  const rawParam = String(req.params.clientId ?? "");
   const limit    = Math.min(Number(req.query.limit ?? 100), 300);
   try {
+    if (rawParam.startsWith("guest:")) {
+      const externalId = rawParam.slice("guest:".length);
+      const msgs = await db
+        .select()
+        .from(messagesTable)
+        .where(and(
+          eq(messagesTable.orgId, orgId),
+          eq(messagesTable.externalId, externalId),
+          eq(messagesTable.channel, "telegram"),
+        ))
+        .orderBy(asc(messagesTable.createdAt))
+        .limit(limit);
+      res.json(msgs);
+      return;
+    }
+
+    const clientId = Number(rawParam);
     const msgs = await db
       .select()
       .from(messagesTable)
@@ -1779,9 +1866,11 @@ telegramRouter.get("/conversations/:clientId", requirePermission("telegram.read"
 });
 
 // ── POST /api/telegram/conversations/:clientId/reply — manual CRM reply ──────
+// Accepts a numeric CRM clientId, or "guest:<externalId>" (chat_id) for guest
+// conversations with no CRM client linked — see FIX-AU.
 telegramRouter.post("/conversations/:clientId/reply", requirePermission("telegram.write"), async (req, res) => {
   const orgId    = (req as any).orgId as number;
-  const clientId = Number(req.params.clientId);
+  const rawParam = String(req.params.clientId ?? "");
   const { message } = req.body as { message: string };
 
   if (!message?.trim()) {
@@ -1790,6 +1879,42 @@ telegramRouter.post("/conversations/:clientId/reply", requirePermission("telegra
   }
 
   try {
+    if (rawParam.startsWith("guest:")) {
+      const externalId = rawParam.slice("guest:".length);
+
+      const token = await getTelegramToken(orgId);
+      if (!token) {
+        res.status(404).json({ error: "Bot token no configurado." });
+        return;
+      }
+
+      const sent = await tgSend(token, Number(externalId), message.trim());
+
+      await db.insert(messagesTable).values({
+        orgId,
+        clientId:     null,
+        externalId,
+        externalName: null,
+        content:      message.trim().slice(0, 2000),
+        direction:    "outbound",
+        channel:      "telegram",
+        isAi:         false,
+        status:       sent ? "sent" : "failed",
+      });
+
+      await logIntegrationEvent({
+        orgId, integrationSlug: "telegram", direction: "outbound",
+        eventType: sent ? "message_sent" : "message_send_failed",
+        status:    sent ? "processed" : "error",
+        summary:   `Respuesta manual desde CRM → invitado ${externalId}: "${message.slice(0, 80)}"`,
+        payloadJson: { externalId, chatId: externalId },
+      });
+
+      res.json({ success: sent });
+      return;
+    }
+
+    const clientId = Number(rawParam);
     const client = await db.select().from(clientsTable)
       .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, clientId)))
       .then((r) => r[0] ?? null);

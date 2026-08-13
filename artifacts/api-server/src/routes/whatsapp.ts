@@ -13,7 +13,7 @@ import {
   knowledgeBaseTable,
   orgIntegrationsTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, gt, isNotNull, ne, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, gt, isNotNull, isNull, ne, inArray } from "drizzle-orm";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Ava V2 imports
@@ -179,7 +179,17 @@ async function generateWhatsAppAIReply(params: {
           )
           .orderBy(desc(messagesTable.createdAt))
           .limit(20)
-      : Promise.resolve([]),
+      // No CRM client linked (guest conversation) — build history from external_id
+      // instead, so the AI still remembers what the guest said across messages.
+      : db.select()
+          .from(messagesTable)
+          .where(
+            excludeMsgId
+              ? and(eq(messagesTable.orgId, orgId), eq(messagesTable.externalId, fromPhone), eq(messagesTable.channel, "whatsapp"), ne(messagesTable.id, excludeMsgId))
+              : and(eq(messagesTable.orgId, orgId), eq(messagesTable.externalId, fromPhone), eq(messagesTable.channel, "whatsapp")),
+          )
+          .orderBy(desc(messagesTable.createdAt))
+          .limit(20),
   ]);
 
   const convHistory: { role: "user" | "assistant"; content: string }[] = (rawHistoryRows as typeof rawHistoryRows)
@@ -530,12 +540,14 @@ async function processIncomingMessage(payload: {
   let savedInboundId: number | undefined;
   const [savedInbound] = await db.insert(messagesTable).values({
     orgId,
-    clientId:  client?.id ?? null,
-    content:   text,
-    direction: "inbound",
-    channel:   "whatsapp",
-    isAi:      false,
-    status:    "received",
+    clientId:     client?.id ?? null,
+    externalId:   fromPhone,
+    externalName: contactName ?? null,
+    content:      text,
+    direction:    "inbound",
+    channel:      "whatsapp",
+    isAi:         false,
+    status:       "received",
   }).returning({ id: messagesTable.id });
   savedInboundId = savedInbound?.id;
   console.log(`[WA Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client?.id ?? "null (anónimo)"}`);
@@ -783,12 +795,14 @@ async function processIncomingMessage(payload: {
   // Store AI reply in messages table — capture ID to update status if send fails
   const savedOutboundRows = await db.insert(messagesTable).values({
     orgId,
-    clientId:  client?.id ?? null,
-    content:   aiReply,
-    direction: "outbound",
-    channel:   "whatsapp",
-    isAi:      true,
-    status:    "sent",
+    clientId:     client?.id ?? null,
+    externalId:   fromPhone,
+    externalName: contactName ?? null,
+    content:      aiReply,
+    direction:    "outbound",
+    channel:      "whatsapp",
+    isAi:         true,
+    status:       "sent",
   }).returning({ id: messagesTable.id }).catch((err) => {
     console.error("[WA] AI message save failed:", err);
     return [] as { id: number }[];
@@ -1581,14 +1595,58 @@ whatsappRouter.get("/conversations", requirePermission("whatsapp.read"), async (
     // WhatsApp) would clutter the inbox.
     const withMessages = conversations.filter((c) => c.messageCount > 0);
 
-    withMessages.sort((a, b) => {
+    // ── Guest conversations — no CRM client linked, grouped by external_id ──
+    // These are anonymous WhatsApp numbers (FIX-AU). Without this block guest
+    // threads never showed up in the inbox even though the messages were saved.
+    const guestMessages = await db
+      .select()
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.orgId, orgId),
+        eq(messagesTable.channel, "whatsapp"),
+        isNull(messagesTable.clientId),
+        isNotNull(messagesTable.externalId),
+      ))
+      .orderBy(desc(messagesTable.createdAt));
+
+    const guestGroups = new Map<string, typeof guestMessages>();
+    for (const m of guestMessages) {
+      const key = m.externalId as string;
+      const arr = guestGroups.get(key);
+      if (arr) arr.push(m); else guestGroups.set(key, [m]);
+    }
+
+    const guestConversations = Array.from(guestGroups.entries()).map(([externalId, msgs]) => {
+      const lastMsg = msgs[0]; // guestMessages is already ordered desc → first is newest per group
+      const named = msgs.find((m) => m.externalName);
+      return {
+        clientId:             null as number | null,
+        clientName:           named?.externalName ?? externalId,
+        externalId,
+        leadScore:            null as string | null,
+        leadIntent:           null as string | null,
+        status:               "guest",
+        company:              null as string | null,
+        phone:                externalId,
+        email:                null as string | null,
+        lastMessage:          lastMsg?.content ?? null,
+        lastMessageAt:        lastMsg?.createdAt ?? null,
+        lastMessageDirection: lastMsg?.direction ?? null,
+        lastMessageIsAi:      lastMsg?.isAi ?? null,
+        messageCount:         msgs.length,
+      };
+    });
+
+    const allConversations = [...withMessages, ...guestConversations];
+
+    allConversations.sort((a, b) => {
       if (!a.lastMessageAt && !b.lastMessageAt) return 0;
       if (!a.lastMessageAt) return 1;
       if (!b.lastMessageAt) return -1;
       return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
     });
 
-    res.json(withMessages);
+    res.json(allConversations);
   } catch (err) {
     console.error("[WhatsApp/conversations] error:", err);
     res.status(500).json({ error: String(err) });
@@ -1596,11 +1654,30 @@ whatsappRouter.get("/conversations", requirePermission("whatsapp.read"), async (
 });
 
 // ── GET /conversations/:clientId — thread of messages ─────────────────────────
+// Accepts a numeric CRM clientId, or "guest:<externalId>" for anonymous guest
+// conversations (no CRM client linked) — see FIX-AU.
 whatsappRouter.get("/conversations/:clientId", requirePermission("whatsapp.read"), async (req, res) => {
   const orgId    = req.orgId!;
-  const clientId = Number(req.params.clientId);
+  const rawParam = String(req.params.clientId ?? "");
   const limit    = Math.min(Number(req.query.limit ?? 100), 300);
   try {
+    if (rawParam.startsWith("guest:")) {
+      const externalId = rawParam.slice("guest:".length);
+      const msgs = await db
+        .select()
+        .from(messagesTable)
+        .where(and(
+          eq(messagesTable.orgId, orgId),
+          eq(messagesTable.externalId, externalId),
+          eq(messagesTable.channel, "whatsapp"),
+        ))
+        .orderBy(asc(messagesTable.createdAt))
+        .limit(limit);
+      res.json(msgs);
+      return;
+    }
+
+    const clientId = Number(rawParam);
     const msgs = await db
       .select()
       .from(messagesTable)
@@ -1618,9 +1695,11 @@ whatsappRouter.get("/conversations/:clientId", requirePermission("whatsapp.read"
 });
 
 // ── POST /conversations/:clientId/reply — manual CRM reply ────────────────────
+// Accepts a numeric CRM clientId, or "guest:<externalId>" (phone) for guest
+// conversations with no CRM client linked — see FIX-AU.
 whatsappRouter.post("/conversations/:clientId/reply", requirePermission("whatsapp.write"), async (req, res) => {
   const orgId    = req.orgId!;
-  const clientId = Number(req.params.clientId);
+  const rawParam = String(req.params.clientId ?? "");
   const { message } = req.body as { message: string };
 
   if (!message?.trim()) {
@@ -1629,6 +1708,36 @@ whatsappRouter.post("/conversations/:clientId/reply", requirePermission("whatsap
   }
 
   try {
+    if (rawParam.startsWith("guest:")) {
+      const externalId = rawParam.slice("guest:".length);
+
+      const sent = await sendAutoReply(orgId, externalId, message.trim());
+
+      await db.insert(messagesTable).values({
+        orgId,
+        clientId:     null,
+        externalId,
+        externalName: null,
+        content:      message.trim().slice(0, 2000),
+        direction:    "outbound",
+        channel:      "whatsapp",
+        isAi:         false,
+        status:       sent ? "sent" : "failed",
+      });
+
+      await logIntegrationEvent({
+        orgId, integrationSlug: "whatsapp", direction: "outbound",
+        eventType: sent ? "message_sent" : "message_send_failed",
+        status:    sent ? "processed" : "error",
+        summary:   `Respuesta manual desde CRM → invitado ${externalId}: "${message.slice(0, 80)}"`,
+        payloadJson: { externalId, phone: externalId },
+      });
+
+      res.json({ success: sent });
+      return;
+    }
+
+    const clientId = Number(rawParam);
     const client = await db.select().from(clientsTable)
       .where(and(eq(clientsTable.orgId, orgId), eq(clientsTable.id, clientId)))
       .then((r) => r[0] ?? null);
