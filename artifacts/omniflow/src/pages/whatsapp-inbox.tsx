@@ -20,9 +20,12 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ConvSummary {
-  clientId:             number;
+  clientId:             number | null; // null for guest conversations (no CRM client linked)
   clientName:           string;
   phone:                string | null;
+  // Guest identity (see FIX-AU) — the backend returns this only for guest
+  // conversations (clientId === null); absent for CRM-linked conversations.
+  externalId?:          string | null;
   leadScore:            string;
   leadIntent:           string | null;
   status:               string;
@@ -43,6 +46,14 @@ interface WaMessage {
   isAi:      boolean | null;
   status:    string | null;
   createdAt: string;
+}
+
+// Route param / unique id for a conversation: numeric clientId for CRM-linked
+// conversations, "guest:<externalId>" for guest conversations (no client
+// linked). Matches the :clientId param the backend accepts on
+// GET/POST /conversations/*.
+function convRouteId(conv: ConvSummary): string {
+  return conv.clientId != null ? String(conv.clientId) : `guest:${conv.externalId}`;
 }
 
 // ── Lead score badge ──────────────────────────────────────────────────────────
@@ -242,10 +253,10 @@ export default function WhatsAppInboxPage() {
   }, [toast]);
 
   // Load messages for selected conversation
-  const loadMessages = useCallback(async (clientId: number) => {
+  const loadMessages = useCallback(async (conv: ConvSummary) => {
     setMsgLoading(true);
     try {
-      const res = await authFetch(`${BASE}/api/whatsapp/conversations/${clientId}`);
+      const res = await authFetch(`${BASE}/api/whatsapp/conversations/${convRouteId(conv)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as WaMessage[];
       setMessages(data);
@@ -259,7 +270,7 @@ export default function WhatsAppInboxPage() {
   useEffect(() => { loadConvs(); }, [loadConvs]);
 
   useEffect(() => {
-    if (selected) loadMessages(selected.clientId);
+    if (selected) loadMessages(selected);
   }, [selected, loadMessages]);
 
   useEffect(() => {
@@ -270,7 +281,7 @@ export default function WhatsAppInboxPage() {
     if (!selected || !reply.trim()) return;
     setSending(true);
     try {
-      const res = await authFetch(`${BASE}/api/whatsapp/conversations/${selected.clientId}/reply`, {
+      const res = await authFetch(`${BASE}/api/whatsapp/conversations/${convRouteId(selected)}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: reply.trim() }),
@@ -278,7 +289,7 @@ export default function WhatsAppInboxPage() {
       const data = await res.json() as { success: boolean };
       if (data.success) {
         setReply("");
-        await loadMessages(selected.clientId);
+        await loadMessages(selected);
         await loadConvs();
         toast({ title: "Mensaje enviado ✓" });
       } else {
@@ -415,9 +426,9 @@ export default function WhatsAppInboxPage() {
 
             {filteredConvs.map((conv) => (
               <ConvCard
-                key={conv.clientId}
+                key={convRouteId(conv)}
                 conv={conv}
-                isSelected={selected?.clientId === conv.clientId}
+                isSelected={selected ? convRouteId(selected) === convRouteId(conv) : false}
                 onClick={() => setSelected(conv)}
               />
             ))}
@@ -471,7 +482,7 @@ export default function WhatsAppInboxPage() {
                     size="sm"
                     variant="ghost"
                     className="h-8 text-xs"
-                    onClick={() => loadMessages(selected.clientId)}
+                    onClick={() => loadMessages(selected)}
                     disabled={msgLoading}
                   >
                     <RefreshCw className={cn("w-3.5 h-3.5", msgLoading && "animate-spin")} />

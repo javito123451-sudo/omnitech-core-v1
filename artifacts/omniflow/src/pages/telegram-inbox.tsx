@@ -20,7 +20,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ConvSummary {
-  clientId:             number;
+  clientId:             number | null; // null for guest conversations (no CRM client linked)
   clientName:           string;
   chatId:               string | null;
   leadScore:            string;
@@ -44,6 +44,13 @@ interface TgMessage {
   isAi:      boolean | null;
   status:    string | null;
   createdAt: string;
+}
+
+// Route param / unique id for a conversation: numeric clientId for CRM-linked
+// conversations, "guest:<chatId>" for guest conversations (no client linked).
+// Matches the :clientId param the backend accepts on GET/POST /conversations/*.
+function convRouteId(conv: ConvSummary): string {
+  return conv.clientId != null ? String(conv.clientId) : `guest:${conv.chatId}`;
 }
 
 // ── Lead score badge ──────────────────────────────────────────────────────────
@@ -243,10 +250,10 @@ export default function TelegramInboxPage() {
   }, [toast]);
 
   // Load messages for selected conversation
-  const loadMessages = useCallback(async (clientId: number) => {
+  const loadMessages = useCallback(async (conv: ConvSummary) => {
     setMsgLoading(true);
     try {
-      const res = await authFetch(`${BASE}/api/telegram/conversations/${clientId}`);
+      const res = await authFetch(`${BASE}/api/telegram/conversations/${convRouteId(conv)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as TgMessage[];
       setMessages(data);
@@ -260,7 +267,7 @@ export default function TelegramInboxPage() {
   useEffect(() => { loadConvs(); }, [loadConvs]);
 
   useEffect(() => {
-    if (selected) loadMessages(selected.clientId);
+    if (selected) loadMessages(selected);
   }, [selected, loadMessages]);
 
   useEffect(() => {
@@ -271,7 +278,7 @@ export default function TelegramInboxPage() {
     if (!selected || !reply.trim()) return;
     setSending(true);
     try {
-      const res = await authFetch(`${BASE}/api/telegram/conversations/${selected.clientId}/reply`, {
+      const res = await authFetch(`${BASE}/api/telegram/conversations/${convRouteId(selected)}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: reply.trim() }),
@@ -279,7 +286,7 @@ export default function TelegramInboxPage() {
       const data = await res.json() as { success: boolean };
       if (data.success) {
         setReply("");
-        await loadMessages(selected.clientId);
+        await loadMessages(selected);
         await loadConvs();
         toast({ title: "Mensaje enviado ✓" });
       } else {
@@ -420,9 +427,9 @@ export default function TelegramInboxPage() {
 
             {filteredConvs.map((conv) => (
               <ConvCard
-                key={conv.clientId}
+                key={convRouteId(conv)}
                 conv={conv}
-                isSelected={selected?.clientId === conv.clientId}
+                isSelected={selected ? convRouteId(selected) === convRouteId(conv) : false}
                 onClick={() => setSelected(conv)}
               />
             ))}
@@ -479,7 +486,7 @@ export default function TelegramInboxPage() {
                     size="sm"
                     variant="ghost"
                     className="h-8 text-xs"
-                    onClick={() => loadMessages(selected.clientId)}
+                    onClick={() => loadMessages(selected)}
                     disabled={msgLoading}
                   >
                     <RefreshCw className={cn("w-3.5 h-3.5", msgLoading && "animate-spin")} />
