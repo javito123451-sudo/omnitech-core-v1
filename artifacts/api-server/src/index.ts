@@ -41,13 +41,13 @@ app.listen(port, (err) => {
   if (process.env["NODE_ENV"] !== "test") startAutopilotScheduler();
 
   // Auto-register Telegram webhooks for all configured orgs.
-  // Priority: PUBLIC_URL (production) > REPLIT_DEV_DOMAIN (dev IDE open) > localhost (fallback, not reachable externally)
-  const publicBase =
-    process.env.PUBLIC_URL
-      ? process.env.PUBLIC_URL
-      : process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : `http://localhost:${port}`;
+  // Priority: PUBLIC_URL (env override) > hardcoded production domain.
+  // NOTE: this backend runs on Render, never on Replit — REPLIT_DEV_DOMAIN
+  // is intentionally not consulted here anymore (it doesn't exist on Render,
+  // and falling back to localhost silently broke auto-registration on every
+  // deploy, since Telegram rejects non-public webhook URLs).
+  const publicBase = process.env.PUBLIC_URL || "https://www.omnitech-core.com";
+  logger.info({ publicBase }, "Auto-registrando webhooks de Telegram con esta base URL");
   autoSetupTelegramWebhooks(publicBase).catch((e) =>
     logger.error({ err: e }, "Telegram auto-webhook setup failed"),
   );
