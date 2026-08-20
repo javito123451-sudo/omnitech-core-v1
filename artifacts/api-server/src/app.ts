@@ -69,20 +69,31 @@ function isReplitOrigin(origin: string): boolean {
 }
 
 app.use(
-  cors({
-    credentials: true,
-    origin: (origin, callback) => {
-      // Same-origin requests and non-browser clients (curl, mobile) have no Origin header
-      if (!origin) return callback(null, true);
-      // Development: unrestricted
-      if (process.env["NODE_ENV"] !== "production") return callback(null, true);
-      // Always allow any Replit-platform origin (dev previews + deployed apps)
-      if (isReplitOrigin(origin)) return callback(null, true);
-      // Explicit allowlist from env vars
-      if (allowedOrigins.has(origin)) return callback(null, true);
-      logger.warn({ origin }, "CORS: origin not in allowlist — request denied");
-      callback(new Error(`CORS policy: origin ${origin} not allowed`));
-    },
+  cors((req, callback) => {
+    // Public, unauthenticated lead-capture endpoint (POST /api/leads-public):
+    // called directly from marketing landing pages hosted on domains we don't
+    // control or know in advance (e.g. hogar.omnitech-core.com). It never
+    // reads cookies/session, so it's safe to reflect any origin here without
+    // touching the authenticated-app allowlist below or its ALLOWED_ORIGINS
+    // env var, which the CRM frontend(s) already depend on.
+    if (req.path.startsWith("/api/leads-public")) {
+      return callback(null, { origin: true, credentials: false });
+    }
+    callback(null, {
+      credentials: true,
+      origin: (origin, cb) => {
+        // Same-origin requests and non-browser clients (curl, mobile) have no Origin header
+        if (!origin) return cb(null, true);
+        // Development: unrestricted
+        if (process.env["NODE_ENV"] !== "production") return cb(null, true);
+        // Always allow any Replit-platform origin (dev previews + deployed apps)
+        if (isReplitOrigin(origin)) return cb(null, true);
+        // Explicit allowlist from env vars
+        if (allowedOrigins.has(origin)) return cb(null, true);
+        logger.warn({ origin }, "CORS: origin not in allowlist — request denied");
+        cb(new Error(`CORS policy: origin ${origin} not allowed`));
+      },
+    });
   }),
 );
 
