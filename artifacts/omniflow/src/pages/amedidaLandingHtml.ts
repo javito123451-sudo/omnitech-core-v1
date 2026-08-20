@@ -1,0 +1,657 @@
+/**
+ * Standalone HTML for the "A Medida" public lead-capture landing
+ * (montaje de cocinas, muebles, portes y mudanzas).
+ *
+ * Rendered inside an <iframe srcDoc="..."> by AMedidaLandingPage.tsx so its
+ * CSS/JS stay fully isolated from the rest of the CRM app — the class names
+ * here (.card, .cat, .stat, .field, ...) are generic and would otherwise
+ * collide with the SPA's own global styles.
+ *
+ * Submits directly to the public, unauthenticated lead-capture endpoint
+ * (POST /api/leads-public — see artifacts/api-server/src/routes/publicLeadCapture.ts).
+ * That route has its own CORS exemption (see app.ts) and its own rate limit
+ * (20 req/min/IP), independent from the rest of this app.
+ */
+export const AMEDIDA_LANDING_HTML = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Medida — Montaje, portes y mudanzas en Madrid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0B0F1C;
+    --ink-2:#131A2E;
+    --paper:#FAF8F4;
+    --paper-2:#F2EEE6;
+    --blue:#3A5FE8;
+    --blue-soft:#8FA6F5;
+    --gold:#C9A24A;
+    --gold-soft:#E8D9B0;
+    --grey:#727888;
+    --line: rgba(255,255,255,0.10);
+    --line-dark: rgba(11,15,28,0.10);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .serif{font-family:'Fraunces', serif;}
+  a{text-decoration:none; color:inherit;}
+  img{display:block; max-width:100%;}
+
+  /* ================= HEADER ================= */
+  header{
+    position:sticky; top:0; z-index:100;
+    display:flex; justify-content:space-between; align-items:center;
+    padding:22px 6vw;
+    background:rgba(11,15,28,0.85);
+    backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line);
+  }
+  .logo{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:22px;
+    color:#fff;
+    letter-spacing:-0.01em;
+  }
+  .logo .dot{color:var(--gold);}
+  nav{display:flex; gap:36px; align-items:center;}
+  nav a{
+    font-size:14px; color:rgba(255,255,255,0.72); font-weight:500;
+    transition:color .15s ease;
+  }
+  nav a:hover{color:#fff;}
+  .nav-cta{
+    background:var(--gold);
+    color:var(--ink);
+    font-weight:700;
+    font-size:13.5px;
+    padding:11px 22px;
+    border-radius:3px;
+    transition:background .15s ease;
+  }
+  .nav-cta:hover{background:var(--gold-soft);}
+  @media(max-width:860px){ nav a:not(.nav-cta){display:none;} }
+
+  /* ================= HERO ================= */
+  .hero{
+    position:relative;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% 0%, rgba(58,95,232,0.35), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 90% 20%, rgba(201,162,74,0.22), transparent 55%),
+      var(--ink);
+    color:#fff;
+    padding:70px 6vw 0;
+    overflow:hidden;
+  }
+  .hero::before{
+    content:'';
+    position:absolute; inset:0;
+    background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
+    background-size: 26px 26px;
+    mask-image: linear-gradient(to bottom, black, transparent 75%);
+    pointer-events:none;
+  }
+  .hero-inner{
+    position:relative;
+    max-width:1240px;
+    margin:0 auto;
+    display:grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap:50px;
+    align-items:center;
+    padding-bottom:50px;
+  }
+  .hero-eyebrow{
+    display:inline-flex; align-items:center; gap:10px;
+    font-size:12.5px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--gold-soft);
+    margin-bottom:26px;
+  }
+  .hero-eyebrow::before{content:''; width:26px; height:1px; background:var(--gold);}
+  .hero h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:clamp(38px, 4.6vw, 62px);
+    line-height:1.06;
+    letter-spacing:-0.015em;
+    margin-bottom:24px;
+  }
+  .hero h1 em{
+    font-style:italic;
+    font-weight:500;
+    background:linear-gradient(95deg, var(--gold-soft), var(--gold) 60%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+  }
+  .hero p{
+    font-size:17.5px;
+    line-height:1.65;
+    color:rgba(255,255,255,0.68);
+    max-width:460px;
+    margin-bottom:34px;
+  }
+  .hero-ctas{display:flex; align-items:center; gap:22px; margin-bottom:48px; flex-wrap:wrap;}
+  .cta-primary{
+    background:var(--gold);
+    color:var(--ink);
+    font-weight:700;
+    font-size:15px;
+    padding:16px 30px;
+    border-radius:3px;
+    box-shadow:0 14px 30px rgba(201,162,74,0.22);
+    transition:transform .18s ease, box-shadow .18s ease;
+  }
+  .cta-primary:hover{transform:translateY(-2px); box-shadow:0 18px 36px rgba(201,162,74,0.3);}
+  .cta-secondary{
+    font-size:14.5px; font-weight:600; color:#fff;
+    display:flex; align-items:center; gap:8px;
+    border-bottom:1px solid rgba(255,255,255,0.3);
+    padding-bottom:3px;
+  }
+  .hero-proof{display:flex; gap:32px; flex-wrap:wrap;}
+  .hero-proof div{display:flex; align-items:center; gap:9px; font-size:13px; color:rgba(255,255,255,0.55);}
+  .stars{color:var(--gold); letter-spacing:1px;}
+
+  /* Floating mockup card */
+  .mock{
+    position:relative;
+    background:var(--paper);
+    border-radius:18px;
+    padding:26px;
+    box-shadow:0 40px 80px -20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
+    transform:rotate(1.2deg);
+  }
+  .mock-head{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:20px;
+  }
+  .mock-head .tag{
+    font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+    color:var(--blue); background:rgba(58,95,232,0.1); padding:5px 10px; border-radius:20px;
+  }
+  .mock-head .live{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--grey); font-weight:600;}
+  .mock-head .live::before{content:''; width:7px; height:7px; border-radius:50%; background:#22C55E;}
+  .mock-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 0; border-bottom:1px solid var(--line-dark);
+    font-size:13.5px;
+  }
+  .mock-row:last-of-type{border-bottom:none;}
+  .mock-row .label{color:var(--grey);}
+  .mock-row .val{font-weight:600;}
+  .mock-avatars{display:flex; margin-top:20px; align-items:center; gap:10px;}
+  .avatar-stack{display:flex;}
+  .avatar-stack span{
+    width:30px; height:30px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; color:#fff;
+    border:2.5px solid var(--paper);
+    margin-left:-9px;
+  }
+  .avatar-stack span:first-child{margin-left:0;}
+  .mock-note{font-size:12px; color:var(--grey); font-weight:500;}
+  .mock-glow{
+    position:absolute; width:220px; height:220px;
+    background:radial-gradient(circle, rgba(201,162,74,0.35), transparent 70%);
+    filter:blur(30px);
+    top:-60px; right:-60px; z-index:-1;
+  }
+  @media(max-width:900px){
+    .hero-inner{grid-template-columns:1fr;}
+    .mock{transform:none; max-width:420px;}
+  }
+
+  /* ================= STATS BAR ================= */
+  .stats{
+    background:var(--ink-2);
+    color:#fff;
+    padding:34px 6vw;
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:20px;
+    max-width:100%;
+  }
+  .stat{text-align:center; border-right:1px solid var(--line);}
+  .stat:last-child{border-right:none;}
+  .stat .num{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:clamp(26px,3vw,38px);
+    color:var(--gold-soft);
+    margin-bottom:6px;
+  }
+  .stat .lbl{font-size:12.5px; color:rgba(255,255,255,0.55); font-weight:500;}
+  @media(max-width:760px){
+    .stats{grid-template-columns:repeat(2,1fr); gap:28px 12px;}
+    .stat:nth-child(2){border-right:none;}
+    .stat{border-right:1px solid var(--line);}
+  }
+
+  /* ================= SECTION HEAD helper ================= */
+  .section-head{max-width:640px; margin:0 auto 36px; text-align:center;}
+  .eyebrow{
+    font-size:12.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--blue); margin-bottom:14px;
+  }
+  .section-head h2{
+    font-family:'Fraunces', serif; font-weight:600;
+    font-size:clamp(28px,3.4vw,40px); line-height:1.15; letter-spacing:-0.01em;
+  }
+  .section-head p{color:var(--grey); font-size:16px; margin-top:14px; line-height:1.6;}
+
+  /* ================= SERVICES ================= */
+  .services{padding:64px 6vw; max-width:1240px; margin:0 auto;}
+  .cats{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:20px;
+  }
+  .cat{
+    position:relative;
+    background:#fff;
+    border:1px solid var(--line-dark);
+    border-radius:16px;
+    padding:32px 24px;
+    cursor:pointer;
+    transition:all .2s ease;
+    overflow:hidden;
+  }
+  .cat::before{
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+    background:linear-gradient(90deg, var(--blue), var(--gold));
+    transform:scaleX(0); transform-origin:left;
+    transition:transform .25s ease;
+  }
+  .cat:hover{box-shadow:0 20px 40px rgba(11,15,28,0.08); transform:translateY(-3px);}
+  .cat.active{border-color:transparent; box-shadow:0 20px 44px rgba(58,95,232,0.16);}
+  .cat.active::before{transform:scaleX(1);}
+  .cat-num{
+    font-family:'Fraunces', serif; font-size:13px; color:var(--gold); font-weight:600;
+    margin-bottom:22px; display:block;
+  }
+  .cat-icon{
+    width:48px; height:48px; border-radius:12px;
+    background:var(--paper-2);
+    display:flex; align-items:center; justify-content:center;
+    font-size:22px; margin-bottom:20px;
+  }
+  .cat-name{font-family:'Fraunces', serif; font-weight:600; font-size:18px; margin-bottom:8px;}
+  .cat-desc{font-size:13.5px; color:var(--grey); line-height:1.5;}
+  @media(max-width:900px){ .cats{grid-template-columns:repeat(2,1fr);} }
+
+  /* ================= PROCESS ================= */
+  .process{background:var(--paper-2); padding:100px 6vw;}
+  .process-inner{max-width:1000px; margin:0 auto;}
+  .steps{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:40px;
+    position:relative; margin-top:20px;
+  }
+  .steps::before{
+    content:''; position:absolute; top:26px; left:12%; right:12%; height:1px;
+    background:repeating-linear-gradient(90deg, var(--gold) 0 8px, transparent 8px 16px);
+  }
+  .step{position:relative; text-align:center;}
+  .step-num{
+    width:54px; height:54px; border-radius:50%;
+    background:var(--ink); color:var(--gold-soft);
+    font-family:'Fraunces', serif; font-weight:600; font-size:20px;
+    display:flex; align-items:center; justify-content:center;
+    margin:0 auto 22px; position:relative; z-index:2;
+  }
+  .step h3{font-family:'Fraunces', serif; font-weight:600; font-size:19px; margin-bottom:10px;}
+  .step p{font-size:14.5px; color:var(--grey); line-height:1.6; max-width:260px; margin:0 auto;}
+  @media(max-width:760px){ .steps{grid-template-columns:1fr; gap:36px;} .steps::before{display:none;} }
+
+  /* ================= TESTIMONIALS ================= */
+  .testimonials{padding:64px 6vw; max-width:1240px; margin:0 auto;}
+  .testi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:24px;}
+  .testi{
+    background:#fff; border:1px solid var(--line-dark); border-radius:16px;
+    padding:32px 28px;
+  }
+  .quote-mark{font-family:'Fraunces', serif; font-size:48px; color:var(--gold-soft); line-height:1; margin-bottom:6px;}
+  .testi p{font-size:15px; line-height:1.65; color:#2b2f3a; margin-bottom:24px; min-height:96px;}
+  .testi-who{display:flex; align-items:center; gap:12px;}
+  .testi-avatar{
+    width:40px; height:40px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:700; font-size:14px;
+  }
+  .testi-who strong{display:block; font-size:14px;}
+  .testi-who span{font-size:12.5px; color:var(--grey);}
+  .testi-stars{color:var(--gold); font-size:13px; margin-top:4px;}
+  @media(max-width:900px){ .testi-grid{grid-template-columns:1fr;} }
+
+  /* ================= FORM SECTION ================= */
+  .form-section{
+    background:var(--ink);
+    color:#fff;
+    padding:70px 6vw;
+    position:relative;
+    overflow:hidden;
+  }
+  .form-section::before{
+    content:'';
+    position:absolute; inset:0;
+    background: radial-gradient(ellipse 800px 500px at 85% 30%, rgba(58,95,232,0.28), transparent 60%);
+    pointer-events:none;
+  }
+  .form-grid{
+    position:relative;
+    max-width:1160px; margin:0 auto;
+    display:grid; grid-template-columns:1fr 1.05fr; gap:60px; align-items:center;
+  }
+  .form-copy .eyebrow{color:var(--gold-soft);}
+  .form-copy h2{
+    font-family:'Fraunces', serif; font-weight:600;
+    font-size:clamp(28px,3.6vw,42px); line-height:1.14; margin-bottom:20px;
+  }
+  .form-copy p{color:rgba(255,255,255,0.65); font-size:16px; line-height:1.65; margin-bottom:30px;}
+  .form-copy ul{list-style:none;}
+  .form-copy li{
+    display:flex; align-items:flex-start; gap:12px;
+    font-size:14.5px; color:rgba(255,255,255,0.8);
+    padding:12px 0; border-top:1px solid var(--line);
+  }
+  .form-copy li:last-child{border-bottom:1px solid var(--line);}
+  .form-copy li .ic{color:var(--gold); font-weight:700;}
+
+  .card{
+    background:var(--paper);
+    border-radius:20px;
+    padding:36px 32px;
+    box-shadow:0 40px 90px -20px rgba(0,0,0,0.6);
+  }
+  .card-title{
+    font-family:'Fraunces', serif; font-weight:600; font-size:21px;
+    color:var(--ink); margin-bottom:26px;
+  }
+  .field{margin-bottom:18px;}
+  .field label{
+    display:block; font-size:12.5px; font-weight:700; letter-spacing:0.02em;
+    color:var(--ink); margin-bottom:8px; text-transform:uppercase;
+  }
+  .field input, .field textarea{
+    width:100%; border:1.5px solid var(--line-dark); border-radius:8px;
+    background:#fff; font-family:'Inter', sans-serif; font-size:15px;
+    padding:13px 14px; color:var(--ink); outline:none;
+    transition:border-color .15s ease;
+  }
+  .field input::placeholder, .field textarea::placeholder{color:#A6A9B4;}
+  .field textarea{resize:vertical; min-height:70px;}
+  .field input:focus, .field textarea:focus{border-color:var(--blue);}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .submit-btn{
+    width:100%; background:var(--ink); color:#fff; border:none;
+    font-weight:700; font-size:15.5px; padding:16px; border-radius:8px;
+    cursor:pointer; margin-top:6px; transition:background .15s ease;
+  }
+  .submit-btn:hover{background:var(--blue);}
+  .fine-print{font-size:12px; color:var(--grey); margin-top:14px; text-align:center;}
+  .confirm{display:none; text-align:center; padding:14px 0;}
+  .confirm.show{display:block;}
+  .confirm-icon{
+    width:56px; height:56px; background:#22C55E; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:26px;
+    margin:0 auto 18px;
+  }
+  .confirm .big{font-family:'Fraunces', serif; font-weight:600; font-size:21px; margin-bottom:10px; color:var(--ink);}
+  .confirm p{color:var(--grey); font-size:14.5px; line-height:1.55;}
+  @media(max-width:900px){ .form-grid{grid-template-columns:1fr;} }
+
+  /* ================= FOOTER ================= */
+  footer{
+    background:var(--ink-2); color:rgba(255,255,255,0.5);
+    padding:50px 6vw 34px;
+  }
+  .footer-top{
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:30px;
+    padding-bottom:34px; border-bottom:1px solid var(--line); margin-bottom:24px;
+  }
+  .footer-brand .logo{margin-bottom:10px;}
+  .footer-brand p{font-size:13.5px; max-width:280px; line-height:1.6;}
+  .footer-cols{display:flex; gap:60px; flex-wrap:wrap;}
+  .footer-col h4{font-size:13px; color:#fff; font-weight:600; margin-bottom:14px;}
+  .footer-col a{display:block; font-size:13.5px; padding:6px 0; color:rgba(255,255,255,0.55); transition:color .15s;}
+  .footer-col a:hover{color:#fff;}
+  .footer-bottom{display:flex; justify-content:space-between; font-size:12.5px; flex-wrap:wrap; gap:10px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">A <span class="dot">·</span> Medida</div>
+  <nav>
+    <a href="#servicios">Servicios</a>
+    <a href="#pedir" class="nav-cta">Pedir presupuesto</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="hero-eyebrow">Madrid y alrededores</div>
+      <h1>El profesional adecuado, <em>a la medida</em> de tu casa</h1>
+      <p>Cocinas, muebles, portes y mudanzas. Te ponemos en contacto directo con un profesional de tu zona.</p>
+      <div class="hero-ctas">
+        <a href="#pedir" class="cta-primary">Pedir presupuesto gratis</a>
+        <a href="#proceso" class="cta-secondary">Ver cómo funciona ↓</a>
+      </div>
+      <div class="hero-proof">
+        <div><span class="stars">★★★★★</span> 4.9/5 · +1.200 solicitudes</div>
+        <div>Respuesta media &lt; 24h</div>
+      </div>
+    </div>
+
+    <div style="position:relative;">
+      <div class="mock-glow"></div>
+      <div class="mock">
+        <div class="mock-head">
+          <span class="tag">Nueva solicitud</span>
+          <span class="live">En directo</span>
+        </div>
+        <div class="mock-row"><span class="label">Servicio</span><span class="val">Montaje de cocina</span></div>
+        <div class="mock-row"><span class="label">Zona</span><span class="val">Chamberí, Madrid</span></div>
+        <div class="mock-row"><span class="label">Plazo</span><span class="val">Esta semana</span></div>
+        <div class="mock-row"><span class="label">Estado</span><span class="val" style="color:#16A34A;">● Profesional asignado</span></div>
+        <div class="mock-avatars">
+          <div class="avatar-stack">
+            <span style="background:#3A5FE8;">JM</span>
+            <span style="background:#C9A24A;">RS</span>
+            <span style="background:#16A34A;">AL</span>
+          </div>
+          <span class="mock-note">3 profesionales disponibles cerca de ti</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num">1.200+</div><div class="lbl">Solicitudes gestionadas</div></div>
+    <div class="stat"><div class="num">180+</div><div class="lbl">Profesionales activos</div></div>
+    <div class="stat"><div class="num">&lt;24h</div><div class="lbl">Tiempo medio de respuesta</div></div>
+    <div class="stat"><div class="num">4.9/5</div><div class="lbl">Valoración media</div></div>
+  </div>
+</section>
+
+<section class="services" id="servicios">
+  <div class="section-head">
+    <div class="eyebrow">Nuestros servicios</div>
+    <h2>Cuatro oficios, un solo sitio</h2>
+  </div>
+  <div class="cats" id="cats">
+    <div class="cat active" data-cat="cocinas">
+      <span class="cat-num">01</span>
+      <div class="cat-icon">🍳</div>
+      <div class="cat-name">Cocinas</div>
+      <div class="cat-desc">Cocinas IKEA, Leroy Merlin o a medida.</div>
+    </div>
+    <div class="cat" data-cat="muebles">
+      <span class="cat-num">02</span>
+      <div class="cat-icon">🪑</div>
+      <div class="cat-name">Muebles</div>
+      <div class="cat-desc">Armarios, estanterías, camas y más.</div>
+    </div>
+    <div class="cat" data-cat="portes">
+      <span class="cat-num">03</span>
+      <div class="cat-icon">📦</div>
+      <div class="cat-name">Portes</div>
+      <div class="cat-desc">Transporte puntual de un artículo suelto.</div>
+    </div>
+    <div class="cat" data-cat="mudanzas">
+      <span class="cat-num">04</span>
+      <div class="cat-icon">🚚</div>
+      <div class="cat-name">Mudanzas</div>
+      <div class="cat-desc">Traslado completo de vivienda.</div>
+    </div>
+  </div>
+</section>
+
+<section class="form-section" id="pedir">
+  <div class="form-grid">
+    <div class="form-copy">
+      <div class="eyebrow">Solicita tu presupuesto</div>
+      <h2>Danos los datos justos</h2>
+      <p>Tu solicitud llega directo a profesionales de tu zona. Ellos te contactan — tú decides.</p>
+      <ul>
+        <li><span class="ic">✓</span> Gratis, sin compromiso</li>
+        <li><span class="ic">✓</span> Datos solo para quien te contacta</li>
+        <li><span class="ic">✓</span> Autónomos verificados en Madrid</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title" id="card-title">Solicita tu presupuesto de montaje de cocina</div>
+      <div id="ticket-form">
+        <div class="field">
+          <label for="descripcion">¿Qué necesitas exactamente?</label>
+          <textarea id="descripcion" placeholder="Ej: montar cocina IKEA de 8 módulos, incluye electrodomésticos"></textarea>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="zona">Barrio o zona</label>
+            <input type="text" id="zona" placeholder="Ej: Chamberí">
+          </div>
+          <div class="field">
+            <label for="cuando">¿Para cuándo?</label>
+            <input type="text" id="cuando" placeholder="Ej: esta semana">
+          </div>
+        </div>
+        <div class="field">
+          <label for="contacto">Teléfono o WhatsApp</label>
+          <input type="tel" id="contacto" placeholder="6XX XXX XXX">
+        </div>
+        <button class="submit-btn" onclick="submitForm()">Enviar solicitud →</button>
+        <div class="fine-print">Al enviar aceptas que un profesional verificado te contacte</div>
+      </div>
+
+      <div class="confirm" id="confirm-box">
+        <div class="confirm-icon">✓</div>
+        <div class="big">¡Solicitud enviada!</div>
+        <p>Esto es una demo — en producción, tu solicitud llegaría a los profesionales de <strong id="confirm-cat">montaje de cocinas</strong> en tu zona.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <div class="logo" style="color:#fff;">A <span class="dot">·</span> Medida</div>
+      <p>Profesionales de confianza para montar, portear y mudar en Madrid.</p>
+    </div>
+    <div class="footer-cols">
+      <div class="footer-col">
+        <h4>Servicios</h4>
+        <a href="#">Montaje de cocinas</a>
+        <a href="#">Montaje de muebles</a>
+        <a href="#">Portes</a>
+        <a href="#">Mudanzas</a>
+      </div>
+      <div class="footer-col">
+        <h4>Empresa</h4>
+        <a href="#">Cómo funciona</a>
+        <a href="#">Para profesionales</a>
+        <a href="#">Contacto</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>A Medida © 2026 — Demo de validación</span>
+    <span>Madrid y alrededores</span>
+  </div>
+</footer>
+
+<script>
+  const cats = document.querySelectorAll('.cat');
+  const cardTitles = {
+    cocinas: 'Solicita tu presupuesto de montaje de cocina',
+    muebles: 'Solicita tu presupuesto de montaje de muebles',
+    portes: 'Solicita tu presupuesto de portes',
+    mudanzas: 'Solicita tu presupuesto de mudanza'
+  };
+  const catNames = {
+    cocinas: 'montaje de cocinas',
+    muebles: 'montaje de muebles',
+    portes: 'portes',
+    mudanzas: 'mudanzas'
+  };
+  let currentCat = 'cocinas';
+
+  cats.forEach(cat => {
+    cat.addEventListener('click', () => {
+      cats.forEach(c => c.classList.remove('active'));
+      cat.classList.add('active');
+      currentCat = cat.dataset.cat;
+      document.getElementById('card-title').textContent = cardTitles[currentCat];
+    });
+  });
+
+  // URL real del backend en Render + ruta pública de captación de leads
+  // (montada en /api/leads-public, distinta de /api/leads que es el módulo
+  // interno de OmniLeads y requiere login).
+  const API_URL = 'https://omnitech-core-api.onrender.com/api/leads-public';
+
+  async function submitForm(){
+    const payload = {
+      category: currentCat,
+      description: document.getElementById('descripcion').value,
+      zone: document.getElementById('zona').value,
+      timing: document.getElementById('cuando').value,
+      contactPhone: document.getElementById('contacto').value,
+    };
+
+    const btn = document.querySelector('.submit-btn');
+    btn.textContent = 'Enviando...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Error al enviar');
+
+      document.getElementById('ticket-form').style.display = 'none';
+      document.getElementById('confirm-box').classList.add('show');
+      document.getElementById('confirm-cat').textContent = catNames[currentCat];
+    } catch (err) {
+      btn.textContent = 'Enviar solicitud →';
+      btn.disabled = false;
+      alert('No se pudo enviar la solicitud. Inténtalo de nuevo.');
+    }
+  }
+</script>
+
+</body>
+</html>
+`;
