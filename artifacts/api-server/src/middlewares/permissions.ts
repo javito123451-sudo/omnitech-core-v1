@@ -74,6 +74,10 @@ export type Permission =
   // Integrations
   | "integrations.read"
   | "integrations.write"
+  // OmniLeads (captación de prospectos — consume créditos de APIs de pago)
+  | "leads.read"
+  | "leads.write"
+  | "leads.delete"
   // Analytics / Executive / Diagnostics
   | "analytics.read"
   | "executive.read"
@@ -110,6 +114,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "ai.read", "ai.write", "memory.read", "memory.write",
     "automations.read", "automations.write",
     "integrations.read", "integrations.write",
+    "leads.read", "leads.write", "leads.delete",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -127,6 +132,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "ai.read", "ai.write", "memory.read", "memory.write",
     "automations.read", "automations.write",
     "integrations.read", "integrations.write",
+    "leads.read", "leads.write", "leads.delete",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -145,6 +151,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "ai.read", "ai.write", "memory.read", "memory.write",
     "automations.read", "automations.write",
     "integrations.read",
+    "leads.read", "leads.write", "leads.delete",
     "analytics.read", "executive.read",
     "settings.read",
     "users.read",
@@ -162,6 +169,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "ai.read", "ai.write", "memory.read", "memory.write",
     "automations.read", "automations.write",
     "integrations.read",
+    "leads.read", "leads.write",
     "analytics.read",
     "settings.read",
     "users.read",
@@ -177,6 +185,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "telegram.read", "telegram.write",
     "ai.read", "memory.read",
     "automations.read",
+    "leads.read", "leads.write",
     "analytics.read",
     "settings.read",
     "portal.read",
@@ -193,6 +202,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "ai.read", "memory.read",
     "automations.read",
     "integrations.read",
+    "leads.read",
     "analytics.read",
     "settings.read",
     "users.read",

@@ -3,6 +3,8 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import OpenAI from "openai";
 import type { Request } from "express";
+import { requirePermission } from "../middlewares/permissions";
+import { logAudit } from "../utils/auditLogger";
 
 export const leadsRouter = Router();
 
@@ -11,6 +13,115 @@ const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY ?? "";
 
 function dbRows<T>(r: unknown): T[] {
   return (r as { rows: T[] }).rows;
+}
+
+// ── Deduplicación real de leads ────────────────────────────────────────────────
+// Prioridad de identificación (la primera que coincida gana):
+//   1. Google Place ID     2. teléfono normalizado     3. website/dominio
+//   4. email                5. nombre + dirección
+// Siempre respeta org_id — nunca compara leads entre organizaciones.
+
+function normalizePhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 6) return null;
+  // Nos quedamos con los últimos 9 dígitos (número nacional) para que
+  // "+34 912 345 678", "912345678" y "34912345678" normalicen igual.
+  return digits.slice(-9);
+}
+
+function normalizeWebsite(website: string | null | undefined): string | null {
+  if (!website) return null;
+  try {
+    const withProto = /^https?:\/\//i.test(website) ? website : `https://${website}`;
+    const host = new URL(withProto).hostname.toLowerCase().replace(/^www\./, "");
+    return host || null;
+  } catch {
+    return website.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "") || null;
+  }
+}
+
+function normalizeEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const e = email.trim().toLowerCase();
+  return e || null;
+}
+
+interface LeadCandidate {
+  placeId?: string | null;
+  phone?:   string | null;
+  website?: string | null;
+  email?:   string | null;
+  name:     string;
+  address?: string | null;
+}
+
+/**
+ * Busca si el candidato ya existe como lead_result en esta organización.
+ * Devuelve { id, matchReason } si encuentra duplicado, o null si es nuevo.
+ * No crea nada — solo comprueba. El llamador decide qué hacer con el resultado.
+ */
+async function findDuplicateLead(orgId: number, candidate: LeadCandidate): Promise<{ id: number; matchReason: string } | null> {
+  // 1. Google Place ID — el identificador más fiable
+  if (candidate.placeId) {
+    const rows = await db.execute(sql`
+      SELECT id FROM lead_results WHERE org_id = ${orgId} AND place_id = ${candidate.placeId} LIMIT 1
+    `);
+    const hit = dbRows<{ id: number }>(rows)[0];
+    if (hit) return { id: hit.id, matchReason: "place_id" };
+  }
+
+  // 2. Teléfono normalizado (últimos 9 dígitos)
+  const normPhone = normalizePhone(candidate.phone);
+  if (normPhone) {
+    const rows = await db.execute(sql`
+      SELECT id FROM lead_results
+      WHERE org_id = ${orgId} AND phone IS NOT NULL
+        AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 9) = ${normPhone}
+      LIMIT 1
+    `);
+    const hit = dbRows<{ id: number }>(rows)[0];
+    if (hit) return { id: hit.id, matchReason: "phone" };
+  }
+
+  // 3. Website / dominio normalizado
+  const normWebsite = normalizeWebsite(candidate.website);
+  if (normWebsite) {
+    const rows = await db.execute(sql`
+      SELECT id, website FROM lead_results
+      WHERE org_id = ${orgId} AND website IS NOT NULL
+      LIMIT 500
+    `);
+    const hit = dbRows<{ id: number; website: string }>(rows).find(r => normalizeWebsite(r.website) === normWebsite);
+    if (hit) return { id: hit.id, matchReason: "website" };
+  }
+
+  // 4. Email
+  const normEmail = normalizeEmail(candidate.email);
+  if (normEmail) {
+    const rows = await db.execute(sql`
+      SELECT id FROM lead_results WHERE org_id = ${orgId} AND lower(email) = ${normEmail} LIMIT 1
+    `);
+    const hit = dbRows<{ id: number }>(rows)[0];
+    if (hit) return { id: hit.id, matchReason: "email" };
+  }
+
+  // 5. Nombre + dirección (combinación, no solo nombre exacto)
+  const normName    = candidate.name.trim().toLowerCase();
+  const normAddress = (candidate.address ?? "").trim().toLowerCase();
+  if (normName) {
+    const rows = await db.execute(sql`
+      SELECT id FROM lead_results
+      WHERE org_id = ${orgId}
+        AND lower(name) = ${normName}
+        AND lower(COALESCE(address, '')) = ${normAddress}
+      LIMIT 1
+    `);
+    const hit = dbRows<{ id: number }>(rows)[0];
+    if (hit) return { id: hit.id, matchReason: "name_address" };
+  }
+
+  return null;
 }
 
 // ── Google Places helpers ─────────────────────────────────────────────────────
@@ -173,7 +284,7 @@ Score bajo (0-35) = muchas señales = BAJA oportunidad.`;
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /dashboard
-leadsRouter.get("/dashboard", async (req: Request, res) => {
+leadsRouter.get("/dashboard", requirePermission("leads.read"), async (req: Request, res) => {
   const orgId = req.orgId!;
   try {
     const stats = await db.execute(sql`
@@ -221,7 +332,7 @@ leadsRouter.get("/dashboard", async (req: Request, res) => {
 });
 
 // POST /search
-leadsRouter.post("/search", async (req: Request, res) => {
+leadsRouter.post("/search", requirePermission("leads.write"), async (req: Request, res) => {
   const orgId  = req.orgId!;
   const userId = req.userId!;
   const { sector, city, postalCode, radiusKm = 20, maxResults = 20 } = req.body as {
@@ -245,16 +356,30 @@ leadsRouter.post("/search", async (req: Request, res) => {
   try {
     const places = await searchGooglePlaces(sector.trim(), city.trim(), safeMax);
 
-    let inserted = 0;
+    let inserted   = 0;
+    let duplicates = 0;
     for (const p of places) {
+      const dup = await findDuplicateLead(orgId, {
+        placeId: p.placeId || null,
+        phone:   p.phone || null,
+        website: p.website || null,
+        email:   null,
+        name:    p.name,
+        address: p.address || null,
+      });
+
+      if (dup) {
+        duplicates++;
+        continue;
+      }
+
       await db.execute(sql`
         INSERT INTO lead_results
           (org_id, search_id, created_by, place_id, name, address, phone, website, rating, review_count, lat, lng, sector, status)
         VALUES
-          (${orgId}, ${searchId}, ${userId}, ${p.placeId}, ${p.name}, ${p.address},
+          (${orgId}, ${searchId}, ${userId}, ${p.placeId || null}, ${p.name}, ${p.address},
            ${p.phone || null}, ${p.website || null}, ${p.rating ?? null}, ${p.reviewCount ?? null},
            ${p.lat ?? null}, ${p.lng ?? null}, ${sector.trim()}, 'new')
-        ON CONFLICT DO NOTHING
       `);
       inserted++;
     }
@@ -264,18 +389,39 @@ leadsRouter.post("/search", async (req: Request, res) => {
       WHERE id = ${searchId}
     `);
 
-    res.json({ searchId, found: inserted, status: "done" });
+    await logAudit({
+      actorClerkId: req.clerkUserId ?? "unknown",
+      action:       "leads.search",
+      resource:     "lead_search",
+      resourceId:   searchId,
+      orgId,
+      details:      { sector: sector.trim(), city: city.trim(), requested: safeMax, found: places.length, inserted, duplicates },
+      req,
+    });
+
+    res.json({ searchId, found: places.length, inserted, duplicates, status: "done" });
   } catch (err) {
     await db.execute(sql`
       UPDATE lead_searches SET status = 'failed', error_msg = ${String(err)}, updated_at = NOW()
       WHERE id = ${searchId}
     `);
+    await logAudit({
+      actorClerkId: req.clerkUserId ?? "unknown",
+      action:       "leads.search",
+      resource:     "lead_search",
+      resourceId:   searchId,
+      orgId,
+      details:      { sector: sector.trim(), city: city.trim(), error: String(err) },
+      severity:     "warning",
+      result:       "error",
+      req,
+    });
     res.status(500).json({ error: String(err) });
   }
 });
 
 // GET /searches
-leadsRouter.get("/searches", async (req: Request, res) => {
+leadsRouter.get("/searches", requirePermission("leads.read"), async (req: Request, res) => {
   const orgId = req.orgId!;
   try {
     const rows = await db.execute(sql`
@@ -290,7 +436,7 @@ leadsRouter.get("/searches", async (req: Request, res) => {
 });
 
 // GET /results
-leadsRouter.get("/results", async (req: Request, res) => {
+leadsRouter.get("/results", requirePermission("leads.read"), async (req: Request, res) => {
   const orgId    = req.orgId!;
   const { searchId, status, opportunity, q, page = "1", limit = "20" } = req.query as Record<string, string>;
   const pageNum  = Math.max(1, Number(page));
@@ -340,7 +486,7 @@ leadsRouter.get("/results", async (req: Request, res) => {
 });
 
 // POST /results/bulk-analyze  (must be before /:id routes)
-leadsRouter.post("/results/bulk-analyze", async (req: Request, res) => {
+leadsRouter.post("/results/bulk-analyze", requirePermission("leads.write"), async (req: Request, res) => {
   const orgId  = req.orgId!;
   const userId = req.userId!;
   const { ids } = req.body as { ids: number[] };
@@ -387,7 +533,7 @@ leadsRouter.post("/results/bulk-analyze", async (req: Request, res) => {
 });
 
 // POST /results/:id/analyze
-leadsRouter.post("/results/:id/analyze", async (req: Request, res) => {
+leadsRouter.post("/results/:id/analyze", requirePermission("leads.write"), async (req: Request, res) => {
   const orgId    = req.orgId!;
   const userId   = req.userId!;
   const resultId = Number(req.params.id);
@@ -425,7 +571,7 @@ leadsRouter.post("/results/:id/analyze", async (req: Request, res) => {
 });
 
 // POST /results/:id/to-crm
-leadsRouter.post("/results/:id/to-crm", async (req: Request, res) => {
+leadsRouter.post("/results/:id/to-crm", requirePermission("leads.write", "crm.write"), async (req: Request, res) => {
   const orgId    = req.orgId!;
   const userId   = req.userId!;
   const resultId = Number(req.params.id);
@@ -470,6 +616,16 @@ leadsRouter.post("/results/:id/to-crm", async (req: Request, res) => {
       WHERE id=${resultId} AND org_id=${orgId}
     `);
 
+    await logAudit({
+      actorClerkId: req.clerkUserId ?? "unknown",
+      action:       "leads.to_crm",
+      resource:     "lead_result",
+      resourceId:   resultId,
+      orgId,
+      details:      { clientId, leadName: String(lead.name) },
+      req,
+    });
+
     res.json({ clientId, resultId });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -477,7 +633,7 @@ leadsRouter.post("/results/:id/to-crm", async (req: Request, res) => {
 });
 
 // POST /results/:id/propose
-leadsRouter.post("/results/:id/propose", async (req: Request, res) => {
+leadsRouter.post("/results/:id/propose", requirePermission("leads.write"), async (req: Request, res) => {
   const orgId    = req.orgId!;
   const userId   = req.userId!;
   const resultId = Number(req.params.id);
@@ -546,7 +702,7 @@ Escribe SOLO el mensaje.`;
 });
 
 // GET /results/:id/messages
-leadsRouter.get("/results/:id/messages", async (req: Request, res) => {
+leadsRouter.get("/results/:id/messages", requirePermission("leads.read"), async (req: Request, res) => {
   const orgId    = req.orgId!;
   const resultId = Number(req.params.id);
   try {
@@ -562,11 +718,27 @@ leadsRouter.get("/results/:id/messages", async (req: Request, res) => {
 });
 
 // DELETE /results/:id
-leadsRouter.delete("/results/:id", async (req: Request, res) => {
+leadsRouter.delete("/results/:id", requirePermission("leads.delete"), async (req: Request, res) => {
   const orgId    = req.orgId!;
   const resultId = Number(req.params.id);
   try {
-    await db.execute(sql`DELETE FROM lead_results WHERE id=${resultId} AND org_id=${orgId}`);
+    const rows = await db.execute(sql`
+      DELETE FROM lead_results WHERE id=${resultId} AND org_id=${orgId} RETURNING name
+    `);
+    const deleted = dbRows<{ name: string }>(rows)[0];
+    if (!deleted) { res.status(404).json({ error: "No encontrado" }); return; }
+
+    await logAudit({
+      actorClerkId: req.clerkUserId ?? "unknown",
+      action:       "leads.delete",
+      resource:     "lead_result",
+      resourceId:   resultId,
+      orgId,
+      details:      { leadName: deleted.name },
+      severity:     "warning",
+      req,
+    });
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });

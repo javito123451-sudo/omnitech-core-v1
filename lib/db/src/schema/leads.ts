@@ -2,6 +2,7 @@ import {
   pgTable, serial, integer, text, timestamp, doublePrecision, boolean, index,
 } from "drizzle-orm/pg-core";
 import { organizationsTable } from "./organizations";
+import { clientsTable } from "./clients";
 
 export const leadSearchesTable = pgTable("lead_searches", {
   id:          serial("id").primaryKey(),
@@ -38,7 +39,9 @@ export const leadResultsTable = pgTable("lead_results", {
   lng:          doublePrecision("lng"),
   sector:       text("sector"),
   status:       text("status").notNull().default("new"),
-  crmClientId:  integer("crm_client_id"),
+  // FK real hacia clients — antes era un integer suelto sin .references().
+  // La migración FIX-AV limpia referencias huérfanas y añade la constraint en Postgres.
+  crmClientId:  integer("crm_client_id").references(() => clientsTable.id, { onDelete: "set null" }),
   createdAt:    timestamp("created_at").notNull().defaultNow(),
   updatedAt:    timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

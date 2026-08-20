@@ -37,6 +37,7 @@ import { taxRouter } from "./tax";
 import { marketingRouter } from "./marketing";
 import { adsRouter } from "./ads";
 import { leadsRouter } from "./leads";
+import { publicLeadCaptureRouter } from "./publicLeadCapture";
 import { timeRouter }  from "./time";
 import { aceRouter } from "./ace";
 import { internalCronRouter } from "./internalCron";
@@ -64,6 +65,20 @@ router.use("/whatsapp", whatsappWebhookRouter);
 
 // ── Telegram webhook — public (Telegram calls this without auth) ──────────────
 router.use("/telegram", telegramWebhookRouter);
+
+// ── Public lead capture — formulario web de la landing, sin auth ──────────────
+// Prefijo propio "/leads-public", NO "/leads": evitamos deliberadamente
+// compartir path con el router interno de OmniLeads (más abajo, con auth +
+// requireModule) para no depender del orden de montaje de dos router.use()
+// sobre el mismo prefijo. Mismo patrón que /accounting-public vs /accounting.
+const publicLeadCaptureLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiadas solicitudes. Inténtalo de nuevo en un minuto." },
+});
+router.use("/leads-public", publicLeadCaptureLimiter, publicLeadCaptureRouter);
 
 router.use(requireAuth, resolveOrg, resolvePermissions);
 

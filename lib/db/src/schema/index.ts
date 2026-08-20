@@ -18,3 +18,4 @@ export * from "./pipeline";
 export * from "./tax";
 export * from "./onboard-wizard";
 export * from "./leads";
+export * from "./leadCapture";

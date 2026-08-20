@@ -1075,6 +1075,72 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-AU: messages.external_id / external_name columns ensured — guest conversation history now works");
 
+    // ── FIX-AV: OmniLeads — deduplicación real (place_id) + FK real crm_client_id ──
+    // 1) Índice único parcial (org_id, place_id) para leads de Google Places con
+    //    Place ID — solo se crea si no hay ya duplicados existentes (no se borra
+    //    ni se fuerza nada sobre datos previos).
+    // 2) crm_client_id pasa a tener una FK real hacia clients: primero se limpian
+    //    referencias huérfanas (se ponen a NULL, nunca se borran filas de
+    //    lead_results) y luego se añade la constraint si no existe ya.
+    {
+      const dupCheck = await db.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM (
+          SELECT org_id, place_id FROM lead_results
+          WHERE place_id IS NOT NULL
+          GROUP BY org_id, place_id HAVING COUNT(*) > 1
+        ) d
+      `);
+      const dupGroups = Number((dupCheck as unknown as { rows: Array<{ cnt: number }> }).rows[0]?.cnt ?? 0);
+
+      if (dupGroups === 0) {
+        await db.execute(sql`
+          CREATE UNIQUE INDEX IF NOT EXISTS lead_results_org_place_id_uidx
+          ON lead_results(org_id, place_id) WHERE place_id IS NOT NULL
+        `);
+        logger.info("[Migration] ✅ FIX-AV: lead_results unique index (org_id, place_id) ensured");
+      } else {
+        logger.warn(`[Migration] ⚠️ FIX-AV: ${dupGroups} grupo(s) de lead_results duplicados por (org_id, place_id) — se omite el índice único hasta limpiarlos manualmente`);
+      }
+
+      await db.execute(sql`
+        UPDATE lead_results SET crm_client_id = NULL
+        WHERE crm_client_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM clients WHERE clients.id = lead_results.crm_client_id)
+      `);
+
+      const fkExists = await db.execute(sql`
+        SELECT 1 FROM pg_constraint WHERE conname = 'lead_results_crm_client_id_fkey'
+      `);
+      if ((fkExists as { rows: unknown[] }).rows.length === 0) {
+        await db.execute(sql`
+          ALTER TABLE lead_results
+          ADD CONSTRAINT lead_results_crm_client_id_fkey
+          FOREIGN KEY (crm_client_id) REFERENCES clients(id) ON DELETE SET NULL
+        `);
+        logger.info("[Migration] ✅ FIX-AV: lead_results.crm_client_id FK → clients(id) created");
+      } else {
+        logger.info("[Migration] ✅ FIX-AV: lead_results.crm_client_id FK already exists");
+      }
+    }
+
+    // ── FIX-AW: tabla "leads" — captación pública (cocinas/muebles/portes/mudanzas) ──
+    // Dominio distinto de OmniLeads (lead_results, FIX-AV): esta tabla recibe envíos
+    // directos del formulario público POST /api/leads-public, sin org_id (no es
+    // multi-tenant, es una única bandeja de entrada de leads del negocio).
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS leads (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        category text NOT NULL,
+        description text NOT NULL,
+        zone text NOT NULL,
+        timing text,
+        contact_phone text NOT NULL,
+        status text NOT NULL DEFAULT 'open',
+        created_at timestamp NOT NULL DEFAULT now()
+      )
+    `);
+    logger.info("[Migration] ✅ FIX-AW: leads table ensured (captación pública)");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
