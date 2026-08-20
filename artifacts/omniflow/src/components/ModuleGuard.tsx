@@ -15,6 +15,8 @@ const MODULE_LABELS: Record<string, string> = {
   integrations:  "Integraciones",
   ai_agents:       "AI Center",
   omni_accounting: "Omni Accounting",
+  omni_leads:    "OmniLeads AI",
+  a_medida:      "A Medida",
 };
 
 function ModuleNotAvailable({ moduleKey }: { moduleKey: string }) {

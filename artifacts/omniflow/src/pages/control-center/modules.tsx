@@ -24,6 +24,7 @@ const MODULE_ICONS: Record<string, string> = {
   crm: "🏢", whatsapp: "💬", omni_import_ai: "🤖", omni_docs: "📄",
   omni_security: "🔒", omni_marketing: "📣", analytics: "📊",
   automations: "⚡", ai_agents: "🧠", integrations: "🔗", omni_leads: "🎯",
+  a_medida: "🚚",
 };
 const MODULE_COLORS: Record<string, string> = {
   crm: "from-blue-600 to-cyan-600", whatsapp: "from-green-600 to-teal-600",
@@ -31,7 +32,7 @@ const MODULE_COLORS: Record<string, string> = {
   omni_security: "from-red-600 to-pink-600", omni_marketing: "from-pink-600 to-rose-600",
   analytics: "from-indigo-600 to-blue-600", automations: "from-yellow-600 to-amber-600",
   ai_agents: "from-fuchsia-600 to-violet-600", integrations: "from-cyan-600 to-sky-600",
-  omni_leads: "from-orange-600 to-red-600",
+  omni_leads: "from-orange-600 to-red-600", a_medida: "from-amber-500 to-yellow-600",
 };
 
 function ModuleSwitch({

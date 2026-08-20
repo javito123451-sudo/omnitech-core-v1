@@ -78,6 +78,10 @@ export type Permission =
   | "leads.read"
   | "leads.write"
   | "leads.delete"
+  // A Medida (panel de solicitudes del formulario público — módulo
+  // independiente de OmniLeads, ver routes/aMedidaLeads.ts)
+  | "a_medida.read"
+  | "a_medida.write"
   // Analytics / Executive / Diagnostics
   | "analytics.read"
   | "executive.read"
@@ -115,6 +119,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "automations.read", "automations.write",
     "integrations.read", "integrations.write",
     "leads.read", "leads.write", "leads.delete",
+    "a_medida.read", "a_medida.write",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -133,6 +138,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "automations.read", "automations.write",
     "integrations.read", "integrations.write",
     "leads.read", "leads.write", "leads.delete",
+    "a_medida.read", "a_medida.write",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -152,6 +158,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "automations.read", "automations.write",
     "integrations.read",
     "leads.read", "leads.write", "leads.delete",
+    "a_medida.read", "a_medida.write",
     "analytics.read", "executive.read",
     "settings.read",
     "users.read",
@@ -170,6 +177,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "automations.read", "automations.write",
     "integrations.read",
     "leads.read", "leads.write",
+    "a_medida.read", "a_medida.write",
     "analytics.read",
     "settings.read",
     "users.read",
@@ -186,6 +194,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "ai.read", "memory.read",
     "automations.read",
     "leads.read", "leads.write",
+    "a_medida.read", "a_medida.write",
     "analytics.read",
     "settings.read",
     "portal.read",
@@ -203,6 +212,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "automations.read",
     "integrations.read",
     "leads.read",
+    "a_medida.read",
     "analytics.read",
     "settings.read",
     "users.read",

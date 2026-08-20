@@ -38,6 +38,7 @@ import { marketingRouter } from "./marketing";
 import { adsRouter } from "./ads";
 import { leadsRouter } from "./leads";
 import { publicLeadCaptureRouter } from "./publicLeadCapture";
+import { aMedidaLeadsRouter } from "./aMedidaLeads";
 import { timeRouter }  from "./time";
 import { aceRouter } from "./ace";
 import { internalCronRouter } from "./internalCron";
@@ -129,6 +130,7 @@ router.use("/tax",            requireModule("omni_tax"), taxRouter);
 router.use("/marketing",      requireModule("omni_marketing"), marketingRouter);
 router.use("/ads",            requireModule("omni_ads"),       adsRouter);
 router.use("/leads",          requireModule("omni_leads"),     leadsRouter);
+router.use("/a-medida-leads", requireModule("a_medida"),       aMedidaLeadsRouter);
 router.use("/time",           requireModule("omni_time"),      timeRouter);
 
 // ── Ava Context Engine — lightweight context sync, no module gate ─────────

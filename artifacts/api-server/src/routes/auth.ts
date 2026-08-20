@@ -123,7 +123,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
       "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
       "omni_security", "omni_docs", "quotes", "portal_cliente",
-      "knowledge_base",
+      "knowledge_base", "a_medida",
     ] as const;
 
     // Each plan defines which slugs are ALLOWED. DB configs can only RESTRICT

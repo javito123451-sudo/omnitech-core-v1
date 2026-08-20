@@ -66,6 +66,7 @@ import OnboardWizardPage from "@/pages/control-center/onboard-wizard";
 import PortalPage from "@/pages/portal";
 import PublicInvoicePage from "@/pages/PublicInvoicePage";
 import AMedidaLandingPage from "@/pages/AMedidaLandingPage";
+import AMedidaPanelPage from "@/pages/amedida-panel";
 import PlansPage from "@/pages/plans";
 import NoAccess from "@/pages/no-access";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
@@ -531,6 +532,15 @@ function AppRoutes() {
           <MainLayout>
             <ModuleGuard moduleKey="omni_leads">
               <LeadsPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/a-medida-panel">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="a_medida">
+              <AMedidaPanelPage />
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>

@@ -648,6 +648,7 @@ controlCenterRouter.get("/modules", async (_req, res) => {
     { slug: "omni_tax",         name: "OmniTax",                description: "Motor fiscal, calendario y simuladores", alwaysOn: false },
     { slug: "omni_ads",         name: "OmniAds",                description: "Centro de publicidad con IA — campañas, creativos, analíticas", alwaysOn: false },
     { slug: "omni_leads",       name: "OmniLeads AI",           description: "Captación y gestión de leads con IA",    alwaysOn: false },
+    { slug: "a_medida",         name: "A Medida",               description: "Panel de solicitudes del formulario público de montaje y mudanzas", alwaysOn: false },
   ];
   const configs = await db.select().from(moduleConfigsTable);
   const orgs    = await db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable);
