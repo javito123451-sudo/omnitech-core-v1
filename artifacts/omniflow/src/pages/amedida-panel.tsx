@@ -90,8 +90,12 @@ export default function AMedidaPanelPage() {
   const deleteLead = useMutation({
     mutationFn: async (id: string) => {
       const res = await authFetch(`${BASE}/api/a-medida-leads/${id}`, { method: "DELETE" });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.message ?? `Error al borrar (HTTP ${res.status})`);
+      const raw = await res.text();
+      let body: { message?: string } | null = null;
+      try { body = raw ? JSON.parse(raw) : null; } catch { /* not JSON — show raw below */ }
+      if (!res.ok) {
+        throw new Error(body?.message ?? `HTTP ${res.status}: ${raw.slice(0, 200) || "(respuesta vacía)"}`);
+      }
       return body;
     },
     onMutate: (id) => setPendingId(id),
