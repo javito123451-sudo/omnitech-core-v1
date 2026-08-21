@@ -60,3 +60,15 @@ your local base is current, especially before starting multi-file work in an are
 (hub/adapters, notificationService) another concurrent session might also be
 touching — and re-check right before generating a patch to hand off, not just at
 session start, since another session can land changes mid-task.
+
+## Correction (2026-08-21) — typecheck baseline is 185, not 249
+
+The commit message and the MEMORY.md entry pointing here both claim
+`tsc --noEmit` regressed to 249 errors after `5abc9db`. Re-ran the full
+monorepo typecheck (`pnpm run typecheck`, real Node/pnpm install, not a
+guess) against the current tip of `main` (through `b47e017`): **185
+errors**, byte-for-byte identical to the pre-`5abc9db` baseline — diffed
+the two error lists directly, zero new entries. The 249 figure doesn't
+match the actual repo state; likely came from an incomplete dependency
+install or a stale checkout in that session's environment rather than a
+real regression. Treat 185 as the current baseline, not 249.
