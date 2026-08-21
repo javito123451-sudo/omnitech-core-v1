@@ -69,13 +69,18 @@ export default function AMedidaPanelPage() {
   });
 
   const updateStatus = useMutation({
-    mutationFn: ({ id, newStatus }: { id: string; newStatus: string }) =>
-      authFetch(`${BASE}/api/a-medida-leads/${id}`, {
+    mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
+      const res = await authFetch(`${BASE}/api/a-medida-leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
-      }).then(r => r.json()),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.message ?? `Error al actualizar (HTTP ${res.status})`);
+      return body;
+    },
     onMutate: ({ id }) => setPendingId(id),
+    onError: (err: Error) => alert(err.message),
     onSettled: () => {
       setPendingId(null);
       void qc.invalidateQueries({ queryKey: ["a-medida-leads"] });
@@ -83,9 +88,14 @@ export default function AMedidaPanelPage() {
   });
 
   const deleteLead = useMutation({
-    mutationFn: (id: string) =>
-      authFetch(`${BASE}/api/a-medida-leads/${id}`, { method: "DELETE" }).then(r => r.json()),
+    mutationFn: async (id: string) => {
+      const res = await authFetch(`${BASE}/api/a-medida-leads/${id}`, { method: "DELETE" });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.message ?? `Error al borrar (HTTP ${res.status})`);
+      return body;
+    },
     onMutate: (id) => setPendingId(id),
+    onError: (err: Error) => alert(err.message),
     onSettled: () => {
       setPendingId(null);
       void qc.invalidateQueries({ queryKey: ["a-medida-leads"] });
