@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A3 Servicios | Transformación y organización de espacios en el hogar</title>
+<meta name="description" content="A3 Servicios te ayuda a transformar tu vivienda: organizamos, ordenamos y ponemos a punto tu espacio. Pide presupuesto gratis y sin compromiso.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://hogar.omnitech-core.com/info">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+<meta property="og:title" content="A3 Servicios | Transformación y organización de espacios en el hogar">
+<meta property="og:description" content="A3 Servicios te ayuda a transformar tu vivienda: organizamos, ordenamos y ponemos a punto tu espacio. Pide presupuesto gratis y sin compromiso.">
+<meta property="og:url" content="https://hogar.omnitech-core.com/info">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="A3 Servicios">
+<meta property="og:locale" content="es_ES">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="A3 Servicios | Transformación y organización de espacios">
+<meta name="twitter:description" content="Organizamos y transformamos tu vivienda. Pide presupuesto gratis y sin compromiso.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/hogar-services.css">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://hogar.omnitech-core.com/info#webpage",
+      "url": "https://hogar.omnitech-core.com/info",
+      "name": "A3 Servicios | Transformación y organización de espacios en el hogar",
+      "description": "A3 Servicios te ayuda a transformar tu vivienda: organizamos, ordenamos y ponemos a punto tu espacio.",
+      "inLanguage": "es-ES",
+      "isPartOf": { "@type": "WebSite", "@id": "https://hogar.omnitech-core.com/#website", "name": "A Medida", "url": "https://hogar.omnitech-core.com/" }
+    },
+    {
+      "@type": "Service",
+      "name": "Transformación y organización de espacios",
+      "serviceType": "Organización del hogar",
+      "areaServed": { "@type": "City", "name": "Madrid" },
+      "provider": { "@type": "Organization", "name": "A3 Servicios" },
+      "url": "https://hogar.omnitech-core.com/info"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "¿Es gratis pedir presupuesto?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Sí, solicitar presupuesto es gratuito y no supone ningún compromiso de contratación." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Tengo que contratar si pido presupuesto?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Recibes el contacto de un profesional y decides tú si quieres seguir adelante." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cuánto dura una transformación de espacio?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Depende del tamaño y el estado del espacio. El profesional te lo confirma al valorar tu solicitud." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Qué pasa con los objetos que ya no quiero conservar?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Se decide contigo caso por caso durante la organización: qué conservar, reordenar, donar o desechar." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+
+<style>
+  /* ── Hero de transformación: elemento propio de /info, no compartido ── */
+  .ba-hero{
+    background: radial-gradient(ellipse 900px 500px at 15% 0%, rgba(58,95,232,0.30), transparent 60%), var(--ink);
+    color:#fff; padding:64px 6vw 0;
+  }
+  .ba-hero-inner{ max-width:980px; margin:0 auto; }
+  .ba-hero h1{
+    font-family:'Fraunces', serif; font-weight:600; font-size:clamp(32px, 4.6vw, 54px);
+    line-height:1.08; letter-spacing:-0.015em; margin-bottom:18px; max-width:760px;
+  }
+  .ba-hero > .ba-hero-inner > p{ font-size:17px; line-height:1.65; color:rgba(255,255,255,0.72); max-width:600px; margin-bottom:36px; }
+
+  .ba-wrap{
+    --pos: 92%;
+    position:relative; width:100%; aspect-ratio:16/9; border-radius:16px 16px 0 0;
+    overflow:hidden; background:#12162a; touch-action:pan-y;
+    box-shadow: 0 30px 70px rgba(0,0,0,0.35);
+  }
+  .ba-layer{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .ba-layer svg{ width:100%; height:100%; display:block; }
+  .ba-before{ clip-path: inset(0 calc(100% - var(--pos)) 0 0); will-change: clip-path; }
+
+  .ba-divider{
+    position:absolute; top:0; bottom:0; left:var(--pos); width:2px; background:rgba(255,255,255,0.85);
+    transform:translateX(-50%); pointer-events:none; box-shadow:0 0 12px rgba(0,0,0,0.4);
+  }
+  .ba-grip{
+    position:absolute; top:50%; left:var(--pos); transform:translate(-50%,-50%);
+    width:46px; height:46px; border-radius:50%; background:#fff; color:var(--ink);
+    display:flex; align-items:center; justify-content:center; pointer-events:none;
+    box-shadow:0 8px 20px rgba(0,0,0,0.35);
+    animation: ba-invite 1.8s ease-in-out 2;
+    animation-delay: 2.4s;
+  }
+  @keyframes ba-invite{
+    0%,100%{ transform:translate(-50%,-50%) scale(1); }
+    50%{ transform:translate(-50%,-50%) scale(1.12); }
+  }
+  .ba-grip svg{ width:20px; height:20px; }
+
+  .ba-label{
+    position:absolute; top:16px; font-size:11.5px; font-weight:700; letter-spacing:0.08em;
+    text-transform:uppercase; padding:7px 13px; border-radius:20px; pointer-events:none;
+  }
+  .ba-label-before{ left:16px; background:rgba(11,15,28,0.55); color:#fff; backdrop-filter:blur(6px); }
+  .ba-label-after{ right:16px; background:var(--gold); color:var(--ink); }
+
+  .ba-range{
+    position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:ew-resize;
+    -webkit-appearance:none; appearance:none; background:transparent;
+  }
+  .ba-range::-webkit-slider-thumb{ -webkit-appearance:none; width:46px; height:46px; }
+  .ba-range::-moz-range-thumb{ width:46px; height:46px; border:none; background:transparent; }
+
+  .ba-caption{
+    max-width:980px; margin:0 auto; padding:14px 6vw 40px; font-size:12.5px; color:rgba(255,255,255,0.45);
+    text-align:center;
+  }
+
+  .ba-cta-row{ display:flex; justify-content:center; padding-bottom:0; }
+
+  @media(max-width:700px){
+    .ba-wrap{ aspect-ratio:3/4; border-radius:14px 14px 0 0; }
+    .ba-hero h1{ max-width:100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .ba-grip{ animation:none; }
+  }
+
+  /* ── Formulario #pedir ── */
+  .pedir{ background:var(--paper-2); padding:64px 6vw; }
+  .pedir-inner{ max-width:640px; margin:0 auto; }
+  .pedir h2{
+    font-family:'Fraunces', serif; font-weight:600; font-size:clamp(24px,3vw,32px);
+    letter-spacing:-0.01em; margin-bottom:10px; color:var(--ink);
+  }
+  .pedir > .pedir-inner > p{ font-size:15.5px; color:var(--grey); margin-bottom:28px; }
+  .field{ margin-bottom:18px; }
+  .field label{ display:block; font-size:13.5px; font-weight:600; color:var(--ink); margin-bottom:7px; }
+  .field textarea, .field input{
+    width:100%; font-family:'Inter', sans-serif; font-size:15px; padding:13px 14px;
+    border:1px solid var(--line-dark); border-radius:8px; background:#fff; color:var(--ink);
+  }
+  .field textarea{ min-height:96px; resize:vertical; }
+  .field textarea:focus, .field input:focus{ outline:2px solid var(--blue); outline-offset:1px; }
+  .submit-btn{
+    width:100%; background:var(--gold); color:var(--ink); font-weight:700; font-size:15.5px;
+    padding:16px; border:none; border-radius:8px; cursor:pointer; transition:background .15s ease;
+  }
+  .submit-btn:hover{ background:var(--gold-soft); }
+  .submit-btn:disabled{ opacity:0.6; cursor:default; }
+
+  .confirm-box{ display:none; text-align:center; padding:20px 0; }
+  .confirm-box.show{ display:block; }
+  .confirm-box .ic{ font-size:38px; margin-bottom:14px; }
+  .confirm-box h3{ font-family:'Fraunces', serif; font-size:22px; margin-bottom:10px; color:var(--ink); }
+  .confirm-box p{ font-size:15px; color:var(--grey); line-height:1.6; max-width:440px; margin:0 auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">A3 <span class="dot">·</span> Servicios</div>
+  <nav>
+    <a href="#como-funciona">Cómo funciona</a>
+    <a href="#pedir" class="nav-cta">Pedir presupuesto</a>
+  </nav>
+</header>
+
+<section class="ba-hero">
+  <div class="ba-hero-inner">
+    <div class="hero-eyebrow">Transformación de espacios</div>
+    <h1>El desorden se transforma en orden</h1>
+    <p>A3 Servicios organiza, ordena y transforma tu vivienda. Arrastra el punto de la imagen para ver el antes y el después.</p>
+  </div>
+
+  <div class="ba-hero-inner" style="max-width:1100px;">
+    <div class="ba-wrap" id="baWrap">
+      <div class="ba-layer ba-after" aria-hidden="true">
+        <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Espacio organizado, ilustración conceptual">
+          <defs>
+            <linearGradient id="afterBg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#F7F3EA"/>
+              <stop offset="100%" stop-color="#EFE8D8"/>
+            </linearGradient>
+            <linearGradient id="afterGlow" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#FFF7E4" stop-opacity="0.9"/>
+              <stop offset="100%" stop-color="#FFF7E4" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <rect width="800" height="450" fill="url(#afterBg)"/>
+          <ellipse cx="120" cy="60" rx="260" ry="160" fill="url(#afterGlow)"/>
+          <rect x="0" y="360" width="800" height="90" fill="#E4DAC3"/>
+          <!-- Estantería modular, alineada -->
+          <g stroke="#0B0F1C" stroke-width="2" fill="#FFFFFF">
+            <rect x="60" y="120" width="150" height="240" rx="6"/>
+            <line x1="60" y1="180" x2="210" y2="180"/>
+            <line x1="60" y1="240" x2="210" y2="240"/>
+            <line x1="60" y1="300" x2="210" y2="300"/>
+            <rect x="80" y="140" width="34" height="30" rx="3" fill="#C9A24A"/>
+            <rect x="130" y="200" width="50" height="26" rx="3" fill="#3A5FE8" fill-opacity="0.35"/>
+            <rect x="80" y="260" width="26" height="26" rx="13" fill="#0B0F1C" fill-opacity="0.08"/>
+          </g>
+          <!-- Sofá limpio y alineado -->
+          <g stroke="#0B0F1C" stroke-width="2">
+            <rect x="300" y="230" width="300" height="110" rx="14" fill="#FFFFFF"/>
+            <rect x="300" y="200" width="300" height="46" rx="14" fill="#FFFFFF"/>
+            <rect x="316" y="220" width="60" height="60" rx="8" fill="#EFE8D8"/>
+            <rect x="424" y="220" width="60" height="60" rx="8" fill="#EFE8D8"/>
+            <rect x="532" y="220" width="52" height="60" rx="8" fill="#EFE8D8"/>
+          </g>
+          <!-- Mesa lateral con una única pieza -->
+          <g stroke="#0B0F1C" stroke-width="2" fill="#FFFFFF">
+            <rect x="640" y="290" width="90" height="14" rx="4"/>
+            <line x1="655" y1="304" x2="655" y2="345"/>
+            <line x1="715" y1="304" x2="715" y2="345"/>
+            <circle cx="685" cy="280" r="10" fill="#C9A24A" stroke="none"/>
+          </g>
+          <!-- Suelo con una única línea de luz -->
+          <line x1="40" y1="360" x2="760" y2="360" stroke="#0B0F1C" stroke-opacity="0.12" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <div class="ba-layer ba-before" aria-hidden="true">
+        <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Espacio desordenado, ilustración conceptual">
+          <defs>
+            <linearGradient id="beforeBg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#E9E2D3"/>
+              <stop offset="100%" stop-color="#D9CEB6"/>
+            </linearGradient>
+          </defs>
+          <rect width="800" height="450" fill="url(#beforeBg)"/>
+          <rect x="0" y="360" width="800" height="90" fill="#C9BC9C"/>
+          <!-- Cajas apiladas de forma irregular -->
+          <g stroke="#0B0F1C" stroke-width="2">
+            <rect x="55" y="230" width="90" height="80" rx="4" fill="#C9A24A" transform="rotate(-6 100 270)"/>
+            <rect x="130" y="200" width="76" height="70" rx="4" fill="#E8D9B0" transform="rotate(9 168 235)"/>
+            <rect x="70" y="150" width="70" height="64" rx="4" fill="#FFFFFF" transform="rotate(-4 105 182)"/>
+            <rect x="180" y="270" width="64" height="60" rx="4" fill="#3A5FE8" fill-opacity="0.35" transform="rotate(7 212 300)"/>
+          </g>
+          <!-- Ropa amontonada -->
+          <g fill="#B84C3A" fill-opacity="0.55">
+            <path d="M290 330 Q330 280 380 320 Q430 290 470 335 Q460 360 400 355 Q340 365 290 330Z"/>
+          </g>
+          <g fill="#3A5FE8" fill-opacity="0.28">
+            <path d="M320 300 Q360 260 410 295 L400 335 Q350 330 320 300Z"/>
+          </g>
+          <!-- Muebles desalineados -->
+          <g stroke="#0B0F1C" stroke-width="2" fill="#FFFFFF">
+            <rect x="520" y="210" width="230" height="100" rx="12" transform="rotate(4 635 260)"/>
+            <rect x="540" y="180" width="230" height="44" rx="12" transform="rotate(-3 655 202)"/>
+          </g>
+          <!-- Objetos sueltos dispersos -->
+          <g fill="#0B0F1C" fill-opacity="0.55">
+            <circle cx="500" cy="345" r="7"/>
+            <circle cx="524" cy="360" r="5"/>
+            <circle cx="250" cy="200" r="6"/>
+            <circle cx="620" cy="340" r="6"/>
+            <rect x="440" y="355" width="30" height="8" rx="4" transform="rotate(-12 455 359)"/>
+          </g>
+          <!-- Cable suelto -->
+          <path d="M40 380 Q140 340 220 385 Q300 420 380 380" stroke="#0B0F1C" stroke-opacity="0.35" stroke-width="2.5" fill="none"/>
+        </svg>
+      </div>
+
+      <div class="ba-divider" aria-hidden="true"></div>
+      <div class="ba-grip" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 7l-4 5 4 5M16 7l4 5-4 5"/></svg>
+      </div>
+      <div class="ba-label ba-label-before" aria-hidden="true">Antes</div>
+      <div class="ba-label ba-label-after" aria-hidden="true">Después</div>
+
+      <input type="range" class="ba-range" id="baRange" min="0" max="100" value="92" step="1" aria-label="Deslizar para comparar el espacio antes y después de la transformación">
+    </div>
+    <p class="ba-caption">Ilustración conceptual del antes y el después de una transformación A3 — no es una fotografía de un trabajo real.</p>
+    <div class="ba-cta-row">
+      <a href="#pedir" class="cta-primary">Quiero transformar mi espacio →</a>
+    </div>
+  </div>
+</section>
+
+<main style="padding-top:56px;">
+  <section id="que-hacemos">
+    <h2>Qué hacemos</h2>
+    <p>A3 Servicios ayuda a organizar y poner a punto espacios del hogar: armarios, habitaciones, salones, trasteros y zonas comunes que se han ido saturando con el tiempo. Trabajamos contigo para decidir qué conservar, cómo reordenar lo que ya tienes y dejar el espacio limpio y funcional.</p>
+    <p>No vendemos muebles ni productos de organización: te ponemos en contacto con un profesional que se encarga de la transformación de tu espacio, y tú decides directamente con él el alcance y los detalles.</p>
+  </section>
+
+  <section id="como-funciona">
+    <h2>Cómo funciona</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><h3>Cuéntanos tu espacio</h3><p>Describe qué zona quieres transformar y qué te gustaría conseguir, en un formulario breve.</p></div>
+      <div class="step"><div class="step-num">2</div><h3>Te contacta un profesional</h3><p>Alguien de tu zona revisa tu solicitud y se pone en contacto contigo directamente.</p></div>
+      <div class="step"><div class="step-num">3</div><h3>Transformáis el espacio</h3><p>Acordáis juntos el plan, los tiempos y el resultado que buscas.</p></div>
+    </div>
+  </section>
+
+  <section id="que-incluye">
+    <h2>Qué puede incluir la transformación</h2>
+    <p>Cada espacio es distinto, y el alcance exacto lo confirma el profesional al valorar tu solicitud. Como referencia:</p>
+    <ul class="benefits">
+      <li><span class="ic">✓</span> Organización de armarios, habitaciones y zonas comunes</li>
+      <li><span class="ic">✓</span> Reordenación de muebles para aprovechar mejor el espacio</li>
+      <li><span class="ic">✓</span> Ayuda para decidir qué conservar, reordenar, donar o desechar</li>
+      <li><span class="ic">✓</span> Puesta a punto final del espacio ya organizado</li>
+    </ul>
+  </section>
+
+  <section class="cta-band">
+    <h2>¿Lista tu casa para transformarse?</h2>
+    <p>Pide presupuesto gratis y sin compromiso. Un profesional de tu zona te contacta.</p>
+    <a href="#pedir" class="cta-primary">Pedir presupuesto gratis →</a>
+  </section>
+
+  <section id="faq">
+    <h2>Preguntas frecuentes</h2>
+    <div class="faq-item"><h3>¿Es gratis pedir presupuesto?</h3><p>Sí, solicitar presupuesto es gratuito y no supone ningún compromiso de contratación.</p></div>
+    <div class="faq-item"><h3>¿Tengo que contratar si pido presupuesto?</h3><p>No. Recibes el contacto de un profesional y decides tú si quieres seguir adelante.</p></div>
+    <div class="faq-item"><h3>¿Cuánto dura una transformación de espacio?</h3><p>Depende del tamaño y el estado del espacio. El profesional te lo confirma al valorar tu solicitud.</p></div>
+    <div class="faq-item"><h3>¿Qué pasa con los objetos que ya no quiero conservar?</h3><p>Se decide contigo caso por caso durante la organización: qué conservar, reordenar, donar o desechar.</p></div>
+  </section>
+</main>
+
+<section class="pedir" id="pedir">
+  <div class="pedir-inner">
+    <h2>Pide presupuesto gratis</h2>
+    <p>Cuéntanos qué espacio quieres transformar. Un profesional de tu zona revisará tu solicitud y te contactará.</p>
+
+    <form id="ticket-form" onsubmit="event.preventDefault(); submitForm();">
+      <div class="field">
+        <label for="descripcion">¿Qué espacio quieres transformar?</label>
+        <textarea id="descripcion" required placeholder="Ej: un trastero y dos armarios llenos de cajas sin organizar"></textarea>
+      </div>
+      <div class="field">
+        <label for="zona">Zona</label>
+        <input type="text" id="zona" required placeholder="Ej: Chamberí, Madrid">
+      </div>
+      <div class="field">
+        <label for="contacto">Teléfono de contacto</label>
+        <input type="tel" id="contacto" required placeholder="Ej: 600 123 456">
+      </div>
+      <div class="field">
+        <label for="cuando">¿Para cuándo? (opcional)</label>
+        <input type="text" id="cuando" placeholder="Ej: en las próximas semanas">
+      </div>
+      <button type="submit" class="submit-btn">Enviar solicitud →</button>
+    </form>
+
+    <div class="confirm-box" id="confirm-box">
+      <div class="ic">✓</div>
+      <h3>Tu solicitud ha sido recibida</h3>
+      <p>Hemos registrado tu solicitud de transformación de espacio. Revisaremos los datos y te pondremos en contacto con profesionales disponibles en tu zona.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="logo" style="color:#fff;">A3 <span class="dot">·</span> Servicios</div>
+      <p>Organización y transformación de espacios del hogar en Madrid.</p>
+    </div>
+    <div class="footer-links">
+      <a href="#como-funciona">Cómo funciona</a>
+      <a href="#faq">Preguntas frecuentes</a>
+      <a href="#pedir">Pedir presupuesto</a>
+    </div>
+    <div class="footer-bottom">A3 Servicios © 2026 — Madrid y alrededores</div>
+  </div>
+</footer>
+
+<script>
+  var API_URL = 'https://omnitech-core-api.onrender.com/api/leads-public';
+
+  async function submitForm(){
+    var payload = {
+      category: 'transformacion_espacios',
+      description: document.getElementById('descripcion').value,
+      zone: document.getElementById('zona').value,
+      timing: document.getElementById('cuando').value,
+      contactPhone: document.getElementById('contacto').value,
+    };
+
+    var btn = document.querySelector('.submit-btn');
+    btn.textContent = 'Enviando...';
+    btn.disabled = true;
+
+    try {
+      var res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Error al enviar');
+
+      document.getElementById('ticket-form').style.display = 'none';
+      document.getElementById('confirm-box').classList.add('show');
+    } catch (err) {
+      btn.textContent = 'Enviar solicitud →';
+      btn.disabled = false;
+      alert('No se pudo enviar la solicitud. Inténtalo de nuevo.');
+    }
+  }
+
+  // ── Slider antes/después: input[type=range] nativo por accesibilidad
+  // (teclado, táctil y ratón gratis), clip-path para el "antes" superpuesto.
+  (function(){
+    var wrap = document.getElementById('baWrap');
+    var range = document.getElementById('baRange');
+    if (!wrap || !range) return;
+
+    function setPos(v){ wrap.style.setProperty('--pos', v + '%'); }
+    range.addEventListener('input', function(){ setPos(range.value); });
+
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var played = false;
+
+    function playSweep(){
+      if (played) return;
+      played = true;
+      if (reduceMotion) { range.value = 50; setPos(50); return; }
+
+      var from = 92, to = 50, duration = 2200, start = null;
+      function ease(t){ return 1 - Math.pow(1 - t, 3); }
+      function step(ts){
+        if (start === null) start = ts;
+        var t = Math.min(1, (ts - start) / duration);
+        var v = from + (to - from) * ease(t);
+        range.value = v;
+        setPos(v);
+        if (t < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){ if (e.isIntersecting) { playSweep(); io.disconnect(); } });
+      }, { threshold: 0.35 });
+      io.observe(wrap);
+    } else {
+      playSweep();
+    }
+  })();
+</script>
+
+</body>
+</html>
