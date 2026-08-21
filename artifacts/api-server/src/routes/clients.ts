@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { db, clientsTable, activityTable, organizationsTable, autopilotTasksTable } from "@workspace/db";
 import { eq, desc, and, isNull } from "drizzle-orm";
-import { z } from "zod";
 import {
   ListClientsQueryParams,
   CreateClientBody,
@@ -18,49 +17,95 @@ export const clientsRouter = Router();
 // ── Ficha comercial ampliada ──────────────────────────────────────────────
 // Estos campos ya están documentados en lib/api-spec/openapi.yaml (Client/
 // ClientInput/ClientUpdate) pero el codegen de orval (lib/api-zod) no se ha
-// podido regenerar en este entorno (sin Node/pnpm disponible aquí) — se
-// extienden aquí los schemas ya generados con `.extend()` en vez de tocar
-// los archivos generados a mano. Cuando se corra `pnpm --filter
-// @workspace/api-spec run codegen` en un entorno con Node, este bloque deja
-// de ser necesario y CreateClientBody/UpdateClientBody ya traerán estos
-// campos de fábrica — momento en el que este `.extend()` puede eliminarse.
-const commercialFieldsSchema = {
-  commercialStatus: z.string().optional(),
-  sector: z.string().optional(),
-  contactPerson: z.string().optional(),
-  companyPhone: z.string().optional(),
-  companyEmail: z.string().optional(),
-  instagram: z.string().optional(),
-  website: z.string().optional(),
-  location: z.string().optional(),
-  firstContactAt: z.string().optional(),
-  dolorPrincipal: z.string().optional(),
-  recursoEnviado: z.string().optional(),
-  fuenteLead: z.string().optional(),
-  followup1At: z.string().optional(),
-  followup2At: z.string().optional(),
-  followup3At: z.string().optional(),
-  nextFollowupAt: z.string().optional(),
-  lastContactAt: z.string().optional(),
-  attemptCount: z.number().optional(),
-  preferredChannel: z.string().optional(),
-  resultado: z.string().optional(),
-  nextAction: z.string().optional(),
-  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-  observaciones: z.string().optional(),
-};
-const CreateClientBodyExt = CreateClientBody.extend(commercialFieldsSchema);
-const UpdateClientBodyExt = UpdateClientBody.extend(commercialFieldsSchema);
-const ListClientsQueryParamsExt = ListClientsQueryParams.extend({
-  commercialStatus: z.coerce.string().optional(),
-  sector: z.coerce.string().optional(),
-  priority: z.coerce.string().optional(),
-  // NOTA: z.coerce.boolean() trataría la cadena "false" como truthy — se usa
-  // un enum + transform en su lugar para interpretar correctamente
-  // ?autopilotActive=false desde query params.
-  autopilotActive: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
-  hasFollowupPending: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
-});
+// podido regenerar en este entorno (sin Node/pnpm disponible aquí). En vez de
+// usar `.extend()` con la librería `zod` (que este paquete NO tiene como
+// dependencia directa — solo vía @workspace/api-zod, y esbuild no la resuelve
+// en el build de Render), se parsean estos campos a mano. Cuando se corra
+// `pnpm --filter @workspace/api-spec run codegen` en un entorno con Node,
+// este bloque deja de ser necesario y CreateClientBody/UpdateClientBody ya
+// traerán estos campos de fábrica.
+const PRIORITY_VALUES = new Set(["low", "medium", "high", "urgent"]);
+
+interface CommercialFields {
+  commercialStatus?: string;
+  sector?: string;
+  contactPerson?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  instagram?: string;
+  website?: string;
+  location?: string;
+  firstContactAt?: string;
+  dolorPrincipal?: string;
+  recursoEnviado?: string;
+  fuenteLead?: string;
+  followup1At?: string;
+  followup2At?: string;
+  followup3At?: string;
+  nextFollowupAt?: string;
+  lastContactAt?: string;
+  attemptCount?: number;
+  preferredChannel?: string;
+  resultado?: string;
+  nextAction?: string;
+  priority?: string;
+  observaciones?: string;
+}
+
+function parseCommercialFields(body: unknown): CommercialFields {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
+  const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  const priority = str(b["priority"]);
+  return {
+    commercialStatus: str(b["commercialStatus"]),
+    sector: str(b["sector"]),
+    contactPerson: str(b["contactPerson"]),
+    companyPhone: str(b["companyPhone"]),
+    companyEmail: str(b["companyEmail"]),
+    instagram: str(b["instagram"]),
+    website: str(b["website"]),
+    location: str(b["location"]),
+    firstContactAt: str(b["firstContactAt"]),
+    dolorPrincipal: str(b["dolorPrincipal"]),
+    recursoEnviado: str(b["recursoEnviado"]),
+    fuenteLead: str(b["fuenteLead"]),
+    followup1At: str(b["followup1At"]),
+    followup2At: str(b["followup2At"]),
+    followup3At: str(b["followup3At"]),
+    nextFollowupAt: str(b["nextFollowupAt"]),
+    lastContactAt: str(b["lastContactAt"]),
+    attemptCount: num(b["attemptCount"]),
+    preferredChannel: str(b["preferredChannel"]),
+    resultado: str(b["resultado"]),
+    nextAction: str(b["nextAction"]),
+    priority: priority && PRIORITY_VALUES.has(priority) ? priority : undefined,
+    observaciones: str(b["observaciones"]),
+  };
+}
+
+interface CommercialListFilters {
+  commercialStatus?: string;
+  sector?: string;
+  priority?: string;
+  autopilotActive?: boolean;
+  hasFollowupPending?: boolean;
+}
+
+function parseCommercialListFilters(query: unknown): CommercialListFilters {
+  const q = (query ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
+  // NOTA: no usar coerción tipo Boolean(str) — "false" es truthy en JS.
+  const bool = (v: unknown): boolean | undefined =>
+    v === "true" ? true : v === "false" ? false : undefined;
+  return {
+    commercialStatus: str(q["commercialStatus"]),
+    sector: str(q["sector"]),
+    priority: str(q["priority"]),
+    autopilotActive: bool(q["autopilotActive"]),
+    hasFollowupPending: bool(q["hasFollowupPending"]),
+  };
+}
 
 function toDateOrUndefined(value: string | undefined): Date | undefined {
   return value === undefined ? undefined : new Date(value);
@@ -69,7 +114,8 @@ function toDateOrUndefined(value: string | undefined): Date | undefined {
 clientsRouter.get("/", requirePermission("crm.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const query = ListClientsQueryParamsExt.parse(req.query);
+    const query = ListClientsQueryParams.parse(req.query);
+    const filters = parseCommercialListFilters(req.query);
     let rows = await db
       .select()
       .from(clientsTable)
@@ -88,20 +134,20 @@ clientsRouter.get("/", requirePermission("crm.read"), async (req, res) => {
     if (query.status) {
       rows = rows.filter((r) => r.status === query.status);
     }
-    if (query.commercialStatus) {
-      rows = rows.filter((r) => r.commercialStatus === query.commercialStatus);
+    if (filters.commercialStatus) {
+      rows = rows.filter((r) => r.commercialStatus === filters.commercialStatus);
     }
-    if (query.sector) {
-      rows = rows.filter((r) => (r.sector ?? "").toLowerCase() === query.sector!.toLowerCase());
+    if (filters.sector) {
+      rows = rows.filter((r) => (r.sector ?? "").toLowerCase() === filters.sector!.toLowerCase());
     }
-    if (query.priority) {
-      rows = rows.filter((r) => r.priority === query.priority);
+    if (filters.priority) {
+      rows = rows.filter((r) => r.priority === filters.priority);
     }
-    if (query.hasFollowupPending) {
+    if (filters.hasFollowupPending) {
       const now = new Date();
       rows = rows.filter((r) => r.nextFollowupAt != null && r.nextFollowupAt <= now);
     }
-    if (query.autopilotActive !== undefined) {
+    if (filters.autopilotActive !== undefined) {
       const activeClientIds = new Set(
         (
           await db
@@ -114,7 +160,7 @@ clientsRouter.get("/", requirePermission("crm.read"), async (req, res) => {
             ))
         ).map((t) => t.clientId),
       );
-      rows = rows.filter((r) => activeClientIds.has(r.id) === query.autopilotActive);
+      rows = rows.filter((r) => activeClientIds.has(r.id) === filters.autopilotActive);
     }
 
     res.json(rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })));
@@ -126,7 +172,8 @@ clientsRouter.get("/", requirePermission("crm.read"), async (req, res) => {
 clientsRouter.post("/", requirePermission("crm.write"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const body = CreateClientBodyExt.parse(req.body);
+    const body = CreateClientBody.parse(req.body);
+    const commercial = parseCommercialFields(req.body);
     const [client] = await db
       .insert(clientsTable)
       .values({
@@ -139,23 +186,23 @@ clientsRouter.post("/", requirePermission("crm.write"), async (req, res) => {
         tags: body.tags ?? null,
         notes: body.notes ?? null,
         value: body.value ?? null,
-        commercialStatus: body.commercialStatus ?? null,
-        sector: body.sector ?? null,
-        contactPerson: body.contactPerson ?? null,
-        companyPhone: body.companyPhone ?? null,
-        companyEmail: body.companyEmail ?? null,
-        instagram: body.instagram ?? null,
-        website: body.website ?? null,
-        location: body.location ?? null,
-        firstContactAt: toDateOrUndefined(body.firstContactAt) ?? null,
-        dolorPrincipal: body.dolorPrincipal ?? null,
-        recursoEnviado: body.recursoEnviado ?? null,
-        fuenteLead: body.fuenteLead ?? null,
-        preferredChannel: body.preferredChannel ?? null,
-        resultado: body.resultado ?? null,
-        nextAction: body.nextAction ?? null,
-        priority: body.priority ?? "medium",
-        observaciones: body.observaciones ?? null,
+        commercialStatus: commercial.commercialStatus ?? null,
+        sector: commercial.sector ?? null,
+        contactPerson: commercial.contactPerson ?? null,
+        companyPhone: commercial.companyPhone ?? null,
+        companyEmail: commercial.companyEmail ?? null,
+        instagram: commercial.instagram ?? null,
+        website: commercial.website ?? null,
+        location: commercial.location ?? null,
+        firstContactAt: toDateOrUndefined(commercial.firstContactAt) ?? null,
+        dolorPrincipal: commercial.dolorPrincipal ?? null,
+        recursoEnviado: commercial.recursoEnviado ?? null,
+        fuenteLead: commercial.fuenteLead ?? null,
+        preferredChannel: commercial.preferredChannel ?? null,
+        resultado: commercial.resultado ?? null,
+        nextAction: commercial.nextAction ?? null,
+        priority: commercial.priority ?? "medium",
+        observaciones: commercial.observaciones ?? null,
       })
       .returning();
 
@@ -236,7 +283,8 @@ clientsRouter.patch("/:id", requirePermission("crm.write"), async (req, res) => 
   try {
     const orgId = req.orgId!;
     const { id } = UpdateClientParams.parse({ id: Number(req.params.id) });
-    const body = UpdateClientBodyExt.parse(req.body);
+    const body = UpdateClientBody.parse(req.body);
+    const commercial = parseCommercialFields(req.body);
     const [client] = await db
       .update(clientsTable)
       .set({
@@ -248,29 +296,29 @@ clientsRouter.patch("/:id", requirePermission("crm.write"), async (req, res) => 
         ...(body.tags !== undefined && { tags: body.tags }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.value !== undefined && { value: body.value }),
-        ...(body.commercialStatus !== undefined && { commercialStatus: body.commercialStatus }),
-        ...(body.sector !== undefined && { sector: body.sector }),
-        ...(body.contactPerson !== undefined && { contactPerson: body.contactPerson }),
-        ...(body.companyPhone !== undefined && { companyPhone: body.companyPhone }),
-        ...(body.companyEmail !== undefined && { companyEmail: body.companyEmail }),
-        ...(body.instagram !== undefined && { instagram: body.instagram }),
-        ...(body.website !== undefined && { website: body.website }),
-        ...(body.location !== undefined && { location: body.location }),
-        ...(body.firstContactAt !== undefined && { firstContactAt: toDateOrUndefined(body.firstContactAt) }),
-        ...(body.dolorPrincipal !== undefined && { dolorPrincipal: body.dolorPrincipal }),
-        ...(body.recursoEnviado !== undefined && { recursoEnviado: body.recursoEnviado }),
-        ...(body.fuenteLead !== undefined && { fuenteLead: body.fuenteLead }),
-        ...(body.followup1At !== undefined && { followup1At: toDateOrUndefined(body.followup1At) }),
-        ...(body.followup2At !== undefined && { followup2At: toDateOrUndefined(body.followup2At) }),
-        ...(body.followup3At !== undefined && { followup3At: toDateOrUndefined(body.followup3At) }),
-        ...(body.nextFollowupAt !== undefined && { nextFollowupAt: toDateOrUndefined(body.nextFollowupAt) }),
-        ...(body.lastContactAt !== undefined && { lastContactAt: toDateOrUndefined(body.lastContactAt) }),
-        ...(body.attemptCount !== undefined && { attemptCount: body.attemptCount }),
-        ...(body.preferredChannel !== undefined && { preferredChannel: body.preferredChannel }),
-        ...(body.resultado !== undefined && { resultado: body.resultado }),
-        ...(body.nextAction !== undefined && { nextAction: body.nextAction }),
-        ...(body.priority !== undefined && { priority: body.priority }),
-        ...(body.observaciones !== undefined && { observaciones: body.observaciones }),
+        ...(commercial.commercialStatus !== undefined && { commercialStatus: commercial.commercialStatus }),
+        ...(commercial.sector !== undefined && { sector: commercial.sector }),
+        ...(commercial.contactPerson !== undefined && { contactPerson: commercial.contactPerson }),
+        ...(commercial.companyPhone !== undefined && { companyPhone: commercial.companyPhone }),
+        ...(commercial.companyEmail !== undefined && { companyEmail: commercial.companyEmail }),
+        ...(commercial.instagram !== undefined && { instagram: commercial.instagram }),
+        ...(commercial.website !== undefined && { website: commercial.website }),
+        ...(commercial.location !== undefined && { location: commercial.location }),
+        ...(commercial.firstContactAt !== undefined && { firstContactAt: toDateOrUndefined(commercial.firstContactAt) }),
+        ...(commercial.dolorPrincipal !== undefined && { dolorPrincipal: commercial.dolorPrincipal }),
+        ...(commercial.recursoEnviado !== undefined && { recursoEnviado: commercial.recursoEnviado }),
+        ...(commercial.fuenteLead !== undefined && { fuenteLead: commercial.fuenteLead }),
+        ...(commercial.followup1At !== undefined && { followup1At: toDateOrUndefined(commercial.followup1At) }),
+        ...(commercial.followup2At !== undefined && { followup2At: toDateOrUndefined(commercial.followup2At) }),
+        ...(commercial.followup3At !== undefined && { followup3At: toDateOrUndefined(commercial.followup3At) }),
+        ...(commercial.nextFollowupAt !== undefined && { nextFollowupAt: toDateOrUndefined(commercial.nextFollowupAt) }),
+        ...(commercial.lastContactAt !== undefined && { lastContactAt: toDateOrUndefined(commercial.lastContactAt) }),
+        ...(commercial.attemptCount !== undefined && { attemptCount: commercial.attemptCount }),
+        ...(commercial.preferredChannel !== undefined && { preferredChannel: commercial.preferredChannel }),
+        ...(commercial.resultado !== undefined && { resultado: commercial.resultado }),
+        ...(commercial.nextAction !== undefined && { nextAction: commercial.nextAction }),
+        ...(commercial.priority !== undefined && { priority: commercial.priority }),
+        ...(commercial.observaciones !== undefined && { observaciones: commercial.observaciones }),
       })
       .where(and(eq(clientsTable.id, id), eq(clientsTable.orgId, orgId)))
       .returning();
