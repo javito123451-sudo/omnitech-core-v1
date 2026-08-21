@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/authFetch";
-import { Truck, Search, RefreshCw, Loader2, Phone, MapPin, Clock } from "lucide-react";
+import { Truck, Search, RefreshCw, Loader2, Phone, MapPin, Clock, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -39,6 +39,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   muebles: "Muebles",
   portes: "Portes",
   mudanzas: "Mudanzas",
+  organizacion_espacios: "A3 · Organización",
+  limpieza_profesional: "A3 · Limpieza",
+  consulta_general: "A3 · Consulta general",
 };
 
 function fmtDate(iso: string): string {
@@ -78,6 +81,22 @@ export default function AMedidaPanelPage() {
       void qc.invalidateQueries({ queryKey: ["a-medida-leads"] });
     },
   });
+
+  const deleteLead = useMutation({
+    mutationFn: (id: string) =>
+      authFetch(`${BASE}/api/a-medida-leads/${id}`, { method: "DELETE" }).then(r => r.json()),
+    onMutate: (id) => setPendingId(id),
+    onSettled: () => {
+      setPendingId(null);
+      void qc.invalidateQueries({ queryKey: ["a-medida-leads"] });
+    },
+  });
+
+  function handleDelete(id: string) {
+    if (window.confirm("¿Borrar esta solicitud definitivamente? Esta acción no se puede deshacer.")) {
+      deleteLead.mutate(id);
+    }
+  }
 
   const leads = data?.leads ?? [];
 
@@ -123,6 +142,9 @@ export default function AMedidaPanelPage() {
           <option value="muebles">Muebles</option>
           <option value="portes">Portes</option>
           <option value="mudanzas">Mudanzas</option>
+          <option value="organizacion_espacios">A3 · Organización</option>
+          <option value="limpieza_profesional">A3 · Limpieza</option>
+          <option value="consulta_general">A3 · Consulta general</option>
         </select>
         <select
           value={status}
@@ -186,6 +208,17 @@ export default function AMedidaPanelPage() {
                   <option value="contacted">Contactada</option>
                   <option value="closed">Cerrada</option>
                 </select>
+                <button
+                  onClick={() => handleDelete(lead.id)}
+                  disabled={pendingId === lead.id}
+                  title="Borrar solicitud"
+                  className={cn(
+                    "flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.03] text-slate-500 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/[0.06] transition-colors",
+                    pendingId === lead.id && "opacity-60",
+                  )}
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
             </div>
           ))}

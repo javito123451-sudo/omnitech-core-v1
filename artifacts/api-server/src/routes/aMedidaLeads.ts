@@ -85,3 +85,26 @@ aMedidaLeadsRouter.patch("/:id", requirePermission("a_medida.write"), async (req
 
   res.json(updated);
 });
+
+// ── DELETE /:id — borra una solicitud definitivamente ───────────────────────────
+aMedidaLeadsRouter.delete("/:id", requirePermission("a_medida.write"), async (req, res) => {
+  const id = String(req.params["id"]);
+
+  const [deleted] = await db.delete(leadsTable).where(eq(leadsTable.id, id)).returning();
+
+  if (!deleted) {
+    res.status(404).json({ error: "not_found", message: "Solicitud no encontrada." });
+    return;
+  }
+
+  await logAudit({
+    actorClerkId: req.clerkUserId!,
+    action: "a_medida_lead_deleted",
+    resource: "a_medida_lead",
+    resourceId: id,
+    details: { category: deleted.category, zone: deleted.zone },
+    req,
+  });
+
+  res.json({ id, deleted: true });
+});
