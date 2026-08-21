@@ -5,12 +5,16 @@ import {
   clientsTable,
   quotesTable,
   activityTable,
+  messagesTable,
   type AutopilotTask,
 } from "@workspace/db";
-import { eq, and, lt, lte, gte, desc, or, sql } from "drizzle-orm";
+import { eq, and, lt, lte, gte, gt, desc, or, sql } from "drizzle-orm";
 import { executeCrmTool } from "../routes/chat";
 import { NotificationService } from "../services/notificationService";
 import type { NotifChannel } from "../services/notificationService";
+import { generateFollowupMessage, type FollowupTriggerConfig } from "./autopilotMessages";
+import { pauseAutopilotOnReply } from "./autopilotPause";
+import { logAuditSystem } from "./auditLogger";
 
 // ── Label maps ────────────────────────────────────────────────────────────────
 export const TRIGGER_LABELS: Record<string, string> = {
@@ -29,7 +33,14 @@ export const ACTION_LABELS: Record<string, string> = {
   send_whatsapp:        "Enviar Notificación (WA)",
   create_task:          "Crear seguimiento (actividad)",
   update_client_status: "Actualizar estado de cliente",
+  client_followup:      "Seguimiento comercial (Autopilot por cliente)",
 };
+
+// triggerType "client_followup_sequence" pair — ver TRIGGER_LABELS arriba para
+// los ya existentes; este no se añade ahí porque no es seleccionable en el
+// picker genérico de automations.tsx, se crea solo vía POST /autopilot/clients/:id/enable.
+export const CLIENT_FOLLOWUP_TRIGGER_TYPE = "client_followup_sequence";
+export const CLIENT_FOLLOWUP_ACTION_TYPE  = "client_followup";
 
 // ── Condition helpers — query DB to check if CRM condition is currently met ───
 async function hasInactiveClients(orgId: number, days: number): Promise<boolean> {
@@ -67,6 +78,16 @@ export async function shouldRunTask(task: AutopilotTask): Promise<boolean> {
   const now = new Date();
   const trigCfg = (task.triggerConfig ?? {}) as Record<string, unknown>;
 
+  // ── client_followup_sequence: per-client Autopilot ───────────────────────
+  if (task.triggerType === CLIENT_FOLLOWUP_TRIGGER_TYPE) {
+    if (task.pausedReason) return false; // pausado (por respuesta o manual)
+    const cfg = task.triggerConfig as Partial<FollowupTriggerConfig> | null;
+    const intervals = cfg?.intervalsDays ?? [3, 4, 7];
+    if (task.currentStep >= intervals.length) return false; // secuencia completada
+    if (!task.nextRunAt) return true;
+    return now >= task.nextRunAt;
+  }
+
   // ── condition-based triggers ─────────────────────────────────────────────
   if (task.triggerType === "inactive_clients_30d" || task.triggerType === "quotes_expiring_7d") {
     if (task.lastRunAt) {
@@ -89,9 +110,19 @@ export async function shouldRunTask(task: AutopilotTask): Promise<boolean> {
 }
 
 // ── calcNextRunAt — compute the next scheduled timestamp ─────────────────────
-export function calcNextRunAt(triggerType: string): Date {
+// Takes the (possibly freshly-refetched) task so client_followup_sequence can
+// use its current currentStep + triggerConfig.intervalsDays. Returns null when
+// a client follow-up sequence has run out of configured steps (no more runs).
+export function calcNextRunAt(task: AutopilotTask): Date | null {
+  if (task.triggerType === CLIENT_FOLLOWUP_TRIGGER_TYPE) {
+    const cfg = task.triggerConfig as Partial<FollowupTriggerConfig> | null;
+    const intervals = cfg?.intervalsDays ?? [3, 4, 7];
+    if (task.currentStep >= intervals.length) return null;
+    const days = intervals[task.currentStep] ?? 3;
+    return new Date(Date.now() + days * 86_400_000);
+  }
   const now = new Date();
-  switch (triggerType) {
+  switch (task.triggerType) {
     case "daily":   return new Date(now.getTime() + 24      * 3_600_000);
     case "weekly":  return new Date(now.getTime() + 7 * 24  * 3_600_000);
     case "monthly": return new Date(now.getTime() + 30 * 24 * 3_600_000);
@@ -266,6 +297,175 @@ async function executeAction(task: AutopilotTask, orgId: number): Promise<string
       return summary;
     }
 
+    // ── client_followup: seguimiento comercial por cliente (Client Autopilot) ─
+    case CLIENT_FOLLOWUP_ACTION_TYPE: {
+      if (!task.clientId) return "Error: tarea de seguimiento sin clientId.";
+
+      const [client] = await db
+        .select()
+        .from(clientsTable)
+        .where(and(eq(clientsTable.id, task.clientId), eq(clientsTable.orgId, orgId)));
+      if (!client) {
+        await db.update(autopilotTasksTable)
+          .set({ enabled: false, pausedReason: "manual", updatedAt: now })
+          .where(eq(autopilotTasksTable.id, task.id));
+        return "Cliente ya no existe — Autopilot desactivado.";
+      }
+
+      // ── Capa de seguridad redundante: re-verifica respuesta justo antes de
+      // generar/enviar, por si la pausa event-driven (webhooks) no llegó a
+      // ejecutarse todavía (p. ej. condición de carrera entre el tick y el
+      // webhook entrante). Nunca se envía nada sin pasar por esta comprobación.
+      const [lastOutbound] = await db
+        .select({ createdAt: messagesTable.createdAt })
+        .from(messagesTable)
+        .where(and(eq(messagesTable.autopilotTaskId, task.id), eq(messagesTable.direction, "outbound")))
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(1);
+      const sinceDate = lastOutbound?.createdAt ?? task.createdAt;
+      const [reply] = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(and(
+          eq(messagesTable.clientId, client.id),
+          eq(messagesTable.direction, "inbound"),
+          gt(messagesTable.createdAt, sinceDate),
+        ))
+        .limit(1);
+      if (reply) {
+        await pauseAutopilotOnReply(orgId, client.id);
+        return "Pausado: se detectó una respuesta del cliente antes de enviar (capa de seguridad).";
+      }
+
+      const cfg = (task.triggerConfig ?? {}) as Partial<FollowupTriggerConfig>;
+      const intervals = cfg.intervalsDays ?? [3, 4, 7];
+      const mode      = cfg.mode ?? "approval";
+      const step      = task.currentStep + 1;
+
+      if (step > intervals.length) {
+        await db.update(autopilotTasksTable)
+          .set({ enabled: false, pausedReason: null, updatedAt: now })
+          .where(eq(autopilotTasksTable.id, task.id));
+        return "Secuencia completada — Autopilot detenido tras el último seguimiento.";
+      }
+
+      // ── Idempotencia por paso: si ya existe un mensaje para este
+      // (taskId, step), no se genera/envía de nuevo aunque el tick se
+      // repita o corra dos veces en paralelo.
+      const [existing] = await db
+        .select({ id: messagesTable.id, status: messagesTable.status })
+        .from(messagesTable)
+        .where(and(eq(messagesTable.autopilotTaskId, task.id), eq(messagesTable.autopilotStep, step)))
+        .limit(1);
+      if (existing) {
+        return `Paso ${step} ya generado (mensaje #${existing.id}, estado "${existing.status}") — no se duplica.`;
+      }
+
+      const channel = (cfg.preferredChannel ?? client.preferredChannel ?? "whatsapp") as string;
+      const content = await generateFollowupMessage(client, task, step);
+
+      if (mode === "approval") {
+        const [msg] = await db.insert(messagesTable).values({
+          orgId,
+          clientId: client.id,
+          content,
+          direction: "outbound",
+          channel,
+          isAi: true,
+          status: "pending_approval",
+          autopilotTaskId: task.id,
+          autopilotStep: step,
+        }).returning();
+
+        await db.insert(activityTable).values({
+          orgId,
+          clientId: client.id,
+          type: "autopilot_message_drafted",
+          description: `🤖 Autopilot generó un borrador de seguimiento ${step} (pendiente de aprobación).`,
+          clientName: client.name,
+        });
+        await logAuditSystem({
+          actorClerkId: `system:autopilot:${orgId}`,
+          action: "autopilot_message_drafted",
+          resource: "message",
+          resourceId: msg!.id,
+          orgId,
+          details: { clientId: client.id, step },
+          severity: "info",
+        });
+
+        return `Borrador de seguimiento ${step} generado (pendiente de aprobación) para ${client.name}.`;
+      }
+
+      // ── mode === "autopilot": genera y envía de inmediato ────────────────
+      const to = channel === "email"
+        ? (client.companyEmail ?? client.email)
+        : (client.phone ?? client.companyPhone ?? "");
+      if (!to) {
+        return `Error: sin destino de contacto para el canal "${channel}" de ${client.name}.`;
+      }
+
+      const results = await NotificationService.send({
+        orgId, channels: [channel as NotifChannel], to, message: content,
+        context: { subject: `Seguimiento — ${client.name}` },
+      });
+      const success  = results.some(r => r.success);
+
+      const [msg] = await db.insert(messagesTable).values({
+        orgId,
+        clientId: client.id,
+        content,
+        direction: "outbound",
+        channel,
+        isAi: true,
+        status: success ? "sent" : "failed",
+        autopilotTaskId: task.id,
+        autopilotStep: step,
+      }).returning();
+
+      const isLastStep = step >= intervals.length;
+      await db.update(autopilotTasksTable)
+        .set({
+          currentStep: step,
+          ...(isLastStep ? { enabled: false, pausedReason: null } : {}),
+          updatedAt: now,
+        })
+        .where(eq(autopilotTasksTable.id, task.id));
+
+      const followupColumn: Partial<Record<"followup1At" | "followup2At" | "followup3At", Date>> = {};
+      if (step === 1) followupColumn.followup1At = now;
+      else if (step === 2) followupColumn.followup2At = now;
+      else if (step === 3) followupColumn.followup3At = now;
+
+      await db.update(clientsTable)
+        .set({
+          ...followupColumn,
+          lastContactAt: now,
+          attemptCount: sql`${clientsTable.attemptCount} + 1`,
+          nextFollowupAt: isLastStep ? null : calcNextRunAt({ ...task, currentStep: step }),
+        })
+        .where(eq(clientsTable.id, client.id));
+
+      await db.insert(activityTable).values({
+        orgId,
+        clientId: client.id,
+        type: "autopilot_message_sent",
+        description: `📤 Seguimiento ${step} enviado por ${channel}.`,
+        clientName: client.name,
+      });
+      await logAuditSystem({
+        actorClerkId: `system:autopilot:${orgId}`,
+        action: "autopilot_message_sent",
+        resource: "message",
+        resourceId: msg!.id,
+        orgId,
+        details: { clientId: client.id, step, channel, success },
+        severity: "info",
+      });
+
+      return `Seguimiento ${step} enviado a ${client.name} por ${channel}. ${NotificationService.summarize(results)}`;
+    }
+
     default:
       return `Acción no reconocida: ${task.actionType}`;
   }
@@ -295,7 +495,10 @@ export async function runAutopilotTask(task: AutopilotTask): Promise<void> {
 
   try {
     const result = await executeAction(task, task.orgId);
-    const nextRunAt = calcNextRunAt(task.triggerType);
+    // Re-fetch — executeAction (client_followup) may have already updated
+    // currentStep/enabled/pausedReason directly, which calcNextRunAt needs.
+    const [freshTask] = await db.select().from(autopilotTasksTable).where(eq(autopilotTasksTable.id, task.id));
+    const nextRunAt = freshTask ? calcNextRunAt(freshTask) : null;
     await Promise.all([
       db.update(autopilotRunsTable)
         .set({ status: "success", completedAt: new Date(), resultSummary: result.slice(0, 500) })

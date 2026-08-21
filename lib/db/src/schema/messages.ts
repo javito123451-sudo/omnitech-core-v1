@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { organizationsTable } from "./organizations";
 import { clientsTable } from "./clients";
+import { autopilotTasksTable } from "./autopilot";
 
 export const messagesTable = pgTable("messages", {
   id: serial("id").primaryKey(),
@@ -12,6 +13,12 @@ export const messagesTable = pgTable("messages", {
     .references(() => organizationsTable.id, { onDelete: "cascade" }),
   clientId: integer("client_id")
     .references(() => clientsTable.id, { onDelete: "set null" }),
+  // Links this message back to the Autopilot task+step that produced it.
+  // Also the basis of the per-step idempotency check (never send the same
+  // step twice for the same task).
+  autopilotTaskId: integer("autopilot_task_id")
+    .references(() => autopilotTasksTable.id, { onDelete: "set null" }),
+  autopilotStep: integer("autopilot_step"),
   // Guest conversations (no CRM client linked): identity of the sender on the
   // external channel — phone number for WhatsApp, chat_id for Telegram — plus
   // their visible name/username when available. Both nullable; only used when

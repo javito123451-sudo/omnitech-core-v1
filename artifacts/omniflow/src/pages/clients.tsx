@@ -1,6 +1,6 @@
 import { useState, Component, type ErrorInfo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { AIQuoteModal } from "@/components/ai-quote-modal";
 import { WhatsAppModal } from "@/components/whatsapp-modal";
 import {
@@ -19,9 +19,15 @@ import {
 import {
   Search, Plus, Phone, Mail, Building2, Tag, FileText,
   DollarSign, X, Pencil, Trash2, ChevronRight, Clock, User,
-  MessageCircle, Bot, Send, Receipt, Link2, Check,
+  MessageCircle, Bot, Send, Receipt, Link2, Check, Zap, Pause,
+  History, Target, Instagram, Globe, MapPin, Pencil as EditIcon,
+  RefreshCw, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  COMMERCIAL_STATUSES, PRIORITY_LEVELS, getCommercialStatusDef, getPriorityDef,
+  deriveCommercialStatus, getAutopilotVisualState, AUTOPILOT_STATE_EMOJI, AUTOPILOT_STATE_LABEL,
+} from "@/lib/commercialStatus";
 
 // ── Error Boundary ──────────────────────────────────────────────────────────
 class ClientsErrorBoundary extends Component<
@@ -67,6 +73,48 @@ interface ClientRow {
   id: number; name: string; email: string | null; phone?: string | null;
   company?: string | null; status: string; tags?: string | null;
   notes?: string | null; value?: number | null; createdAt: string;
+  // ── Ficha comercial ampliada ────────────────────────────────────────────
+  commercialStatus?: string | null;
+  sector?: string | null;
+  contactPerson?: string | null;
+  companyPhone?: string | null;
+  companyEmail?: string | null;
+  instagram?: string | null;
+  website?: string | null;
+  location?: string | null;
+  firstContactAt?: string | null;
+  dolorPrincipal?: string | null;
+  recursoEnviado?: string | null;
+  fuenteLead?: string | null;
+  followup1At?: string | null;
+  followup2At?: string | null;
+  followup3At?: string | null;
+  nextFollowupAt?: string | null;
+  lastContactAt?: string | null;
+  attemptCount?: number | null;
+  preferredChannel?: string | null;
+  resultado?: string | null;
+  nextAction?: string | null;
+  priority?: string | null;
+  observaciones?: string | null;
+}
+
+// ── Client Autopilot — tipos ─────────────────────────────────────────────────
+interface AutopilotTaskRow {
+  id: number;
+  clientId: number | null;
+  enabled: boolean;
+  pausedReason: string | null;
+  currentStep: number;
+  nextRunAt: string | null;
+  triggerConfig: { intervalsDays?: number[]; mode?: "approval" | "autopilot"; preferredChannel?: string } | null;
+}
+interface PendingMessageRow {
+  id: number;
+  content: string;
+  channel: string | null;
+  autopilotStep: number | null;
+  status: string | null;
 }
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -138,6 +186,23 @@ function ClientFormModal({
     tags:    client?.tags    ?? "",
     notes:   client?.notes   ?? "",
     value:   client?.value != null ? String(client.value) : "",
+    commercialStatus: client?.commercialStatus ?? deriveCommercialStatus(client?.commercialStatus ?? null, client?.status ?? "lead"),
+    sector:           client?.sector           ?? "",
+    contactPerson:    client?.contactPerson    ?? "",
+    companyPhone:     client?.companyPhone     ?? "",
+    companyEmail:     client?.companyEmail     ?? "",
+    instagram:        client?.instagram        ?? "",
+    website:          client?.website          ?? "",
+    location:         client?.location         ?? "",
+    firstContactAt:   client?.firstContactAt ? client.firstContactAt.slice(0, 10) : "",
+    dolorPrincipal:   client?.dolorPrincipal   ?? "",
+    recursoEnviado:   client?.recursoEnviado   ?? "",
+    fuenteLead:       client?.fuenteLead       ?? "",
+    preferredChannel: client?.preferredChannel ?? "whatsapp",
+    resultado:        client?.resultado        ?? "",
+    nextAction:       client?.nextAction       ?? "",
+    priority:         client?.priority         ?? "medium",
+    observaciones:    client?.observaciones    ?? "",
   });
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -156,6 +221,23 @@ function ClientFormModal({
       tags:    form.tags.trim() || undefined,
       notes:   form.notes.trim() || undefined,
       value:   form.value ? Number(form.value) : undefined,
+      commercialStatus: form.commercialStatus || undefined,
+      sector:           form.sector.trim() || undefined,
+      contactPerson:    form.contactPerson.trim() || undefined,
+      companyPhone:     form.companyPhone.trim() || undefined,
+      companyEmail:     form.companyEmail.trim() || undefined,
+      instagram:        form.instagram.trim() || undefined,
+      website:          form.website.trim() || undefined,
+      location:         form.location.trim() || undefined,
+      firstContactAt:   form.firstContactAt || undefined,
+      dolorPrincipal:   form.dolorPrincipal.trim() || undefined,
+      recursoEnviado:   form.recursoEnviado.trim() || undefined,
+      fuenteLead:       form.fuenteLead.trim() || undefined,
+      preferredChannel: form.preferredChannel || undefined,
+      resultado:        form.resultado.trim() || undefined,
+      nextAction:       form.nextAction.trim() || undefined,
+      priority:         form.priority || undefined,
+      observaciones:    form.observaciones.trim() || undefined,
     };
 
     const invalidate = () => {
@@ -243,6 +325,85 @@ function ClientFormModal({
               placeholder="Observaciones sobre este cliente..."
               className="w-full rounded-md border border-border bg-background/60 text-white text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/60 resize-none"
             />
+          </div>
+
+          {/* ── Estado comercial ── */}
+          <div className="pt-2 border-t border-border/60">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Estado comercial</p>
+            <select
+              value={form.commercialStatus}
+              onChange={(e) => setForm((p) => ({ ...p, commercialStatus: e.target.value }))}
+              className="w-full h-9 rounded-md border border-border bg-background/60 text-white text-sm px-3 focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {COMMERCIAL_STATUSES.map((s) => (
+                <option key={s.id} value={s.id} className="bg-card">{s.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* ── Datos de empresa ── */}
+          <div className="pt-2 border-t border-border/60">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Datos de empresa</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label className={labelClass}>Sector</Label><Input value={form.sector} onChange={set("sector")} placeholder="Hostelería" className={inputClass} /></div>
+              <div className="space-y-1.5"><Label className={labelClass}>Persona de contacto</Label><Input value={form.contactPerson} onChange={set("contactPerson")} placeholder="María Gómez" className={inputClass} /></div>
+              <div className="space-y-1.5"><Label className={labelClass}>Teléfono empresa</Label><Input value={form.companyPhone} onChange={set("companyPhone")} placeholder="+34 900 000 000" className={inputClass} /></div>
+              <div className="space-y-1.5"><Label className={labelClass}>Email empresa</Label><Input value={form.companyEmail} onChange={set("companyEmail")} placeholder="info@empresa.com" className={inputClass} /></div>
+              <div className="space-y-1.5"><Label className={labelClass}>Instagram</Label><Input value={form.instagram} onChange={set("instagram")} placeholder="@empresa" className={inputClass} /></div>
+              <div className="space-y-1.5"><Label className={labelClass}>Web</Label><Input value={form.website} onChange={set("website")} placeholder="empresa.com" className={inputClass} /></div>
+              <div className="space-y-1.5 col-span-2"><Label className={labelClass}>Ubicación</Label><Input value={form.location} onChange={set("location")} placeholder="Madrid, España" className={inputClass} /></div>
+            </div>
+          </div>
+
+          {/* ── Prospección ── */}
+          <div className="pt-2 border-t border-border/60">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Prospección</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label className={labelClass}>Primer contacto</Label><Input type="date" value={form.firstContactAt} onChange={set("firstContactAt")} className={inputClass} /></div>
+              <div className="space-y-1.5"><Label className={labelClass}>Fuente del lead</Label><Input value={form.fuenteLead} onChange={set("fuenteLead")} placeholder="Instagram Ads" className={inputClass} /></div>
+              <div className="space-y-1.5 col-span-2"><Label className={labelClass}>Dolor principal</Label><Input value={form.dolorPrincipal} onChange={set("dolorPrincipal")} placeholder="Pocos clientes desde Instagram" className={inputClass} /></div>
+              <div className="space-y-1.5 col-span-2"><Label className={labelClass}>Recurso enviado</Label><Input value={form.recursoEnviado} onChange={set("recursoEnviado")} placeholder="Diagnóstico gratuito" className={inputClass} /></div>
+            </div>
+          </div>
+
+          {/* ── Resultado y próxima acción ── */}
+          <div className="pt-2 border-t border-border/60">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Resultado y próxima acción</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5 col-span-2"><Label className={labelClass}>Resultado</Label><Input value={form.resultado} onChange={set("resultado")} placeholder="Interesado, pide propuesta formal" className={inputClass} /></div>
+              <div className="space-y-1.5"><Label className={labelClass}>Próxima acción</Label><Input value={form.nextAction} onChange={set("nextAction")} placeholder="Llamar al cliente" className={inputClass} /></div>
+              <div className="space-y-1.5">
+                <Label className={labelClass}>Prioridad</Label>
+                <select
+                  value={form.priority}
+                  onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-background/60 text-white text-sm px-3 focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {PRIORITY_LEVELS.map((p) => (
+                    <option key={p.id} value={p.id} className="bg-card">{p.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5 col-span-2"><Label className={labelClass}>Canal preferido</Label>
+                <select
+                  value={form.preferredChannel}
+                  onChange={(e) => setForm((p) => ({ ...p, preferredChannel: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-background/60 text-white text-sm px-3 focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="whatsapp" className="bg-card">WhatsApp</option>
+                  <option value="telegram" className="bg-card">Telegram</option>
+                  <option value="email" className="bg-card">Email</option>
+                </select>
+              </div>
+              <div className="space-y-1.5 col-span-2"><Label className={labelClass}>Observaciones</Label>
+                <textarea
+                  value={form.observaciones}
+                  onChange={set("observaciones")}
+                  rows={2}
+                  className="w-full rounded-md border border-border bg-background/60 text-white text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/60 resize-none"
+                />
+              </div>
+            </div>
           </div>
 
           <DialogFooter className="gap-2 pt-1">
@@ -468,6 +629,350 @@ function MessagesTab({ clientId }: { clientId: number }) {
   );
 }
 
+// ── Historial Tab ────────────────────────────────────────────────────────────
+interface ActivityRow { id: number; type: string; description: string; createdAt: string }
+
+const ACTIVITY_ICON: Record<string, string> = {
+  autopilot_message_drafted: "🤖",
+  autopilot_message_sent: "📤",
+  autopilot_paused_reply: "💬",
+  autopilot_message_rejected: "🚫",
+  autopilot_message_approved: "✅",
+  client_added: "✨",
+  client_updated: "✏️",
+};
+
+function HistorialTab({ clientId }: { clientId: number }) {
+  const { data, isLoading } = useQuery<ActivityRow[]>({
+    queryKey: ["client-activity", clientId],
+    queryFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/clients/${clientId}/activity`);
+      if (!r.ok) throw new Error("No se pudo cargar el historial");
+      return r.json();
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2 pt-1">
+        {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-background/40 rounded-lg animate-pulse" />)}
+      </div>
+    );
+  }
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+        <History className="w-8 h-8 mb-2 opacity-20" />
+        <p className="text-sm">Sin actividad todavía</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+      {data.map((a) => (
+        <div key={a.id} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-background/40 border border-border/50">
+          <span className="text-base leading-none mt-0.5">{ACTIVITY_ICON[a.type] ?? "•"}</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-slate-200 leading-snug">{a.description}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {new Date(a.createdAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Prospección + Resultado Tab (solo lectura — se edita desde el formulario) ──
+function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-center gap-3 p-2.5 rounded-lg bg-background/40">
+      <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+        <Icon className="w-3.5 h-3.5 text-primary" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] text-muted-foreground">{label}</p>
+        <p className="text-sm text-white">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function ProspeccionResultadoTab({ client }: { client: ClientRow }) {
+  const hasAny = client.dolorPrincipal || client.recursoEnviado || client.fuenteLead || client.firstContactAt
+    || client.resultado || client.nextAction || client.observaciones;
+
+  if (!hasAny) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+        <Target className="w-8 h-8 mb-2 opacity-20" />
+        <p className="text-sm">Sin datos de prospección todavía</p>
+        <p className="text-xs mt-1 text-center px-4">Edita el cliente para añadir el dolor principal, recurso enviado, resultado...</p>
+      </div>
+    );
+  }
+
+  const priorityDef = getPriorityDef(client.priority);
+
+  return (
+    <div className="space-y-2 mt-2">
+      <InfoRow icon={Target} label="Dolor principal" value={client.dolorPrincipal} />
+      <InfoRow icon={FileText} label="Recurso enviado" value={client.recursoEnviado} />
+      <InfoRow icon={Tag} label="Fuente del lead" value={client.fuenteLead} />
+      {client.firstContactAt && (
+        <InfoRow
+          icon={Clock}
+          label="Primer contacto"
+          value={new Date(client.firstContactAt).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
+        />
+      )}
+      {client.resultado && (
+        <div className="mt-1">
+          <p className="text-[10px] text-muted-foreground mb-2 flex items-center gap-1"><FileText className="w-3 h-3" /> Resultado</p>
+          <div className="p-3 rounded-lg bg-background/40 border border-border/50">
+            <p className="text-sm text-slate-300 leading-relaxed">{client.resultado}</p>
+          </div>
+        </div>
+      )}
+      {(client.nextAction || client.priority) && (
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mt-1">
+          <p className="text-[10px] text-amber-400/70 font-medium mb-1 tracking-wider">PRÓXIMA ACCIÓN</p>
+          <p className="text-sm text-white font-medium">{client.nextAction || "Sin definir"}</p>
+          <Badge variant="outline" className={cn("mt-1.5 text-[10px]", priorityDef.color)}>
+            🔥 Prioridad {priorityDef.label.toLowerCase()}
+          </Badge>
+        </div>
+      )}
+      {client.observaciones && (
+        <div className="mt-1">
+          <p className="text-[10px] text-muted-foreground mb-2 flex items-center gap-1"><FileText className="w-3 h-3" /> Observaciones</p>
+          <div className="p-3 rounded-lg bg-background/40 border border-border/50">
+            <p className="text-sm text-slate-300 leading-relaxed">{client.observaciones}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Seguimiento + Autopilot Tab ──────────────────────────────────────────────
+function SeguimientoAutopilotTab({ client }: { client: ClientRow }) {
+  const qc = useQueryClient();
+  const queryKey = ["autopilot-client", client.id];
+  const { data, isLoading } = useQuery<{ task: AutopilotTaskRow | null; pendingMessage: PendingMessageRow | null }>({
+    queryKey,
+    queryFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/autopilot/clients/${client.id}`);
+      if (!r.ok) throw new Error("No se pudo cargar el estado de Autopilot");
+      return r.json();
+    },
+  });
+
+  const [intervalsInput, setIntervalsInput] = useState("3,4,7");
+  const [mode, setMode] = useState<"approval" | "autopilot">("approval");
+  const [channel, setChannel] = useState(client.preferredChannel ?? "whatsapp");
+  const [editingContent, setEditingContent] = useState<string | null>(null);
+  const [confirmReactivate, setConfirmReactivate] = useState(false);
+
+  const invalidate = () => qc.invalidateQueries({ queryKey });
+
+  const enableMutation = useMutation({
+    mutationFn: async () => {
+      const intervalsDays = intervalsInput.split(",").map((s) => Number(s.trim())).filter((n) => n > 0);
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/autopilot/clients/${client.id}/enable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intervalsDays: intervalsDays.length ? intervalsDays : [3, 4, 7], mode, preferredChannel: channel }),
+      });
+      if (!r.ok) throw new Error("Error al activar Autopilot");
+      return r.json();
+    },
+    onSuccess: () => { setConfirmReactivate(false); invalidate(); },
+  });
+
+  const disableMutation = useMutation({
+    mutationFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/autopilot/clients/${client.id}/disable`, { method: "POST" });
+      if (!r.ok) throw new Error("Error al pausar Autopilot");
+      return r.json();
+    },
+    onSuccess: invalidate,
+  });
+
+  const messageAction = useMutation({
+    mutationFn: async ({ id, action, content }: { id: number; action: "approve" | "reject" | "regenerate"; content?: string }) => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/autopilot/messages/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(content !== undefined ? { content } : {}),
+      });
+      if (!r.ok) throw new Error("Error al procesar el mensaje");
+      return r.json();
+    },
+    onSuccess: () => { setEditingContent(null); invalidate(); },
+  });
+
+  if (isLoading) {
+    return <div className="space-y-2 pt-1">{[1, 2].map((i) => <div key={i} className="h-16 bg-background/40 rounded-lg animate-pulse" />)}</div>;
+  }
+
+  const task = data?.task ?? null;
+  const pending = data?.pendingMessage ?? null;
+  const isActivated = task !== null;
+  const isPausedReply = task?.pausedReason === "reply";
+
+  return (
+    <div className="space-y-4 mt-2">
+      {!isActivated && (
+        <div className="p-3 rounded-lg bg-background/40 border border-border/50 space-y-3">
+          <p className="text-xs text-muted-foreground">Configura la secuencia de seguimiento automático para este cliente.</p>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Intervalos (días entre seguimientos, separados por coma)</Label>
+            <Input value={intervalsInput} onChange={(e) => setIntervalsInput(e.target.value)} placeholder="3,4,7" className="bg-background/60 border-border text-white text-sm h-9" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Modo</Label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMode("approval")}
+                className={cn("flex-1 py-1.5 rounded-md text-xs font-medium border transition-all",
+                  mode === "approval" ? "bg-primary text-white border-primary" : "bg-background/40 border-border text-muted-foreground")}
+              >
+                Modo Aprobación
+              </button>
+              <button
+                onClick={() => setMode("autopilot")}
+                className={cn("flex-1 py-1.5 rounded-md text-xs font-medium border transition-all",
+                  mode === "autopilot" ? "bg-primary text-white border-primary" : "bg-background/40 border-border text-muted-foreground")}
+              >
+                Modo Autopilot
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Canal</Label>
+            <select
+              value={channel}
+              onChange={(e) => setChannel(e.target.value)}
+              className="w-full h-9 rounded-md border border-border bg-background/60 text-white text-sm px-3"
+            >
+              <option value="whatsapp" className="bg-card">WhatsApp</option>
+              <option value="telegram" className="bg-card">Telegram</option>
+              <option value="email" className="bg-card">Email</option>
+            </select>
+          </div>
+          <Button
+            onClick={() => enableMutation.mutate()}
+            disabled={enableMutation.isPending}
+            className="w-full h-9 text-sm bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-500 font-bold"
+          >
+            <Zap className="w-3.5 h-3.5 mr-1.5" /> {enableMutation.isPending ? "Activando..." : "Activar Autopilot"}
+          </Button>
+        </div>
+      )}
+
+      {isActivated && isPausedReply && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 space-y-2">
+          <p className="text-sm text-red-400 font-medium flex items-center gap-1.5">💬 El cliente ha respondido. El Autopilot está pausado.</p>
+          <p className="text-xs text-muted-foreground">No se enviará ningún seguimiento automático mientras exista una conversación activa.</p>
+          {!confirmReactivate ? (
+            <Button variant="outline" size="sm" onClick={() => setConfirmReactivate(true)} className="border-border text-muted-foreground hover:text-white">
+              Reactivar manualmente
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setConfirmReactivate(false)} className="flex-1 border-border text-muted-foreground">Cancelar</Button>
+              <Button size="sm" onClick={() => enableMutation.mutate()} disabled={enableMutation.isPending} className="flex-1 bg-primary hover:bg-primary/90">
+                Sí, reactivar
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isActivated && !isPausedReply && task && (
+        <div className="p-3 rounded-lg bg-background/40 border border-border/50 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-white flex items-center gap-1.5">
+              {task.enabled ? "🟢 Autopilot activo" : "⚪ Autopilot pausado"}
+            </span>
+            <Button
+              variant="outline" size="sm"
+              onClick={() => task.enabled ? disableMutation.mutate() : enableMutation.mutate()}
+              disabled={disableMutation.isPending || enableMutation.isPending}
+              className="h-7 text-xs border-border text-muted-foreground hover:text-white"
+            >
+              {task.enabled ? <><Pause className="w-3 h-3 mr-1" /> Pausar</> : <><Zap className="w-3 h-3 mr-1" /> Reactivar</>}
+            </Button>
+          </div>
+          {task.enabled && (
+            <div className="text-xs text-muted-foreground space-y-0.5">
+              <p>Próxima acción: {task.nextRunAt ? new Date(task.nextRunAt).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—"} — Seguimiento {task.currentStep + 1}</p>
+              <p>Canal: <span className="capitalize">{task.triggerConfig?.preferredChannel ?? "whatsapp"}</span></p>
+              <p>Modo: {task.triggerConfig?.mode === "autopilot" ? "Autopilot (envío automático)" : "Aprobación manual"}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {pending && (
+        <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+          <p className="text-[10px] text-primary/70 font-medium uppercase tracking-wider">Mensaje preparado por Autopilot — Seguimiento {pending.autopilotStep}</p>
+          {editingContent !== null ? (
+            <textarea
+              value={editingContent}
+              onChange={(e) => setEditingContent(e.target.value)}
+              rows={4}
+              className="w-full rounded-md border border-border bg-background/60 text-white text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            />
+          ) : (
+            <p className="text-sm text-slate-200 leading-relaxed">{pending.content}</p>
+          )}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            {editingContent === null ? (
+              <Button size="sm" variant="outline" onClick={() => setEditingContent(pending.content)} className="border-border text-muted-foreground hover:text-white">
+                <EditIcon className="w-3.5 h-3.5 mr-1.5" /> Editar
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => setEditingContent(null)} className="border-border text-muted-foreground hover:text-white">
+                Cancelar edición
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={() => messageAction.mutate({ id: pending.id, action: "regenerate" })}
+              disabled={messageAction.isPending}
+              variant="outline"
+              className="border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-400"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Regenerar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => messageAction.mutate({ id: pending.id, action: "reject" })}
+              disabled={messageAction.isPending}
+              variant="outline"
+              className="border-red-500/30 bg-red-500/5 hover:bg-red-500/10 text-red-400"
+            >
+              <ThumbsDown className="w-3.5 h-3.5 mr-1.5" /> Rechazar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => messageAction.mutate({ id: pending.id, action: "approve", content: editingContent ?? undefined })}
+              disabled={messageAction.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <ThumbsUp className="w-3.5 h-3.5 mr-1.5" /> {messageAction.isPending ? "Enviando..." : "Enviar"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Client Profile Dialog ───────────────────────────────────────────────────
 function ClientProfileDialog({
   client, onEdit, onClose,
@@ -479,9 +984,22 @@ function ClientProfileDialog({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showQuote, setShowQuote]         = useState(false);
   const [showWhatsApp, setShowWhatsApp]   = useState(false);
-  const [activeTab, setActiveTab]         = useState<"info" | "messages" | "finanzas">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "prospeccion" | "autopilot" | "messages" | "historial" | "finanzas">("info");
   const [portalState, setPortalState] = useState<"idle" | "loading" | "copied" | "sent">("idle");
   const tags = parseTags(client.tags);
+
+  // Compartido con SeguimientoAutopilotTab vía el mismo queryKey — se pinta
+  // siempre visible encima de las pestañas, no solo dentro de la pestaña.
+  const { data: autopilotData } = useQuery<{ task: AutopilotTaskRow | null; pendingMessage: PendingMessageRow | null }>({
+    queryKey: ["autopilot-client", client.id],
+    queryFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/autopilot/clients/${client.id}`);
+      if (!r.ok) throw new Error("No se pudo cargar el estado de Autopilot");
+      return r.json();
+    },
+  });
+  const autopilotState = getAutopilotVisualState(autopilotData?.task ?? null, !!autopilotData?.pendingMessage);
+  const commercialStatusDef = getCommercialStatusDef(deriveCommercialStatus(client.commercialStatus, client.status));
 
   const handlePortalLink = async () => {
     setPortalState("loading");
@@ -538,53 +1056,85 @@ function ClientProfileDialog({
                 <Building2 className="w-3 h-3 shrink-0" /> {client.company}
               </p>
             )}
-            <Badge variant="outline" className={cn("mt-2 text-xs", STATUS_COLOR[client.status])}>
-              {STATUS_LABEL[client.status] ?? client.status}
-            </Badge>
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <Badge variant="outline" className={cn("text-xs", commercialStatusDef.color)}>
+                {commercialStatusDef.label}
+              </Badge>
+              {client.priority && client.priority !== "medium" && (
+                <Badge variant="outline" className={cn("text-xs", getPriorityDef(client.priority).color)}>
+                  🔥 {getPriorityDef(client.priority).label}
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Tab selector */}
-        <div className="flex gap-1 mt-3 bg-background/30 p-1 rounded-lg border border-border/50">
-          <button
-            onClick={() => setActiveTab("info")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all",
-              activeTab === "info"
-                ? "bg-card text-white shadow-sm"
-                : "text-muted-foreground hover:text-white"
-            )}
-          >
-            <User className="w-3 h-3" /> Info
-          </button>
-          <button
-            onClick={() => setActiveTab("messages")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all",
-              activeTab === "messages"
-                ? "bg-card text-white shadow-sm"
-                : "text-muted-foreground hover:text-white"
-            )}
-          >
-            <MessageCircle className="w-3 h-3" /> Mensajes
-          </button>
-          <button
-            onClick={() => setActiveTab("finanzas")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all",
-              activeTab === "finanzas"
-                ? "bg-card text-white shadow-sm"
-                : "text-muted-foreground hover:text-white"
-            )}
-          >
-            <Receipt className="w-3 h-3" /> Finanzas
+        {/* ── Autopilot chip + Próxima acción — siempre visibles, nunca dentro de una pestaña ── */}
+        <div className="mt-3 flex items-center justify-between gap-2 p-2.5 rounded-lg bg-background/40 border border-border/50">
+          <span className="text-xs font-medium text-white flex items-center gap-1.5">
+            {AUTOPILOT_STATE_EMOJI[autopilotState]} {AUTOPILOT_STATE_LABEL[autopilotState]}
+          </span>
+          <button onClick={() => setActiveTab("autopilot")} className="text-[11px] text-primary hover:underline">
+            Ver detalle →
           </button>
         </div>
+        {client.nextAction && (
+          <div className="mt-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <p className="text-[9px] text-amber-400/70 font-medium tracking-wider">PRÓXIMA ACCIÓN</p>
+            <p className="text-xs text-white font-medium mt-0.5">{client.nextAction}</p>
+          </div>
+        )}
+
+        {/* Tab selector — horizontalmente scrollable para móvil (6 pestañas) */}
+        <div className="flex gap-1 mt-3 bg-background/30 p-1 rounded-lg border border-border/50 overflow-x-auto scrollbar-none">
+          {([
+            { key: "info" as const, label: "Info", icon: User },
+            { key: "prospeccion" as const, label: "Prospección", icon: Target },
+            { key: "autopilot" as const, label: "Seguimiento", icon: Zap },
+            { key: "messages" as const, label: "Mensajes", icon: MessageCircle },
+            { key: "historial" as const, label: "Historial", icon: History },
+            { key: "finanzas" as const, label: "Finanzas", icon: Receipt },
+          ]).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={cn(
+                "flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0",
+                activeTab === key
+                  ? "bg-card text-white shadow-sm"
+                  : "text-muted-foreground hover:text-white"
+              )}
+            >
+              <Icon className="w-3 h-3" /> {label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── TAB: Prospección + Resultado ── */}
+        {activeTab === "prospeccion" && (
+          <div className="mt-3">
+            <ProspeccionResultadoTab client={client} />
+          </div>
+        )}
+
+        {/* ── TAB: Seguimiento + Autopilot ── */}
+        {activeTab === "autopilot" && (
+          <div className="mt-3">
+            <SeguimientoAutopilotTab client={client} />
+          </div>
+        )}
 
         {/* ── TAB: Messages ── */}
         {activeTab === "messages" && (
           <div className="mt-3">
             <MessagesTab clientId={client.id} />
+          </div>
+        )}
+
+        {/* ── TAB: Historial ── */}
+        {activeTab === "historial" && (
+          <div className="mt-3">
+            <HistorialTab clientId={client.id} />
           </div>
         )}
 
@@ -642,10 +1192,26 @@ function ClientProfileDialog({
             </div>
             <div>
               <p className="text-[10px] text-muted-foreground">Último contacto</p>
-              <p className="text-sm text-white"><RelativeTime date={client.createdAt} /></p>
+              <p className="text-sm text-white">
+                <RelativeTime date={client.lastContactAt ?? client.createdAt} />
+              </p>
             </div>
           </div>
         </div>
+
+        {/* Datos de empresa */}
+        {(client.sector || client.contactPerson || client.companyPhone || client.companyEmail || client.instagram || client.website || client.location) && (
+          <div className="space-y-2 mt-2">
+            <p className="text-[10px] text-muted-foreground flex items-center gap-1"><Building2 className="w-3 h-3" /> Datos de empresa</p>
+            <InfoRow icon={User} label="Persona de contacto" value={client.contactPerson} />
+            <InfoRow icon={Building2} label="Sector" value={client.sector} />
+            <InfoRow icon={Phone} label="Teléfono empresa" value={client.companyPhone} />
+            <InfoRow icon={Mail} label="Email empresa" value={client.companyEmail} />
+            <InfoRow icon={Instagram} label="Instagram" value={client.instagram} />
+            <InfoRow icon={Globe} label="Web" value={client.website} />
+            <InfoRow icon={MapPin} label="Ubicación" value={client.location} />
+          </div>
+        )}
 
         {/* Tags */}
         {tags.length > 0 && (
@@ -948,11 +1514,18 @@ function ClientCard({ client, onView }: { client: ClientRow; onView: () => void 
                   </Badge>
                 </div>
 
-                {client.company && (
-                  <div className="flex items-center gap-1 mt-0.5">
+                {(client.company || client.sector) && (
+                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                     <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
-                    <p className="text-xs text-muted-foreground truncate">{client.company}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {client.company}{client.company && client.sector ? " · " : ""}{client.sector}
+                    </p>
                   </div>
+                )}
+                {client.dolorPrincipal && (
+                  <p className="text-[11px] text-muted-foreground/80 truncate mt-0.5 max-w-[220px]">
+                    🎯 {client.dolorPrincipal}
+                  </p>
                 )}
               </div>
 
@@ -998,9 +1571,24 @@ function ClientCard({ client, onView }: { client: ClientRow; onView: () => void 
               )}
               <div className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
                 <Clock className="w-3 h-3" />
-                <RelativeTime date={client.createdAt} />
+                <RelativeTime date={client.lastContactAt ?? client.createdAt} />
               </div>
             </div>
+
+            {(client.nextAction || client.nextFollowupAt) && (
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                {client.nextAction && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 truncate max-w-[160px]">
+                    {client.priority === "urgent" || client.priority === "high" ? "🔥 " : "📌 "}{client.nextAction}
+                  </span>
+                )}
+                {client.nextFollowupAt && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary/80 border border-primary/20">
+                    🟢 Seguimiento {new Date(client.nextFollowupAt).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" })}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0 self-center" />

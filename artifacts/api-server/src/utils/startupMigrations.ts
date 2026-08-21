@@ -1141,6 +1141,51 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-AW: leads table ensured (captación pública)");
 
+    // ── FIX-AX: CRM ficha comercial ampliada + Autopilot por cliente ────────────
+    // Todas las columnas son nullable (o con DEFAULT) — clientes/tareas/mensajes
+    // existentes quedan intactos, sin backfill necesario.
+    await db.execute(sql`
+      ALTER TABLE clients
+        ADD COLUMN IF NOT EXISTS commercial_status TEXT,
+        ADD COLUMN IF NOT EXISTS sector TEXT,
+        ADD COLUMN IF NOT EXISTS contact_person TEXT,
+        ADD COLUMN IF NOT EXISTS company_phone TEXT,
+        ADD COLUMN IF NOT EXISTS company_email TEXT,
+        ADD COLUMN IF NOT EXISTS instagram TEXT,
+        ADD COLUMN IF NOT EXISTS website TEXT,
+        ADD COLUMN IF NOT EXISTS location TEXT,
+        ADD COLUMN IF NOT EXISTS first_contact_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS dolor_principal TEXT,
+        ADD COLUMN IF NOT EXISTS recurso_enviado TEXT,
+        ADD COLUMN IF NOT EXISTS fuente_lead TEXT,
+        ADD COLUMN IF NOT EXISTS followup1_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS followup2_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS followup3_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS next_followup_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS preferred_channel TEXT,
+        ADD COLUMN IF NOT EXISTS resultado TEXT,
+        ADD COLUMN IF NOT EXISTS next_action TEXT,
+        ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'medium',
+        ADD COLUMN IF NOT EXISTS observaciones TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE activity ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE
+    `);
+    await db.execute(sql`
+      ALTER TABLE autopilot_tasks
+        ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+        ADD COLUMN IF NOT EXISTS current_step INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS paused_reason TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS autopilot_task_id INTEGER REFERENCES autopilot_tasks(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS autopilot_step INTEGER
+    `);
+    logger.info("[Migration] ✅ FIX-AX: CRM ficha comercial + Autopilot-por-cliente columns ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

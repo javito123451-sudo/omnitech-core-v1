@@ -24,3 +24,4 @@ export type {
 // Auto-register adapters
 import "./adapters/whatsappAdapter";
 import "./adapters/telegramAdapter";
+import "./adapters/emailAdapter";

@@ -47,7 +47,15 @@ export async function getActiveChannels(orgId: number): Promise<string[]> {
         inArray(orgIntegrationsTable.status, ["connected", "production"]),
       ),
     );
-  return rows.map(r => r.slug);
+  const slugs = rows.map(r => r.slug);
+  // "email" es una capacidad de plataforma (RESEND_API_KEY compartido, ver
+  // hub/adapters/emailAdapter.ts) — no depende de una fila org_integrations
+  // por workspace como WhatsApp/Telegram, así que se añade aquí si el
+  // servidor tiene el remitente configurado, sin importar el org.
+  if (process.env["RESEND_API_KEY"] && !slugs.includes("email")) {
+    slugs.push("email");
+  }
+  return slugs;
 }
 
 // ── Send via a single channel slug ────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { pgTable, serial, text, boolean, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
 import { organizationsTable } from "./organizations";
+import { clientsTable } from "./clients";
 
 export const autopilotTasksTable = pgTable("autopilot_tasks", {
   id:            serial("id").primaryKey(),
@@ -12,6 +13,12 @@ export const autopilotTasksTable = pgTable("autopilot_tasks", {
   actionConfig:  jsonb("action_config").default({}),
   lastRunAt:     timestamp("last_run_at"),
   nextRunAt:     timestamp("next_run_at"),
+  // ── Per-client follow-up sequence support (triggerType "client_followup_sequence") ──
+  // When clientId is set, this row IS one client's Autopilot config/state — not
+  // an org-wide bulk task. NULL for every pre-existing org-wide task.
+  clientId:      integer("client_id").references(() => clientsTable.id, { onDelete: "cascade" }),
+  currentStep:   integer("current_step").notNull().default(0),
+  pausedReason:  text("paused_reason"), // "reply" | "manual" | null
   createdAt:     timestamp("created_at").defaultNow().notNull(),
   updatedAt:     timestamp("updated_at").defaultNow().notNull(),
 });

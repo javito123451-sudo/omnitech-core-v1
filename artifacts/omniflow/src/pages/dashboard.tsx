@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, TrendingUp, Calendar, Zap, Activity, Clock, ChevronRight, Bell, MapPin, CheckCircle2, Timer } from "lucide-react";
+import { Users, TrendingUp, Calendar, Zap, Activity, Clock, ChevronRight, Bell, MapPin, CheckCircle2, Timer, Bot, MessageSquareReply, Send, PauseCircle, Target } from "lucide-react";
 import {
   useGetDashboardStats,
   useGetRevenueStats,
@@ -8,6 +8,8 @@ import {
   useListAppointments,
 } from "@workspace/api-client-react";
 import type { Appointment } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import { authFetch } from "@/lib/authFetch";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -25,6 +27,10 @@ const ACTIVITY_LABELS: Record<string, (clientName?: string | null) => string> = 
   message_sent:          (n) => `Mensaje enviado${n ? ` a ${n}` : ""}`,
   client_updated:        (n) => `Cliente actualizado${n ? `: ${n}` : ""}`,
   appointment_completed: (n) => `Cita completada${n ? ` con ${n}` : ""}`,
+  autopilot_message_drafted: (n) => `🤖 Autopilot generó un mensaje${n ? ` para ${n}` : ""}`,
+  autopilot_message_sent:    (n) => `📤 Seguimiento enviado${n ? ` a ${n}` : ""}`,
+  autopilot_paused_reply:    (n) => `💬 Cliente respondió${n ? ` (${n})` : ""} — Autopilot pausado`,
+  autopilot_message_rejected: (n) => `🚫 Mensaje de Autopilot rechazado${n ? ` (${n})` : ""}`,
 };
 function activityLabel(type: string, clientName?: string | null) {
   return ACTIVITY_LABELS[type]?.(clientName) ?? type;
@@ -117,6 +123,9 @@ export default function Dashboard() {
         minsToNext={minsToNext}
         onNavigate={() => setLocation("/calendar")}
       />
+
+      {/* ── OMNITECH AUTOPILOT ── */}
+      <AutopilotSummaryCard onNavigate={() => setLocation("/clients")} />
 
       {/* ── Charts row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-7 gap-3 md:gap-4">
@@ -390,6 +399,90 @@ function TodayWidget({ todayAppts, nextAppt, minsToNext, onNavigate }: {
             </button>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── OMNITECH AUTOPILOT — resumen del Client Autopilot ──────────────────────────
+interface AutopilotSummary {
+  autopilotsActivos: number;
+  seguimientosParaHoy: number;
+  respuestasRecibidas: number;
+  mensajesEnviados: number;
+  autopilotsPausados: number;
+  oportunidadesActivas: number;
+  accionesDeHoy: { clientId: number | null; clientName: string | null; step: number; nextRunAt: string | null }[];
+}
+
+function AutopilotSummaryCard({ onNavigate }: { onNavigate: () => void }) {
+  const { data, isLoading, isError } = useQuery<AutopilotSummary>({
+    queryKey: ["autopilot-summary"],
+    queryFn: async () => {
+      const r = await authFetch(`${import.meta.env.BASE_URL}api/autopilot/summary`);
+      if (!r.ok) throw new Error("No se pudo cargar el resumen de Autopilot");
+      return r.json();
+    },
+    retry: false,
+  });
+
+  // Módulo "automations" no habilitado para este workspace, u otro error —
+  // no mostrar la tarjeta en vez de quedar en skeleton infinito.
+  if (isError) return null;
+
+  if (isLoading || !data) {
+    return <Card className="bg-card border-border h-24 animate-pulse" />;
+  }
+
+  const stats = [
+    { label: "Autopilots activos", value: data.autopilotsActivos, icon: Bot, color: "text-emerald-400" },
+    { label: "Seguimientos hoy", value: data.seguimientosParaHoy, icon: Target, color: "text-blue-400" },
+    { label: "Respuestas recibidas", value: data.respuestasRecibidas, icon: MessageSquareReply, color: "text-cyan-400" },
+    { label: "Mensajes enviados", value: data.mensajesEnviados, icon: Send, color: "text-violet-400" },
+    { label: "Pausados", value: data.autopilotsPausados, icon: PauseCircle, color: "text-slate-400" },
+    { label: "Oportunidades activas", value: data.oportunidadesActivas, icon: Zap, color: "text-amber-400" },
+  ];
+
+  return (
+    <Card className="bg-card border-border overflow-hidden">
+      <CardHeader className="pb-3 pt-3 px-4 border-b border-border">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm md:text-base flex items-center gap-2">
+            <div className="w-5 h-5 rounded-md bg-primary/20 border border-primary/30 flex items-center justify-center">
+              <Bot className="w-3 h-3 text-primary" />
+            </div>
+            OmniTech Autopilot
+          </CardTitle>
+          <button onClick={onNavigate} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors touch-manipulation py-1">
+            Ver clientes <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pt-3 pb-4">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 mb-3">
+          {stats.map((s) => (
+            <div key={s.label} className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-center">
+              <s.icon className={cn("w-3.5 h-3.5 mx-auto mb-1", s.color)} />
+              <p className="text-sm font-bold text-white leading-none">{s.value}</p>
+              <p className="text-[9px] text-slate-500 mt-1 leading-tight">{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {data.accionesDeHoy.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Acciones de hoy</p>
+            {data.accionesDeHoy.slice(0, 5).map((a, i) => (
+              <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <span className="text-[10px] text-slate-500 shrink-0">
+                  {a.nextRunAt ? format(parseISO(a.nextRunAt), "HH:mm") : "—"}
+                </span>
+                <span className="text-xs text-white truncate flex-1">{a.clientName ?? "Cliente"}</span>
+                <span className="text-[10px] text-primary shrink-0">Seguimiento {a.step}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -246,7 +246,10 @@ export const IntegrationManager = {
     }
 
     const row = await getOrgIntegration(orgId, slug);
-    if (!row) {
+    // "email" es una capacidad de plataforma (RESEND_API_KEY compartido, ver
+    // hub/adapters/emailAdapter.ts) — no requiere una fila org_integrations
+    // por workspace como sí necesitan WhatsApp/Telegram.
+    if (!row && slug !== "email") {
       const err = `Integration "${slug}" not configured for org ${orgId}`;
       await logEvent({
         orgId, integrationSlug: slug, direction: "outbound",
@@ -256,7 +259,7 @@ export const IntegrationManager = {
       return { success: false, error: err };
     }
 
-    const ctx = buildContext(row);
+    const ctx = row ? buildContext(row) : { orgId, credentials: {}, config: {} };
     const t0 = Date.now();
     const result = await adapter.send(ctx, payload);
     const durationMs = Date.now() - t0;

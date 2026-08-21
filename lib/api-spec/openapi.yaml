@@ -55,6 +55,26 @@ paths:
           in: query
           schema:
             type: integer
+        - name: commercialStatus
+          in: query
+          schema:
+            type: string
+        - name: sector
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+        - name: autopilotActive
+          in: query
+          schema:
+            type: boolean
+        - name: hasFollowupPending
+          in: query
+          schema:
+            type: boolean
       responses:
         "200":
           description: List of clients
@@ -138,6 +158,27 @@ paths:
       responses:
         "204":
           description: Deleted
+
+  /clients/{id}/activity:
+    get:
+      operationId: getClientActivity
+      tags: [clients]
+      summary: Activity feed for a single client (Autopilot events, edits, etc.)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of activity entries for this client
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClientActivity"
 
   # ── Appointments ──────────────────────────────────────────────────────────
   /appointments:
@@ -396,6 +437,53 @@ components:
           type: ["string", "null"]
         value:
           type: ["number", "null"]
+        commercialStatus:
+          type: ["string", "null"]
+        sector:
+          type: ["string", "null"]
+        contactPerson:
+          type: ["string", "null"]
+        companyPhone:
+          type: ["string", "null"]
+        companyEmail:
+          type: ["string", "null"]
+        instagram:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        firstContactAt:
+          type: ["string", "null"]
+        dolorPrincipal:
+          type: ["string", "null"]
+        recursoEnviado:
+          type: ["string", "null"]
+        fuenteLead:
+          type: ["string", "null"]
+        followup1At:
+          type: ["string", "null"]
+        followup2At:
+          type: ["string", "null"]
+        followup3At:
+          type: ["string", "null"]
+        nextFollowupAt:
+          type: ["string", "null"]
+        lastContactAt:
+          type: ["string", "null"]
+        attemptCount:
+          type: integer
+        preferredChannel:
+          type: ["string", "null"]
+        resultado:
+          type: ["string", "null"]
+        nextAction:
+          type: ["string", "null"]
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        observaciones:
+          type: ["string", "null"]
         createdAt:
           type: string
 
@@ -420,6 +508,53 @@ components:
           type: string
         value:
           type: number
+        commercialStatus:
+          type: string
+        sector:
+          type: string
+        contactPerson:
+          type: string
+        companyPhone:
+          type: string
+        companyEmail:
+          type: string
+        instagram:
+          type: string
+        website:
+          type: string
+        location:
+          type: string
+        firstContactAt:
+          type: string
+        dolorPrincipal:
+          type: string
+        recursoEnviado:
+          type: string
+        fuenteLead:
+          type: string
+        followup1At:
+          type: string
+        followup2At:
+          type: string
+        followup3At:
+          type: string
+        nextFollowupAt:
+          type: string
+        lastContactAt:
+          type: string
+        attemptCount:
+          type: integer
+        preferredChannel:
+          type: string
+        resultado:
+          type: string
+        nextAction:
+          type: string
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        observaciones:
+          type: string
 
     ClientUpdate:
       type: object
@@ -441,6 +576,66 @@ components:
           type: string
         value:
           type: number
+        commercialStatus:
+          type: string
+        sector:
+          type: string
+        contactPerson:
+          type: string
+        companyPhone:
+          type: string
+        companyEmail:
+          type: string
+        instagram:
+          type: string
+        website:
+          type: string
+        location:
+          type: string
+        firstContactAt:
+          type: string
+        dolorPrincipal:
+          type: string
+        recursoEnviado:
+          type: string
+        fuenteLead:
+          type: string
+        followup1At:
+          type: string
+        followup2At:
+          type: string
+        followup3At:
+          type: string
+        nextFollowupAt:
+          type: string
+        lastContactAt:
+          type: string
+        attemptCount:
+          type: integer
+        preferredChannel:
+          type: string
+        resultado:
+          type: string
+        nextAction:
+          type: string
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        observaciones:
+          type: string
+
+    ClientActivity:
+      type: object
+      required: [id, type, description, createdAt]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
 
     # ── Appointment ──────────────────────────────────────────────────────────
     Appointment:

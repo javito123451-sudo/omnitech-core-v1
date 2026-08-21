@@ -8,6 +8,7 @@ import {
 import { eq, and, desc, asc, isNotNull, isNull, ne, ilike, gte, inArray } from "drizzle-orm";
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 import { transcribeAudio } from "../utils/transcribeAudio";
+import { pauseAutopilotOnReply } from "../utils/autopilotPause";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Ava V2 imports
@@ -1040,6 +1041,13 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
   }).returning({ id: messagesTable.id });
   savedInboundId = savedInbound?.id;
   console.log(`[TG Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client?.id ?? "null (anónimo)"}`);
+
+  // ── Client Autopilot: regla crítica — el cliente respondió, pausar de inmediato ──
+  if (client) {
+    pauseAutopilotOnReply(orgId, client.id).catch((err) =>
+      console.error("[TG] pauseAutopilotOnReply error:", err),
+    );
+  }
 
   if (client) {
     // ── Phase 3: Lead Intelligence detection ─────────────────────────────────

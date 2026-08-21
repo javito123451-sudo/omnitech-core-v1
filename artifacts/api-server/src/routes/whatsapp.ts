@@ -31,6 +31,7 @@ import {
 import { logAuditSystem } from "../utils/auditLogger";
 import { transcribeAudio } from "../utils/transcribeAudio";
 import { IntegrationManager } from "../hub";
+import { pauseAutopilotOnReply } from "../utils/autopilotPause";
 
 export const whatsappRouter = Router();
 export const whatsappWebhookRouter = Router();
@@ -578,6 +579,13 @@ async function processIncomingMessage(payload: {
   }).returning({ id: messagesTable.id });
   savedInboundId = savedInbound?.id;
   console.log(`[WA Memoria] Inbound saved: msgId=${savedInboundId ?? "?"} | clientId=${client?.id ?? "null (anónimo)"}`);
+
+  // ── Client Autopilot: regla crítica — el cliente respondió, pausar de inmediato ──
+  if (client) {
+    pauseAutopilotOnReply(orgId, client.id).catch((err) =>
+      console.error("[WA] pauseAutopilotOnReply error:", err),
+    );
+  }
 
   // ── Phase 3: Lead Intelligence — solo si existe cliente CRM vinculado ──────
   if (client) {

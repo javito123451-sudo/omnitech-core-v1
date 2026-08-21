@@ -9,6 +9,22 @@ function getResend(): Resend | null {
   return _client;
 }
 
+// ── Envío genérico (usado por el Hub email adapter — ver hub/adapters/emailAdapter.ts) ──
+// A diferencia de sendPortalEmail/sendInvitationEmail (plantillas fijas), esta
+// función acepta cualquier asunto/cuerpo — la usa el Autopilot por cliente para
+// enviar seguimientos comerciales generados por IA. Remitente compartido de la
+// plataforma (RESEND_API_KEY único) — no hay remitente propio por organización.
+export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) {
+    console.warn("[Email] RESEND_API_KEY no configurado — envío omitido.");
+    return false;
+  }
+  const from = process.env["EMAIL_FROM"] ?? "OmniTech Core <onboarding@resend.dev>";
+  const result = await resend.emails.send({ from, to, subject, html });
+  return !result.error;
+}
+
 export interface PortalEmailParams {
   to:        string;
   clientName: string;
