@@ -1,2 +1,44 @@
 User-agent: *
 Allow: /
+
+# Zonas privadas del CRM — requieren autenticación (Googlebot solo vería una
+# pantalla de login, sin contenido real). Se bloquean para no desperdiciar
+# presupuesto de rastreo, no porque contengan datos sensibles indexables.
+Disallow: /dashboard
+Disallow: /clients
+Disallow: /my-clients
+Disallow: /my-prospects
+Disallow: /my-customers
+Disallow: /my-commissions
+Disallow: /pipeline
+Disallow: /onboarding
+Disallow: /support
+Disallow: /assistant
+Disallow: /calendar
+Disallow: /statistics
+Disallow: /settings
+Disallow: /memory
+Disallow: /quotes
+Disallow: /executive
+Disallow: /executive-dashboard
+Disallow: /integrations
+Disallow: /telegram-inbox
+Disallow: /whatsapp-inbox
+Disallow: /knowledge-base
+Disallow: /import
+Disallow: /automations
+Disallow: /accounting
+Disallow: /tax
+Disallow: /marketing
+Disallow: /ads
+Disallow: /leads
+Disallow: /a-medida-panel
+Disallow: /time
+Disallow: /plans
+Disallow: /control-center
+Disallow: /manual
+Disallow: /setup
+Disallow: /no-access
+Disallow: /api/
+
+Sitemap: https://hogar.omnitech-core.com/sitemap.xml

@@ -1,0 +1,120 @@
+/* Hoja de estilos compartida por las páginas SEO de servicio de A Medida
+   (montaje-cocinas-madrid, montaje-muebles-madrid, portes-madrid,
+   mudanzas-madrid). No la usa /a-medida/index.html — esa página mantiene su
+   CSS inline original, sin tocar, para no arriesgar su diseño ya probado. */
+:root{
+  --ink:#0B0F1C;
+  --ink-2:#131A2E;
+  --paper:#FAF8F4;
+  --paper-2:#F2EEE6;
+  --blue:#3A5FE8;
+  --gold:#C9A24A;
+  --gold-soft:#E8D9B0;
+  --grey:#727888;
+  --line: rgba(255,255,255,0.10);
+  --line-dark: rgba(11,15,28,0.10);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html{scroll-behavior:smooth;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'Inter', sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{text-decoration:none; color:inherit;}
+img{display:block; max-width:100%;}
+
+header{
+  position:sticky; top:0; z-index:100;
+  display:flex; justify-content:space-between; align-items:center;
+  padding:22px 6vw;
+  background:rgba(11,15,28,0.85);
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.logo{ font-family:'Fraunces', serif; font-weight:600; font-size:22px; color:#fff; letter-spacing:-0.01em; }
+.logo .dot{color:var(--gold);}
+nav{display:flex; gap:24px; align-items:center;}
+nav a{ font-size:14px; color:rgba(255,255,255,0.72); font-weight:500; transition:color .15s ease; }
+nav a:hover{color:#fff;}
+.nav-cta{
+  background:var(--gold); color:var(--ink); font-weight:700; font-size:13.5px;
+  padding:11px 22px; border-radius:3px; transition:background .15s ease;
+}
+.nav-cta:hover{background:var(--gold-soft);}
+
+.hero{
+  background: radial-gradient(ellipse 900px 500px at 15% 0%, rgba(58,95,232,0.30), transparent 60%), var(--ink);
+  color:#fff; padding:64px 6vw 56px;
+}
+.hero-inner{ max-width:820px; margin:0 auto; }
+.hero-eyebrow{
+  display:inline-flex; align-items:center; gap:10px; font-size:12.5px; font-weight:600;
+  letter-spacing:0.08em; text-transform:uppercase; color:var(--gold-soft); margin-bottom:22px;
+}
+.hero-eyebrow::before{content:''; width:26px; height:1px; background:var(--gold);}
+.hero h1{
+  font-family:'Fraunces', serif; font-weight:600; font-size:clamp(32px, 4.4vw, 52px);
+  line-height:1.1; letter-spacing:-0.015em; margin-bottom:20px;
+}
+.hero p{ font-size:17px; line-height:1.65; color:rgba(255,255,255,0.72); max-width:600px; margin-bottom:28px; }
+.cta-primary{
+  display:inline-block; background:var(--gold); color:var(--ink); font-weight:700; font-size:15px;
+  padding:16px 30px; border-radius:3px; box-shadow:0 14px 30px rgba(201,162,74,0.22);
+  transition:transform .18s ease, box-shadow .18s ease;
+}
+.cta-primary:hover{transform:translateY(-2px); box-shadow:0 18px 36px rgba(201,162,74,0.3);}
+
+main{ max-width:820px; margin:0 auto; padding:56px 6vw; }
+main section{ margin-bottom:52px; }
+main h2{
+  font-family:'Fraunces', serif; font-weight:600; font-size:clamp(24px,3vw,32px);
+  letter-spacing:-0.01em; margin-bottom:18px; color:var(--ink);
+}
+main p{ font-size:16px; line-height:1.7; color:#2b2f3a; margin-bottom:14px; }
+.benefits{ list-style:none; display:grid; gap:12px; }
+.benefits li{
+  display:flex; align-items:flex-start; gap:12px; font-size:15.5px; line-height:1.6; color:#2b2f3a;
+  padding:14px 16px; background:#fff; border:1px solid var(--line-dark); border-radius:12px;
+}
+.benefits li .ic{color:var(--blue); font-weight:700; flex-shrink:0;}
+
+.steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:8px; }
+.step{ text-align:center; }
+.step-num{
+  width:44px; height:44px; border-radius:50%; background:var(--ink); color:var(--gold-soft);
+  font-family:'Fraunces', serif; font-weight:600; font-size:17px;
+  display:flex; align-items:center; justify-content:center; margin:0 auto 14px;
+}
+.step h3{ font-family:'Fraunces', serif; font-weight:600; font-size:16px; margin-bottom:6px; }
+.step p{ font-size:13.5px; color:var(--grey); line-height:1.55; margin:0; }
+@media(max-width:700px){ .steps{grid-template-columns:1fr; gap:28px;} }
+
+.faq-item{ padding:18px 0; border-top:1px solid var(--line-dark); }
+.faq-item:last-child{ border-bottom:1px solid var(--line-dark); }
+.faq-item h3{ font-size:15.5px; font-weight:600; color:var(--ink); margin-bottom:8px; }
+.faq-item p{ font-size:14.5px; color:var(--grey); line-height:1.6; margin:0; }
+
+.cta-band{
+  background:var(--ink-2); color:#fff; border-radius:20px; padding:40px 32px; text-align:center;
+}
+.cta-band h2{ color:#fff; }
+.cta-band p{ color:rgba(255,255,255,0.7); max-width:480px; margin:0 auto 22px; }
+
+.related{ display:flex; flex-wrap:wrap; gap:10px; }
+.related a{
+  font-size:13.5px; padding:9px 16px; border-radius:20px; background:#fff;
+  border:1px solid var(--line-dark); color:var(--ink); font-weight:500; transition:border-color .15s ease;
+}
+.related a:hover{ border-color:var(--blue); color:var(--blue); }
+
+footer{ background:var(--ink-2); color:rgba(255,255,255,0.5); padding:40px 6vw 28px; }
+.footer-inner{ max-width:820px; margin:0 auto; }
+.footer-brand{ margin-bottom:20px; }
+.footer-brand .logo{ margin-bottom:8px; }
+.footer-brand p{ font-size:13px; max-width:320px; line-height:1.6; margin:0; }
+.footer-links{ display:flex; gap:18px; flex-wrap:wrap; margin-bottom:20px; }
+.footer-links a{ font-size:13px; color:rgba(255,255,255,0.6); }
+.footer-links a:hover{ color:#fff; }
+.footer-bottom{ font-size:12px; padding-top:18px; border-top:1px solid var(--line); }

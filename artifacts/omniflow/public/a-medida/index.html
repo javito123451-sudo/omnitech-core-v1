@@ -1,25 +1,83 @@
-/**
- * Standalone HTML for the "A Medida" public lead-capture landing
- * (montaje de cocinas, muebles, portes y mudanzas).
- *
- * Rendered inside an <iframe srcDoc="..."> by AMedidaLandingPage.tsx so its
- * CSS/JS stay fully isolated from the rest of the CRM app — the class names
- * here (.card, .cat, .stat, .field, ...) are generic and would otherwise
- * collide with the SPA's own global styles.
- *
- * Submits directly to the public, unauthenticated lead-capture endpoint
- * (POST /api/leads-public — see artifacts/api-server/src/routes/publicLeadCapture.ts).
- * That route has its own CORS exemption (see app.ts) and its own rate limit
- * (20 req/min/IP), independent from the rest of this app.
- */
-export const AMEDIDA_LANDING_HTML = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A Medida — Montaje, portes y mudanzas en Madrid</title>
+<title>Montaje de Cocinas, Muebles, Portes y Mudanzas en Madrid | A Medida</title>
+<meta name="description" content="Encuentra profesionales para montaje de cocinas, muebles, portes y mudanzas en Madrid. Solicita presupuesto gratis y sin compromiso.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://hogar.omnitech-core.com/a-medida">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+<meta property="og:title" content="Montaje de Cocinas, Muebles, Portes y Mudanzas en Madrid | A Medida">
+<meta property="og:description" content="Encuentra profesionales para montaje de cocinas, muebles, portes y mudanzas en Madrid. Solicita presupuesto gratis y sin compromiso.">
+<meta property="og:url" content="https://hogar.omnitech-core.com/a-medida">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="A Medida">
+<meta property="og:locale" content="es_ES">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Montaje de Cocinas, Muebles, Portes y Mudanzas en Madrid | A Medida">
+<meta name="twitter:description" content="Encuentra profesionales para montaje de cocinas, muebles, portes y mudanzas en Madrid. Solicita presupuesto gratis y sin compromiso.">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://hogar.omnitech-core.com/a-medida#webpage",
+      "url": "https://hogar.omnitech-core.com/a-medida",
+      "name": "Montaje de Cocinas, Muebles, Portes y Mudanzas en Madrid | A Medida",
+      "description": "Encuentra profesionales para montaje de cocinas, muebles, portes y mudanzas en Madrid. Solicita presupuesto gratis y sin compromiso.",
+      "inLanguage": "es-ES",
+      "isPartOf": {
+        "@type": "WebSite",
+        "@id": "https://hogar.omnitech-core.com/#website",
+        "name": "A Medida",
+        "url": "https://hogar.omnitech-core.com/"
+      }
+    },
+    {
+      "@type": "Service",
+      "name": "Montaje de cocinas en Madrid",
+      "serviceType": "Montaje de cocinas",
+      "areaServed": { "@type": "City", "name": "Madrid" },
+      "provider": { "@type": "Organization", "name": "A Medida" },
+      "url": "https://hogar.omnitech-core.com/montaje-cocinas-madrid"
+    },
+    {
+      "@type": "Service",
+      "name": "Montaje de muebles en Madrid",
+      "serviceType": "Montaje de muebles",
+      "areaServed": { "@type": "City", "name": "Madrid" },
+      "provider": { "@type": "Organization", "name": "A Medida" },
+      "url": "https://hogar.omnitech-core.com/montaje-muebles-madrid"
+    },
+    {
+      "@type": "Service",
+      "name": "Portes en Madrid",
+      "serviceType": "Portes",
+      "areaServed": { "@type": "City", "name": "Madrid" },
+      "provider": { "@type": "Organization", "name": "A Medida" },
+      "url": "https://hogar.omnitech-core.com/portes-madrid"
+    },
+    {
+      "@type": "Service",
+      "name": "Mudanzas en Madrid",
+      "serviceType": "Mudanzas",
+      "areaServed": { "@type": "City", "name": "Madrid" },
+      "provider": { "@type": "Organization", "name": "A Medida" },
+      "url": "https://hogar.omnitech-core.com/mudanzas-madrid"
+    }
+  ]
+}
+</script>
+
 <style>
   :root{
     --ink:#0B0F1C;
@@ -571,16 +629,16 @@ export const AMEDIDA_LANDING_HTML = `<!DOCTYPE html>
     <div class="footer-cols">
       <div class="footer-col">
         <h4>Servicios</h4>
-        <a href="#">Montaje de cocinas</a>
-        <a href="#">Montaje de muebles</a>
-        <a href="#">Portes</a>
-        <a href="#">Mudanzas</a>
+        <a href="/montaje-cocinas-madrid">Montaje de cocinas</a>
+        <a href="/montaje-muebles-madrid">Montaje de muebles</a>
+        <a href="/portes-madrid">Portes</a>
+        <a href="/mudanzas-madrid">Mudanzas</a>
       </div>
       <div class="footer-col">
         <h4>Empresa</h4>
-        <a href="#">Cómo funciona</a>
+        <a href="#proceso">Cómo funciona</a>
         <a href="#">Para profesionales</a>
-        <a href="#">Contacto</a>
+        <a href="#pedir">Contacto</a>
       </div>
     </div>
   </div>
@@ -614,6 +672,21 @@ export const AMEDIDA_LANDING_HTML = `<!DOCTYPE html>
       document.getElementById('card-title').textContent = cardTitles[currentCat];
     });
   });
+
+  // Preselecciona la categoría si se llega desde una página de servicio
+  // (ej. /montaje-cocinas-madrid → /a-medida?categoria=cocinas#pedir).
+  // Defensivo: si el parámetro no es válido, se ignora y se mantiene 'cocinas'.
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const preselect = params.get('categoria');
+    if (preselect && cardTitles[preselect]) {
+      cats.forEach(c => c.classList.remove('active'));
+      const match = document.querySelector('.cat[data-cat="' + preselect + '"]');
+      if (match) match.classList.add('active');
+      currentCat = preselect;
+      document.getElementById('card-title').textContent = cardTitles[preselect];
+    }
+  } catch (e) { /* no-op — nunca debe romper el formulario */ }
 
   // URL real del backend en Render + ruta pública de captación de leads
   // (montada en /api/leads-public, distinta de /api/leads que es el módulo
@@ -654,4 +727,3 @@ export const AMEDIDA_LANDING_HTML = `<!DOCTYPE html>
 
 </body>
 </html>
-`;

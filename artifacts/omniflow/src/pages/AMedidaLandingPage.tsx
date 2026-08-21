@@ -1,21 +1,24 @@
 /**
  * Public landing page for "A Medida" (montaje de cocinas, muebles, portes y
- * mudanzas) — accessible via /a-medida, no auth required.
+ * mudanzas) — accessible via /a-medida when the SPA handles the route
+ * client-side (e.g. an in-app link), no auth required.
  *
- * Rendered as a full-bleed iframe with the standalone HTML in
- * amedidaLandingHtml.ts. Using srcDoc keeps this page's CSS/JS completely
- * isolated from the rest of the CRM SPA (its class names — .card, .cat,
- * .stat, .field — are generic and would otherwise leak into/collide with
- * the app's own global styles), and lets the page keep working exactly as
- * designed without rewriting it into React/Tailwind.
+ * SEO note: on a direct/external navigation (Google, a shared link, a hard
+ * refresh) the static file at public/a-medida/index.html is served directly
+ * by the host — it never reaches this React component or the SPA shell, so
+ * Google indexes real HTML with its own <title>/meta/canonical/JSON-LD,
+ * not this app's generic shell. This component exists only so that
+ * client-side navigation from elsewhere in the SPA (wouter intercepting a
+ * same-origin link click, no server round-trip) still renders the same
+ * page. It loads that exact static file via <iframe src>, so there is a
+ * single source of truth for the HTML/CSS/JS — no duplicated content to
+ * drift out of sync.
  */
-import { AMEDIDA_LANDING_HTML } from "@/pages/amedidaLandingHtml";
-
 export default function AMedidaLandingPage() {
   return (
     <iframe
       title="A Medida — presupuesto de montaje, portes y mudanzas"
-      srcDoc={AMEDIDA_LANDING_HTML}
+      src={`${import.meta.env.BASE_URL}a-medida/index.html`}
       style={{
         position: "fixed",
         inset: 0,
