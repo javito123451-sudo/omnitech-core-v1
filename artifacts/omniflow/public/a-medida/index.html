@@ -679,6 +679,32 @@
   // interno de OmniLeads y requiere login).
   const API_URL = 'https://omnitech-core-api.onrender.com/api/leads-public';
 
+  function sleep(ms) { return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
+
+  // El backend (Render, plan gratuito) se apaga tras inactividad y tarda
+  // ~20-25s en despertar; la primera petición tras eso puede llegar como un
+  // 404/502/503/504 sin JSON (el proxy se cansa de esperar) en vez de una
+  // respuesta real de la API. Se reintenta un par de veces antes de rendirse.
+  function looksLikeColdStart(res) {
+    if ([404, 502, 503, 504].indexOf(res.status) === -1) return false;
+    var ct = res.headers.get('content-type') || '';
+    return ct.indexOf('application/json') === -1;
+  }
+
+  async function fetchWithRetry(url, opts) {
+    var delays = [4000, 8000];
+    for (var i = 0; i <= delays.length; i++) {
+      try {
+        var res = await fetch(url, opts);
+        if (i < delays.length && looksLikeColdStart(res)) { await sleep(delays[i]); continue; }
+        return res;
+      } catch (err) {
+        if (i < delays.length) { await sleep(delays[i]); continue; }
+        throw err;
+      }
+    }
+  }
+
   async function submitForm(){
     const payload = {
       category: currentCat,
@@ -693,7 +719,7 @@
     btn.disabled = true;
 
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetchWithRetry(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
