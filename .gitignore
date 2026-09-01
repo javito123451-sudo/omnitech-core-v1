@@ -53,3 +53,9 @@ Thumbs.db
 
 # Database backups — contain PII and must never be committed
 backups/
+
+# Secrets — never commit real env files (Fase 0.5 security hardening)
+.env
+.env.*
+!.env.example
+!.env.*.example
