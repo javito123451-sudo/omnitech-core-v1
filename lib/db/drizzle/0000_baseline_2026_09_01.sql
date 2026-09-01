@@ -590,7 +590,8 @@ CREATE TABLE "module_configs" (
 	"config" jsonb DEFAULT '{}'::jsonb,
 	"updated_by" text,
 	"created_at" timestamp DEFAULT now(),
-	"updated_at" timestamp DEFAULT now()
+	"updated_at" timestamp DEFAULT now(),
+	CONSTRAINT "module_configs_org_module_unique" UNIQUE("org_id","module_slug")
 );
 --> statement-breakpoint
 CREATE TABLE "platform_roles" (
@@ -1129,6 +1130,7 @@ CREATE INDEX "lead_analysis_result_id_idx" ON "lead_analysis" USING btree ("resu
 CREATE INDEX "lead_messages_result_id_idx" ON "lead_messages" USING btree ("result_id");--> statement-breakpoint
 CREATE INDEX "lead_results_org_id_idx" ON "lead_results" USING btree ("org_id");--> statement-breakpoint
 CREATE INDEX "lead_results_search_id_idx" ON "lead_results" USING btree ("search_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "lead_results_org_place_id_uidx" ON "lead_results" USING btree ("org_id","place_id") WHERE "lead_results"."place_id" is not null;--> statement-breakpoint
 CREATE INDEX "lead_searches_org_id_idx" ON "lead_searches" USING btree ("org_id");--> statement-breakpoint
 CREATE INDEX "idx_csl_campaign" ON "campaign_send_logs" USING btree ("campaign_id");--> statement-breakpoint
 CREATE INDEX "idx_notifications_user" ON "notifications" USING btree ("org_id","target_user_id","is_read");--> statement-breakpoint

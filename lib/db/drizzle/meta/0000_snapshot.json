@@ -1,5 +1,5 @@
 {
-  "id": "1a89dfdd-e0f8-49f7-9fbb-3353bdad4554",
+  "id": "c8d7c2d6-4362-4719-b497-76e433a360ff",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -4519,7 +4519,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "module_configs_org_module_unique": {
+          "name": "module_configs_org_module_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "module_slug"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -6715,6 +6724,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "lead_results_org_place_id_uidx": {
+          "name": "lead_results_org_place_id_uidx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "place_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"lead_results\".\"place_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

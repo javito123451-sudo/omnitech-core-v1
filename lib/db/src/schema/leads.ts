@@ -1,6 +1,7 @@
 import {
-  pgTable, serial, integer, text, timestamp, doublePrecision, boolean, index,
+  pgTable, serial, integer, text, timestamp, doublePrecision, boolean, index, uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizationsTable } from "./organizations";
 import { clientsTable } from "./clients";
 
@@ -47,6 +48,8 @@ export const leadResultsTable = pgTable("lead_results", {
 }, (t) => [
   index("lead_results_org_id_idx").on(t.orgId),
   index("lead_results_search_id_idx").on(t.searchId),
+  // Parcial: solo dedupea cuando place_id está presente (Google Places).
+  uniqueIndex("lead_results_org_place_id_uidx").on(t.orgId, t.placeId).where(sql`${t.placeId} is not null`),
 ]);
 
 export const leadAnalysisTable = pgTable("lead_analysis", {

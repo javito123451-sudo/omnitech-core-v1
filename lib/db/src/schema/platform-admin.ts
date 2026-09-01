@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, integer, jsonb, unique } from "drizzle-orm/pg-core";
 import { organizationsTable } from "./organizations";
 
 export const platformRolesTable = pgTable("platform_roles", {
@@ -23,7 +23,9 @@ export const moduleConfigsTable = pgTable("module_configs", {
   updatedBy:   text("updated_by"),
   createdAt:   timestamp("created_at").defaultNow(),
   updatedAt:   timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  unique("module_configs_org_module_unique").on(t.orgId, t.moduleSlug),
+]);
 
 export const licensePlansTable = pgTable("license_plans", {
   id:           serial("id").primaryKey(),
