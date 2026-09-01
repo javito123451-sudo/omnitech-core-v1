@@ -1,7 +1,8 @@
 import {
   pgTable, serial, integer, text, numeric, boolean,
-  timestamp, varchar, index,
+  timestamp, varchar, index, uniqueIndex, jsonb,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizationsTable } from "./organizations";
 import { clientsTable } from "./clients";
 import { quotesTable } from "./quotes";
@@ -23,6 +24,18 @@ export const invoicesTable = pgTable("invoices", {
   dueDate:             timestamp("due_date"),
   paidAt:              timestamp("paid_at"),
   recurringInvoiceId:  integer("recurring_invoice_id"),
+  // ── Cobro / pago ──────────────────────────────────────────────────────────
+  paymentNotificationPending: boolean("payment_notification_pending").notNull().default(false),
+  paymentNotifiedAt:   timestamp("payment_notified_at"),
+  paymentReference:    text("payment_reference"),
+  // ── Portal cliente (enlace público de consulta) ──────────────────────────
+  shareToken:          varchar("share_token", { length: 128 }),
+  shareTokenExpiresAt: timestamp("share_token_expires_at"),
+  // ── VeriFactu (AEAT) ──────────────────────────────────────────────────────
+  verifactuHash:         text("verifactu_hash"),
+  verifactuHashAnterior: text("verifactu_hash_anterior"),
+  verifactuQrUrl:        text("verifactu_qr_url"),
+  verifactuRegisteredAt: timestamp("verifactu_registered_at"),
   createdAt:           timestamp("created_at").notNull().defaultNow(),
   updatedAt:           timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
@@ -30,6 +43,7 @@ export const invoicesTable = pgTable("invoices", {
   index("invoices_client_id_idx").on(t.clientId),
   index("invoices_status_idx").on(t.status),
   index("invoices_recurring_invoice_id_idx").on(t.recurringInvoiceId),
+  uniqueIndex("invoices_share_token_idx").on(t.shareToken).where(sql`${t.shareToken} IS NOT NULL`),
 ]);
 
 // ── invoice_items ─────────────────────────────────────────────────────────────
@@ -98,4 +112,29 @@ export const expensesTable = pgTable("expenses", {
 }, (t) => [
   index("expenses_org_id_idx").on(t.orgId),
   index("expenses_category_idx").on(t.category),
+]);
+
+// ── recurring_invoices ──────────────────────────────────────────────────────
+// Plantillas de facturación recurrente que generan `invoices` periódicamente
+// (ver invoices.recurring_invoice_id — sin FK real en producción, solo referencia lógica).
+export const recurringInvoicesTable = pgTable("recurring_invoices", {
+  id:            serial("id").primaryKey(),
+  orgId:         integer("org_id").notNull().references(() => organizationsTable.id, { onDelete: "cascade" }),
+  clientId:      integer("client_id").references(() => clientsTable.id, { onDelete: "set null" }),
+  description:   text("description").notNull(),
+  frequency:     varchar("frequency", { length: 20 }).notNull().default("monthly"), // monthly, quarterly, annual
+  currency:      varchar("currency", { length: 10 }).notNull().default("EUR"),
+  // NOTA: default sin comillas (`DEFAULT 21`, no `DEFAULT '21'`) para reflejar exactamente
+  // el valor de producción (creado vía SQL crudo).
+  taxRate:       numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default(sql`21`),
+  items:         jsonb("items").notNull().default([]), // [{ description, quantity, unitPrice }]
+  isActive:      boolean("is_active").notNull().default(true),
+  sendOnCreate:  boolean("send_on_create").notNull().default(false),
+  nextRunAt:     timestamp("next_run_at").notNull(),
+  lastRunAt:     timestamp("last_run_at"),
+  createdAt:     timestamp("created_at").notNull().defaultNow(),
+  updatedAt:     timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  index("recurring_invoices_org_id_idx").on(t.orgId),
+  index("recurring_invoices_next_run_at_idx").on(t.nextRunAt).where(sql`${t.isActive} = true`),
 ]);

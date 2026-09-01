@@ -113,6 +113,7 @@ export const taxDocumentsTable = pgTable("tax_documents", {
   fileType:    text("file_type").notNull(), // pdf, excel, csv, image
   fileUrl:     text("file_url"),            // path en object storage
   fileSize:    integer("file_size"),        // bytes
+  fileData:    text("file_data"),           // contenido en base64 (fallback sin object storage)
 
   // Clasificación
   category:    text("category").notNull().default("other"), // invoice, expense, bank_statement, tax_form, receipt, other
