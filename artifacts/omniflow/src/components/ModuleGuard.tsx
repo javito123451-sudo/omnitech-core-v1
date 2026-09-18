@@ -17,6 +17,7 @@ const MODULE_LABELS: Record<string, string> = {
   omni_accounting: "Omni Accounting",
   omni_leads:    "OmniLeads AI",
   a_medida:      "A Medida",
+  omni_fleet:    "Omni Fleet",
 };
 
 function ModuleNotAvailable({ moduleKey }: { moduleKey: string }) {

@@ -8,6 +8,13 @@
       "when": 1788275455602,
       "tag": "0000_baseline_2026_09_01",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789757013271,
+      "tag": "0001_fleet_module",
+      "breakpoints": true
     }
   ]
 }

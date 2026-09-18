@@ -40,6 +40,7 @@ import { leadsRouter } from "./leads";
 import { publicLeadCaptureRouter } from "./publicLeadCapture";
 import { aMedidaLeadsRouter } from "./aMedidaLeads";
 import { timeRouter }  from "./time";
+import { fleetRouter, fleetWebhookRouter } from "./fleet";
 import { aceRouter } from "./ace";
 import { internalCronRouter } from "./internalCron";
 
@@ -66,6 +67,10 @@ router.use("/whatsapp", whatsappWebhookRouter);
 
 // ── Telegram webhook — public (Telegram calls this without auth) ──────────────
 router.use("/telegram", telegramWebhookRouter);
+
+// ── Fleet delivery-status webhook — public (la app de reparto del cliente
+// llama esto sin auth, con el secreto en la propia URL) ───────────────────────
+router.use("/fleet", fleetWebhookRouter);
 
 // ── Public lead capture — formulario web de la landing, sin auth ──────────────
 // Prefijo propio "/leads-public", NO "/leads": evitamos deliberadamente
@@ -132,6 +137,7 @@ router.use("/ads",            requireModule("omni_ads"),       adsRouter);
 router.use("/leads",          requireModule("omni_leads"),     leadsRouter);
 router.use("/a-medida-leads", requireModule("a_medida"),       aMedidaLeadsRouter);
 router.use("/time",           requireModule("omni_time"),      timeRouter);
+router.use("/fleet",          requireModule("omni_fleet"),     fleetRouter);
 
 // ── Ava Context Engine — lightweight context sync, no module gate ─────────
 router.use("/ace", aceRouter);
