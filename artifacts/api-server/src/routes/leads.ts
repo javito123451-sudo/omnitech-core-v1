@@ -284,48 +284,50 @@ Score bajo (0-35) = muchas señales = BAJA oportunidad.`;
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /dashboard
+export async function getLeadsDashboardData(orgId: number) {
+  const stats = await db.execute(sql`
+    SELECT
+      (SELECT COUNT(*) FROM lead_searches WHERE org_id = ${orgId})::int                                        AS total_searches,
+      (SELECT COUNT(*) FROM lead_results  WHERE org_id = ${orgId})::int                                        AS total_results,
+      (SELECT COUNT(*) FROM lead_results  WHERE org_id = ${orgId} AND status = 'analyzed')::int                AS analyzed,
+      (SELECT COUNT(*) FROM lead_results  WHERE org_id = ${orgId} AND status = 'added_to_crm')::int            AS leads_created,
+      (SELECT COUNT(*) FROM lead_analysis WHERE org_id = ${orgId} AND opportunity = 'alta')::int               AS high_opp,
+      (SELECT COUNT(*) FROM lead_analysis WHERE org_id = ${orgId} AND opportunity = 'media')::int              AS mid_opp,
+      (SELECT COUNT(*) FROM lead_analysis WHERE org_id = ${orgId} AND opportunity = 'baja')::int               AS low_opp,
+      (SELECT MAX(created_at) FROM lead_searches WHERE org_id = ${orgId})                                      AS last_search
+  `);
+
+  const recent = await db.execute(sql`
+    SELECT id, sector, city, status, total_found, created_at
+    FROM lead_searches WHERE org_id = ${orgId}
+    ORDER BY created_at DESC LIMIT 6
+  `);
+
+  const distrib = await db.execute(sql`
+    SELECT
+      CASE WHEN score >= 65 THEN 'Alta' WHEN score >= 35 THEN 'Media' ELSE 'Baja' END AS level,
+      COUNT(*)::int AS cnt
+    FROM lead_analysis WHERE org_id = ${orgId}
+    GROUP BY 1
+  `);
+
+  const row = dbRows<Record<string, unknown>>(stats)[0] ?? {};
+  return {
+    totalSearches:    Number(row.total_searches ?? 0),
+    totalResults:     Number(row.total_results  ?? 0),
+    analyzed:         Number(row.analyzed       ?? 0),
+    leadsCreated:     Number(row.leads_created  ?? 0),
+    highOpportunity:  Number(row.high_opp       ?? 0),
+    mediumOpportunity: Number(row.mid_opp       ?? 0),
+    lowOpportunity:   Number(row.low_opp        ?? 0),
+    lastSearch:       row.last_search ?? null,
+    recentSearches:   dbRows<Record<string, unknown>>(recent),
+    scoreDistrib:     dbRows<Record<string, unknown>>(distrib),
+  };
+}
 leadsRouter.get("/dashboard", requirePermission("leads.read"), async (req: Request, res) => {
-  const orgId = req.orgId!;
   try {
-    const stats = await db.execute(sql`
-      SELECT
-        (SELECT COUNT(*) FROM lead_searches WHERE org_id = ${orgId})::int                                        AS total_searches,
-        (SELECT COUNT(*) FROM lead_results  WHERE org_id = ${orgId})::int                                        AS total_results,
-        (SELECT COUNT(*) FROM lead_results  WHERE org_id = ${orgId} AND status = 'analyzed')::int                AS analyzed,
-        (SELECT COUNT(*) FROM lead_results  WHERE org_id = ${orgId} AND status = 'added_to_crm')::int            AS leads_created,
-        (SELECT COUNT(*) FROM lead_analysis WHERE org_id = ${orgId} AND opportunity = 'alta')::int               AS high_opp,
-        (SELECT COUNT(*) FROM lead_analysis WHERE org_id = ${orgId} AND opportunity = 'media')::int              AS mid_opp,
-        (SELECT COUNT(*) FROM lead_analysis WHERE org_id = ${orgId} AND opportunity = 'baja')::int               AS low_opp,
-        (SELECT MAX(created_at) FROM lead_searches WHERE org_id = ${orgId})                                      AS last_search
-    `);
-
-    const recent = await db.execute(sql`
-      SELECT id, sector, city, status, total_found, created_at
-      FROM lead_searches WHERE org_id = ${orgId}
-      ORDER BY created_at DESC LIMIT 6
-    `);
-
-    const distrib = await db.execute(sql`
-      SELECT
-        CASE WHEN score >= 65 THEN 'Alta' WHEN score >= 35 THEN 'Media' ELSE 'Baja' END AS level,
-        COUNT(*)::int AS cnt
-      FROM lead_analysis WHERE org_id = ${orgId}
-      GROUP BY 1
-    `);
-
-    const row = dbRows<Record<string, unknown>>(stats)[0] ?? {};
-    res.json({
-      totalSearches:    Number(row.total_searches ?? 0),
-      totalResults:     Number(row.total_results  ?? 0),
-      analyzed:         Number(row.analyzed       ?? 0),
-      leadsCreated:     Number(row.leads_created  ?? 0),
-      highOpportunity:  Number(row.high_opp       ?? 0),
-      mediumOpportunity: Number(row.mid_opp       ?? 0),
-      lowOpportunity:   Number(row.low_opp        ?? 0),
-      lastSearch:       row.last_search ?? null,
-      recentSearches:   dbRows<Record<string, unknown>>(recent),
-      scoreDistrib:     dbRows<Record<string, unknown>>(distrib),
-    });
+    res.json(await getLeadsDashboardData(req.orgId!));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

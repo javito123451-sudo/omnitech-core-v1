@@ -43,6 +43,8 @@ import { timeRouter }  from "./time";
 import { fleetRouter, fleetWebhookRouter } from "./fleet";
 import { tallerRouter } from "./taller";
 import { aceRouter } from "./ace";
+import { avaCoreRouter } from "./ava-core";
+import { tasksRouter } from "./tasks";
 import { internalCronRouter } from "./internalCron";
 
 const router: IRouter = Router();
@@ -140,8 +142,15 @@ router.use("/a-medida-leads", requireModule("a_medida"),       aMedidaLeadsRoute
 router.use("/time",           requireModule("omni_time"),      timeRouter);
 router.use("/fleet",          requireModule("omni_fleet"),     fleetRouter);
 router.use("/taller",         requireModule("omni_taller"),    tallerRouter);
+router.use("/tasks",          requireModule("crm"),            tasksRouter);
 
 // ── Ava Context Engine — lightweight context sync, no module gate ─────────
 router.use("/ace", aceRouter);
+
+// ── AVA CORE — shared engine for Ava Super Admin + Ava CRM, no module gate
+// (Super Admin access is enforced inside the context router itself; CRM
+// access relies on the same requireAuth/resolveOrg/resolvePermissions this
+// router already ran above).
+router.use("/ava-core", avaCoreRouter);
 
 export default router;

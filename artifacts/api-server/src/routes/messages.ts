@@ -12,17 +12,19 @@ export const messagesRouter = Router();
 
 import { requirePermission } from "../middlewares/permissions";
 
+export async function getMessagesData(orgId: number, clientId: number) {
+  const rows = await db
+    .select()
+    .from(messagesTable)
+    .where(and(eq(messagesTable.clientId, clientId), eq(messagesTable.orgId, orgId)))
+    .orderBy(messagesTable.createdAt);
+  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+}
 messagesRouter.get("/", requirePermission("messages.read"), async (req, res) => {
   try {
     const orgId = req.orgId!;
     const query = ListMessagesQueryParams.parse(req.query);
-    const rows = await db
-      .select()
-      .from(messagesTable)
-      .where(and(eq(messagesTable.clientId, query.clientId), eq(messagesTable.orgId, orgId)))
-      .orderBy(messagesTable.createdAt);
-
-    res.json(rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })));
+    res.json(await getMessagesData(orgId, query.clientId));
   } catch (err) {
     res.status(400).json({ error: String(err) });
   }

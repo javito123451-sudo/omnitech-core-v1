@@ -51,7 +51,10 @@ controlCenterRouter.get("/check", async (req, res) => {
 controlCenterRouter.use(requireSuperAdmin);
 
 // ── GET /health — real health check ──────────────────────────────────────────
-controlCenterRouter.get("/health", async (_req, res) => {
+// Extracted to a named function so AVA CORE's Super Admin tool catalog can
+// reuse this exact logic in-process instead of duplicating it or self-calling
+// the HTTP endpoint (see ava-core/tools/superAdminTools.ts).
+export async function getHealthData() {
   const services: Record<string, { status: string; latencyMs?: number; message: string }> = {};
   let overallStatus = "operational";
 
@@ -90,7 +93,7 @@ controlCenterRouter.get("/health", async (_req, res) => {
   }
 
   const mem = process.memoryUsage();
-  res.json({
+  return {
     status: overallStatus,
     services,
     system: {
@@ -100,11 +103,14 @@ controlCenterRouter.get("/health", async (_req, res) => {
       nodeVersion:   process.version,
     },
     checkedAt: new Date().toISOString(),
-  });
+  };
+}
+controlCenterRouter.get("/health", async (_req, res) => {
+  res.json(await getHealthData());
 });
 
 // ── GET /metrics ──────────────────────────────────────────────────────────────
-controlCenterRouter.get("/metrics", async (_req, res) => {
+export async function getMetricsData() {
   const [orgs]     = await db.select({ count: count() }).from(organizationsTable);
   const [users]    = await db.select({ count: count() }).from(usersTable);
   const [clients]  = await db.select({ count: count() }).from(clientsTable);
@@ -119,7 +125,7 @@ controlCenterRouter.get("/metrics", async (_req, res) => {
   const autoModules = await db.select({ count: count() }).from(moduleConfigsTable)
     .where(and(eq(moduleConfigsTable.moduleSlug, "automations"), eq(moduleConfigsTable.isEnabled, true)));
 
-  res.json({
+  return {
     workspaces:       Number(orgs?.count      ?? 0),
     workspacesSusp:   Number(suspended?.[0]?.count ?? 0),
     users:            Number(users?.count     ?? 0),
@@ -131,13 +137,16 @@ controlCenterRouter.get("/metrics", async (_req, res) => {
     automations:      Number(autoModules?.[0]?.count ?? 0),
     storageUsedMb:    Math.round(Number(messages?.count ?? 0) * 0.5 + Number(clients?.count ?? 0) * 0.2),
     systemStatus:     "operational",
-  });
+  };
+}
+controlCenterRouter.get("/metrics", async (_req, res) => {
+  res.json(await getMetricsData());
 });
 
 // ── GET /workspaces ───────────────────────────────────────────────────────────
-controlCenterRouter.get("/workspaces", async (_req, res) => {
+export async function getWorkspacesData() {
   const orgs = await db.select().from(organizationsTable).orderBy(desc(organizationsTable.createdAt));
-  const enriched = await Promise.all(orgs.map(async (org) => {
+  return Promise.all(orgs.map(async (org) => {
     const [userCount]   = await db.select({ count: count() }).from(orgMembersTable).where(eq(orgMembersTable.orgId, org.id));
     const [clientCount] = await db.select({ count: count() }).from(clientsTable).where(eq(clientsTable.orgId, org.id));
     const [license]     = await db.select().from(licensePlansTable).where(eq(licensePlansTable.orgId, org.id));
@@ -150,7 +159,9 @@ controlCenterRouter.get("/workspaces", async (_req, res) => {
       createdAt: org.createdAt,
     };
   }));
-  res.json(enriched);
+}
+controlCenterRouter.get("/workspaces", async (_req, res) => {
+  res.json(await getWorkspacesData());
 });
 
 // ── POST /workspaces ──────────────────────────────────────────────────────────
@@ -561,9 +572,9 @@ controlCenterRouter.delete("/workspaces/:id", async (req, res) => {
 });
 
 // ── GET /users ────────────────────────────────────────────────────────────────
-controlCenterRouter.get("/users", async (_req, res) => {
+export async function getUsersData() {
   const users = await db.select().from(usersTable).orderBy(desc(usersTable.createdAt));
-  const enriched = await Promise.all(users.map(async (u) => {
+  return Promise.all(users.map(async (u) => {
     const members = await db.select({ orgId: orgMembersTable.orgId, role: orgMembersTable.role, isSuspended: orgMembersTable.isSuspended })
       .from(orgMembersTable).where(eq(orgMembersTable.userId, u.id));
     const [platformRole] = await db.select({ role: platformRolesTable.role })
@@ -586,7 +597,9 @@ controlCenterRouter.get("/users", async (_req, res) => {
       createdAt:   u.createdAt,
     };
   }));
-  res.json(enriched);
+}
+controlCenterRouter.get("/users", async (_req, res) => {
+  res.json(await getUsersData());
 });
 
 // ── PATCH /users/:clerkId — change workspace role ─────────────────────────────
@@ -631,7 +644,7 @@ controlCenterRouter.post("/users/:clerkId/activate", async (req, res) => {
 });
 
 // ── GET /modules ──────────────────────────────────────────────────────────────
-controlCenterRouter.get("/modules", async (_req, res) => {
+export async function getModulesData() {
   const CATALOG = [
     { slug: "crm",            name: "CRM",                   description: "Gestión de clientes y relaciones",       alwaysOn: true  },
     { slug: "ai_agents",      name: "AI Agents",              description: "Agentes de IA personalizados",           alwaysOn: false },
@@ -661,7 +674,10 @@ controlCenterRouter.get("/modules", async (_req, res) => {
       return { ...mod, isEnabled: cfg ? cfg.isEnabled : (mod.slug === "crm"), configId: cfg?.id ?? null };
     }),
   }));
-  res.json({ catalog: CATALOG, orgs: result });
+  return { catalog: CATALOG, orgs: result };
+}
+controlCenterRouter.get("/modules", async (_req, res) => {
+  res.json(await getModulesData());
 });
 
 // ── PATCH /modules ────────────────────────────────────────────────────────────
@@ -677,7 +693,7 @@ controlCenterRouter.patch("/modules", async (req, res) => {
 });
 
 // ── GET /licenses ─────────────────────────────────────────────────────────────
-controlCenterRouter.get("/licenses", async (_req, res) => {
+export async function getLicensesData() {
   const plans = await db.select().from(licensePlansTable).orderBy(desc(licensePlansTable.createdAt));
   const orgs  = await db.select({ id: organizationsTable.id, name: organizationsTable.name }).from(organizationsTable);
   const result = plans.map(p => ({ ...p, orgName: orgs.find(o => o.id === p.orgId)?.name ?? `Org #${p.orgId}` }));
@@ -686,7 +702,10 @@ controlCenterRouter.get("/licenses", async (_req, res) => {
     id: null, orgId: o.id, orgName: o.name, plan: "starter", seats: 5, isActive: true,
     billingCycle: "monthly", validFrom: null, validUntil: null, notes: null, assignedBy: null, createdAt: null, updatedAt: null,
   }));
-  res.json([...result, ...orgsWithout]);
+  return [...result, ...orgsWithout];
+}
+controlCenterRouter.get("/licenses", async (_req, res) => {
+  res.json(await getLicensesData());
 });
 
 // ── POST /licenses ────────────────────────────────────────────────────────────
@@ -705,15 +724,14 @@ controlCenterRouter.post("/licenses", async (req, res) => {
 });
 
 // ── GET /audit ────────────────────────────────────────────────────────────────
-controlCenterRouter.get("/audit", async (req, res) => {
-  const limit     = Math.min(Number(req.query["limit"] ?? 50), 200);
-  const offset    = Number(req.query["offset"] ?? 0);
-  const severity  = req.query["severity"] as string | undefined;
-  const action    = req.query["action"]   as string | undefined;
-  const actor     = req.query["actor"]    as string | undefined;
-  const orgId     = req.query["orgId"]    as string | undefined;
-  const startDate = req.query["startDate"] as string | undefined;
-  const endDate   = req.query["endDate"]   as string | undefined;
+export interface AuditLogsFilter {
+  limit?: number; offset?: number; severity?: string; action?: string;
+  actor?: string; orgId?: string; startDate?: string; endDate?: string;
+}
+export async function getAuditLogsData(filter: AuditLogsFilter = {}) {
+  const limit     = Math.min(Number(filter.limit ?? 50), 200);
+  const offset    = Number(filter.offset ?? 0);
+  const { severity, action, actor, orgId, startDate, endDate } = filter;
 
   const conditions = [];
   if (severity && severity !== "all")        conditions.push(eq(auditLogsTable.severity, severity));
@@ -732,7 +750,10 @@ controlCenterRouter.get("/audit", async (req, res) => {
     .limit(limit)
     .offset(offset);
 
-  res.json({ logs, total: Number(total), limit, offset });
+  return { logs, total: Number(total), limit, offset };
+}
+controlCenterRouter.get("/audit", async (req, res) => {
+  res.json(await getAuditLogsData(req.query as AuditLogsFilter));
 });
 
 // ── GET /audit/export ─────────────────────────────────────────────────────────
@@ -894,7 +915,7 @@ controlCenterRouter.patch("/workspaces/:id/members/:clerkId", async (req, res) =
 });
 
 // ── GET /integrations — global integrations status ───────────────────────────
-controlCenterRouter.get("/integrations", async (_req, res) => {
+export async function getIntegrationsData() {
   const whatsappConfigured  = !!(process.env["META_WHATSAPP_TOKEN"] ?? process.env["WHATSAPP_TOKEN"]);
   const telegramConfigured  = !!process.env["TELEGRAM_BOT_TOKEN"];
   const resendConfigured    = !!process.env["RESEND_API_KEY"];
@@ -917,7 +938,7 @@ controlCenterRouter.get("/integrations", async (_req, res) => {
   const waWebhookVerify = process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] ?? process.env["META_WEBHOOK_VERIFY"];
   const weakVerifyToken = !waWebhookVerify || waWebhookVerify === "omnitech-webhook" || waWebhookVerify.length < 16;
 
-  res.json({
+  return {
     platform: {
       whatsapp:   { name: "WhatsApp Business",  configured: whatsappConfigured, orgsActive: whatsappOrgs, orgsTotal: total, warning: weakVerifyToken ? "Verify token débil" : null },
       telegram:   { name: "Telegram Bot",        configured: telegramConfigured, orgsActive: telegramOrgs, orgsTotal: total, warning: null },
@@ -933,11 +954,14 @@ controlCenterRouter.get("/integrations", async (_req, res) => {
       ...(weakVerifyToken       ? ["WhatsApp verify token débil o por defecto"]          : []),
       ...(!stripeConfigured     ? ["Stripe no configurado — facturación no disponible"]  : []),
     ],
-  });
+  };
+}
+controlCenterRouter.get("/integrations", async (_req, res) => {
+  res.json(await getIntegrationsData());
 });
 
 // ── GET /security/summary ─────────────────────────────────────────────────────
-controlCenterRouter.get("/security/summary", async (_req, res) => {
+export async function getSecuritySummaryData() {
   const [critCount]   = await db.select({ count: count() }).from(auditLogsTable).where(eq(auditLogsTable.severity, "critical"));
   const [warnCount]   = await db.select({ count: count() }).from(auditLogsTable).where(eq(auditLogsTable.severity, "warning"));
   const [suspUsers]   = await db.select({ count: count() }).from(usersTable).where(eq(usersTable.status, "suspended"));
@@ -955,7 +979,7 @@ controlCenterRouter.get("/security/summary", async (_req, res) => {
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [recentEvents] = await db.select({ count: count() }).from(auditLogsTable).where(gte(auditLogsTable.createdAt, oneDayAgo));
 
-  res.json({
+  return {
     stats: {
       criticalEvents:  Number(critCount?.count   ?? 0),
       warningEvents:   Number(warnCount?.count   ?? 0),
@@ -984,7 +1008,10 @@ controlCenterRouter.get("/security/summary", async (_req, res) => {
       { id: "SEC-06", severity: "low",    title: "Cache de rol con lag de 5 minutos",    detail: "Revocación de SUPER_ADMIN no es inmediata en multi-instancia", status: "open" },
     ],
     recentCritical,
-  });
+  };
+}
+controlCenterRouter.get("/security/summary", async (_req, res) => {
+  res.json(await getSecuritySummaryData());
 });
 
 // ── GET /diagnostics ──────────────────────────────────────────────────────────

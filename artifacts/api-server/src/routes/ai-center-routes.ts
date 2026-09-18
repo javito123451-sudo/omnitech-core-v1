@@ -24,7 +24,7 @@ function monthRange() {
 }
 
 // ── GET /stats ─────────────────────────────────────────────────────────────────
-aiCenterRouter.get("/stats", async (_req, res) => {
+export async function getAiStatsData() {
   const { start, end } = monthRange();
 
   const [allCalls]   = await db.select({ total: count(), tokens: sum(aiUsageLogsTable.tokensTotal), cost: sum(aiUsageLogsTable.costUsd) }).from(aiUsageLogsTable);
@@ -38,7 +38,7 @@ aiCenterRouter.get("/stats", async (_req, res) => {
     GROUP BY model ORDER BY cost_usd DESC
   `);
 
-  res.json({
+  return {
     totalCalls:     Number(allCalls?.total   ?? 0),
     totalTokens:    Number(allCalls?.tokens  ?? 0),
     totalCostUsd:   Number(allCalls?.cost    ?? 0),
@@ -47,7 +47,10 @@ aiCenterRouter.get("/stats", async (_req, res) => {
     monthCostUsd:   Number(monthCalls?.cost   ?? 0),
     modelBreakdown: (modelBreakdown as { rows: Array<{ model: string; calls: number; cost_usd: number }> }).rows
       .map(r => ({ model: r.model, calls: r.calls, costUsd: Number(r.cost_usd ?? 0) })),
-  });
+  };
+}
+aiCenterRouter.get("/stats", async (_req, res) => {
+  res.json(await getAiStatsData());
 });
 
 // ── GET /usage ─────────────────────────────────────────────────────────────────
@@ -122,7 +125,7 @@ aiCenterRouter.post("/budgets/unblock", async (req, res) => {
 });
 
 // ── GET /financial ─────────────────────────────────────────────────────────────
-aiCenterRouter.get("/financial", async (_req, res) => {
+export async function getFinancialData() {
   const { start, end } = monthRange();
   const orgs    = await db.select().from(organizationsTable);
 
@@ -134,7 +137,7 @@ aiCenterRouter.get("/financial", async (_req, res) => {
   `) as { rows: Array<{ org_id: number; spend: number; calls: number }> };
   const spendMap = new Map(spendRows.rows.map(r => [r.org_id, { spend: Number(r.spend ?? 0), calls: Number(r.calls ?? 0) }]));
 
-  const result = orgs.map(org => {
+  return orgs.map(org => {
     const plan        = org.plan ?? "free";
     const revenueEur  = PLAN_REVENUE[plan] ?? 0;
     const aiData      = spendMap.get(org.id) ?? { spend: 0, calls: 0 };
@@ -144,6 +147,7 @@ aiCenterRouter.get("/financial", async (_req, res) => {
     const marginPct   = revenueEur > 0 ? (marginEur / revenueEur) * 100 : marginEur < 0 ? -100 : 100;
     return { orgId: org.id, orgName: org.name, plan, revenueEur, aiCostUsd, aiCostEur, marginEur, marginPct, calls: aiData.calls };
   });
-
-  res.json(result);
+}
+aiCenterRouter.get("/financial", async (_req, res) => {
+  res.json(await getFinancialData());
 });
