@@ -42,7 +42,7 @@ export default function AvaPanel() {
 
             <div className="relative z-10 flex flex-col h-full">
               <AvaHeader />
-              <AvaQuickActions onAction={injectMessage} />
+              <AvaQuickActions onAction={injectMessage} superAdmin={useAvaCoreSuperAdmin} />
               <AvaChat
                 pendingMessage={pendingMessage}
                 onClearPending={clearPendingMessage}
