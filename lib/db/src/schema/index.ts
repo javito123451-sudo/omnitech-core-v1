@@ -29,3 +29,4 @@ export * from "./client-portal";
 export * from "./diagnostics";
 export * from "./trend-snapshots";
 export * from "./fleet";
+export * from "./taller";

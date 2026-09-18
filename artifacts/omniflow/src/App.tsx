@@ -63,6 +63,7 @@ import OmniAdsPage from "@/pages/ads/index";
 import LeadsPage from "@/pages/leads";
 import TimePage from "@/pages/time";
 import FleetPage from "@/pages/fleet";
+import TallerPage from "@/pages/taller";
 import OnboardWizardPage from "@/pages/control-center/onboard-wizard";
 import PortalPage from "@/pages/portal";
 import PublicInvoicePage from "@/pages/PublicInvoicePage";
@@ -560,6 +561,15 @@ function AppRoutes() {
           <MainLayout>
             <ModuleGuard moduleKey="omni_fleet">
               <FleetPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/taller">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="omni_taller">
+              <TallerPage />
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>

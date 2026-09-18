@@ -17,6 +17,7 @@ const CUSTOMER_ALLOWED = [
   "cancel_appointment",
   "get_appointments",
   "escalate_to_human",
+  "get_repair_status",
 ];
 
 // Anything that touches accounting, full CRM read/write, quotes or tasks
@@ -38,6 +39,8 @@ const MUST_STAY_INTERNAL_ONLY = [
   "accounting_summary",
   "create_task",
   "get_tasks",
+  "create_repair_order",
+  "update_repair_stage",
 ];
 
 describe("AVA skill catalog — channel isolation", () => {

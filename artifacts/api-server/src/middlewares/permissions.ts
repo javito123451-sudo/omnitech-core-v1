@@ -85,6 +85,9 @@ export type Permission =
   // Omni Fleet (flota, conductores, rutas y estado de entregas)
   | "fleet.read"
   | "fleet.write"
+  // Omni Taller (órdenes de reparación — vehículo + fase, sobre CRM genérico)
+  | "taller.read"
+  | "taller.write"
   // Analytics / Executive / Diagnostics
   | "analytics.read"
   | "executive.read"
@@ -124,6 +127,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
+    "taller.read", "taller.write",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -144,6 +148,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
+    "taller.read", "taller.write",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -165,6 +170,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
+    "taller.read", "taller.write",
     "analytics.read", "executive.read",
     "settings.read",
     "users.read",
@@ -185,6 +191,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
+    "taller.read", "taller.write",
     "analytics.read",
     "settings.read",
     "users.read",
@@ -221,6 +228,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read",
     "a_medida.read",
     "fleet.read",
+    "taller.read",
     "analytics.read",
     "settings.read",
     "users.read",

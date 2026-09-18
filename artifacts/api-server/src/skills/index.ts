@@ -34,6 +34,10 @@ import { createTaskSkill, getTasksSkill } from "./taskSkills";
 
 import { escalateToHumanSkill } from "./escalationSkills";
 
+import {
+  getRepairStatusSkill, createRepairOrderSkill, updateRepairStageSkill,
+} from "./tallerSkills";
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Registry
 // ═══════════════════════════════════════════════════════════════════════════
@@ -58,6 +62,9 @@ const SKILLS: SkillDefinition[] = [
   createTaskSkill,
   getTasksSkill,
   escalateToHumanSkill,
+  getRepairStatusSkill,
+  createRepairOrderSkill,
+  updateRepairStageSkill,
 ];
 
 const SKILL_MAP: Map<string, SkillDefinition> = new Map(SKILLS.map(s => [s.id, s]));
@@ -178,6 +185,11 @@ const CUSTOMER_CHANNEL_SKILL_IDS = new Set([
   "cancel_appointment",
   "get_appointments",
   "escalate_to_human",
+  // Omni Taller: consultar estado de una reparación es autoservicio seguro
+  // (solo lectura, acotado al cliente/vehículo del canal). Abrir órdenes y
+  // cambiar de fase (create_repair_order, update_repair_stage) es trabajo
+  // interno del taller — permanecen fuera de este set a propósito.
+  "get_repair_status",
 ]);
 
 type OpenAIFunctionSchema = Array<{

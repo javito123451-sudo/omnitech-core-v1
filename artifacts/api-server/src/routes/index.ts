@@ -41,6 +41,7 @@ import { publicLeadCaptureRouter } from "./publicLeadCapture";
 import { aMedidaLeadsRouter } from "./aMedidaLeads";
 import { timeRouter }  from "./time";
 import { fleetRouter, fleetWebhookRouter } from "./fleet";
+import { tallerRouter } from "./taller";
 import { aceRouter } from "./ace";
 import { internalCronRouter } from "./internalCron";
 
@@ -138,6 +139,7 @@ router.use("/leads",          requireModule("omni_leads"),     leadsRouter);
 router.use("/a-medida-leads", requireModule("a_medida"),       aMedidaLeadsRouter);
 router.use("/time",           requireModule("omni_time"),      timeRouter);
 router.use("/fleet",          requireModule("omni_fleet"),     fleetRouter);
+router.use("/taller",         requireModule("omni_taller"),    tallerRouter);
 
 // ── Ava Context Engine — lightweight context sync, no module gate ─────────
 router.use("/ace", aceRouter);
