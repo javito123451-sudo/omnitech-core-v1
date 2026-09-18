@@ -62,13 +62,36 @@ function TypingDots() {
   );
 }
 
+interface AvaCoreAnswer {
+  observed: string;
+  analysis: string;
+  hypothesis?: string;
+  recommendation?: string;
+}
+
+function formatAvaCoreAnswer(answer: AvaCoreAnswer): string {
+  const blocks = [
+    answer.observed ? `### Observado\n${answer.observed}` : null,
+    answer.analysis ? `### Análisis\n${answer.analysis}` : null,
+    answer.hypothesis ? `### Hipótesis\n${answer.hypothesis}` : null,
+    answer.recommendation ? `### Recomendación\n${answer.recommendation}` : null,
+  ].filter((b): b is string => !!b);
+  return blocks.join("\n\n") || "Sin datos suficientes para responder.";
+}
+
 interface AvaChatProps {
   pendingMessage:   string | null;
   onClearPending:   () => void;
   moduleLabel:      string;
+  // While true, messages go to the new AVA CORE engine (context: super_admin)
+  // instead of the legacy /api/chat — used only in Control Center, see
+  // AvaContext.tsx. AVA CORE has no streaming yet: the full structured
+  // answer arrives in one response, rendered the same way a streamed
+  // message would look once it finishes.
+  useAvaCoreSuperAdmin?: boolean;
 }
 
-export default function AvaChat({ pendingMessage, onClearPending, moduleLabel }: AvaChatProps) {
+export default function AvaChat({ pendingMessage, onClearPending, moduleLabel, useAvaCoreSuperAdmin }: AvaChatProps) {
   const [msgs, setMsgs]       = useState<Msg[]>([]);
   const [input, setInput]     = useState("");
   const [thinking, setThinking] = useState(false);
@@ -117,6 +140,36 @@ export default function AvaChat({ pendingMessage, onClearPending, moduleLabel }:
 
     const markError = (msg: string) =>
       setMsgs(prev => prev.map(m => m.id === aiId ? { ...m, content: msg, streaming: false, error: true } : m));
+
+    if (useAvaCoreSuperAdmin) {
+      try {
+        const res = await authFetch(`${API_BASE}/api/ava-core/ask`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message:   trimmed,
+            sessionId: sessionIdRef.current,
+            context:   "super_admin",
+          }),
+          signal: ctrl.signal,
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "Error de conexión" }));
+          markError(body.error ?? "Error inesperado del servidor");
+          return;
+        }
+
+        const data = await res.json() as { sessionId: string; answer: AvaCoreAnswer };
+        sessionIdRef.current = data.sessionId;
+        const formatted = formatAvaCoreAnswer(data.answer);
+        setMsgs(prev => prev.map(m => m.id === aiId ? { ...m, content: formatted, streaming: false } : m));
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        markError("No se pudo conectar con Ava Core. Verifica tu conexión.");
+      }
+      return;
+    }
 
     try {
       const ctxPayload = moduleLabel ? { page: moduleLabel } : undefined;
@@ -180,7 +233,7 @@ export default function AvaChat({ pendingMessage, onClearPending, moduleLabel }:
       if ((err as Error).name === "AbortError") return;
       markError("No se pudo conectar con Ava. Verifica tu conexión.");
     }
-  }, [msgs, thinking, scrollToBottom, moduleLabel]);
+  }, [msgs, thinking, scrollToBottom, moduleLabel, useAvaCoreSuperAdmin]);
 
   useEffect(() => {
     if (pendingMessage) {
