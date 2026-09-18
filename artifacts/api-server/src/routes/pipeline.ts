@@ -7,13 +7,15 @@ export const pipelineRouter = Router();
 
 // ── GET /api/pipeline/stages ── listar etapas del pipeline ────────────────────
 
+export async function getPipelineStagesData(orgId: number) {
+  const rows = await db.select().from(pipelineStagesTable)
+    .where(eq(pipelineStagesTable.orgId, orgId))
+    .orderBy(pipelineStagesTable.orderIndex);
+  return rows.map(r => ({ ...r, createdAt: r.createdAt.toISOString() }));
+}
 pipelineRouter.get("/stages", requirePermission("crm.read"), async (req, res) => {
   try {
-    const orgId = req.orgId!;
-    const rows = await db.select().from(pipelineStagesTable)
-      .where(eq(pipelineStagesTable.orgId, orgId))
-      .orderBy(pipelineStagesTable.orderIndex);
-    res.json(rows.map(r => ({ ...r, createdAt: r.createdAt.toISOString() })));
+    res.json(await getPipelineStagesData(req.orgId!));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -21,37 +23,39 @@ pipelineRouter.get("/stages", requirePermission("crm.read"), async (req, res) =>
 
 // ── GET /api/pipeline/deals ── listar deals/oportunidades ────────────────────
 
+export async function getDealsData(orgId: number) {
+  const rows = await db.select({
+    id: dealsTable.id,
+    clientId: dealsTable.clientId,
+    stageId: dealsTable.stageId,
+    value: dealsTable.value,
+    currency: dealsTable.currency,
+    assignedToUserId: dealsTable.assignedToUserId,
+    expectedCloseDate: dealsTable.expectedCloseDate,
+    status: dealsTable.status,
+    notes: dealsTable.notes,
+    createdAt: dealsTable.createdAt,
+    updatedAt: dealsTable.updatedAt,
+    clientName: clientsTable.name,
+    clientCompany: clientsTable.company,
+    assignedName: usersTable.name,
+  })
+    .from(dealsTable)
+    .leftJoin(clientsTable, eq(dealsTable.clientId, clientsTable.id))
+    .leftJoin(usersTable, eq(dealsTable.assignedToUserId, usersTable.id))
+    .where(eq(dealsTable.orgId, orgId))
+    .orderBy(desc(dealsTable.updatedAt));
+
+  return rows.map(r => ({
+    ...r,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+    expectedCloseDate: r.expectedCloseDate?.toISOString() ?? null,
+  }));
+}
 pipelineRouter.get("/deals", requirePermission("crm.read"), async (req, res) => {
   try {
-    const orgId = req.orgId!;
-    const rows = await db.select({
-      id: dealsTable.id,
-      clientId: dealsTable.clientId,
-      stageId: dealsTable.stageId,
-      value: dealsTable.value,
-      currency: dealsTable.currency,
-      assignedToUserId: dealsTable.assignedToUserId,
-      expectedCloseDate: dealsTable.expectedCloseDate,
-      status: dealsTable.status,
-      notes: dealsTable.notes,
-      createdAt: dealsTable.createdAt,
-      updatedAt: dealsTable.updatedAt,
-      clientName: clientsTable.name,
-      clientCompany: clientsTable.company,
-      assignedName: usersTable.name,
-    })
-      .from(dealsTable)
-      .leftJoin(clientsTable, eq(dealsTable.clientId, clientsTable.id))
-      .leftJoin(usersTable, eq(dealsTable.assignedToUserId, usersTable.id))
-      .where(eq(dealsTable.orgId, orgId))
-      .orderBy(desc(dealsTable.updatedAt));
-
-    res.json(rows.map(r => ({
-      ...r,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-      expectedCloseDate: r.expectedCloseDate?.toISOString() ?? null,
-    })));
+    res.json(await getDealsData(req.orgId!));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

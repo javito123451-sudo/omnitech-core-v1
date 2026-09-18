@@ -1,19 +1,82 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence, type PanInfo } from "framer-motion";
 import { X } from "lucide-react";
 import { useAva } from "./AvaContext";
 import AvaAvatar from "./AvaAvatar";
 
+const SIZE = 64;
+const MARGIN = 12;
+const STORAGE_KEY = "ava.floatingButton.position.v1";
+
+interface Pos { top: number; left: number }
+
+function defaultPos(): Pos {
+  return {
+    top:  window.innerHeight - SIZE - 24,
+    left: window.innerWidth  - SIZE - 24,
+  };
+}
+
+function clamp(pos: Pos): Pos {
+  const maxTop  = Math.max(MARGIN, window.innerHeight - SIZE - MARGIN);
+  const maxLeft = Math.max(MARGIN, window.innerWidth  - SIZE - MARGIN);
+  return {
+    top:  Math.min(Math.max(pos.top, MARGIN), maxTop),
+    left: Math.min(Math.max(pos.left, MARGIN), maxLeft),
+  };
+}
+
+function loadPos(): Pos {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return clamp(JSON.parse(raw));
+  } catch { /* private mode / blocked storage — fall back to default */ }
+  return clamp(defaultPos());
+}
+
+function savePos(pos: Pos) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pos)); } catch { /* non-critical */ }
+}
+
 export default function AvaFloatingButton() {
   const { isOpen, toggle } = useAva();
+  const [pos, setPos]   = useState<Pos>(loadPos);
+  const [dragging, setDragging] = useState(false);
+  const draggedRef = useRef(false);
+
+  // Never let a resize (rotating a phone, resizing the window) leave Ava
+  // stranded off-screen.
+  useEffect(() => {
+    const onResize = () => setPos(p => clamp(p));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const handleDragEnd = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const next = clamp({
+      top:  pos.top  + info.offset.y,
+      left: pos.left + info.offset.x,
+    });
+    setPos(next);
+    savePos(next);
+    setDragging(false);
+    // Swallow the click that would otherwise fire right after a drag.
+    setTimeout(() => { draggedRef.current = false; }, 0);
+  };
 
   return (
     <motion.button
-      onClick={toggle}
-      className="fixed bottom-6 right-6 z-[9999] rounded-full group focus:outline-none"
-      style={{ width: 64, height: 64 }}
-      whileHover={{ scale: 1.08 }}
+      onClick={() => { if (!draggedRef.current) toggle(); }}
+      drag
+      dragMomentum={false}
+      dragElastic={0}
+      onDragStart={() => { draggedRef.current = true; setDragging(true); }}
+      onDragEnd={handleDragEnd}
+      className="fixed z-[9999] rounded-full group focus:outline-none touch-none"
+      style={{ width: SIZE, height: SIZE, top: pos.top, left: pos.left }}
+      whileHover={{ scale: dragging ? 1 : 1.08 }}
       whileTap={{ scale: 0.92 }}
-      aria-label={isOpen ? "Cerrar Ava" : "Abrir Ava"}
+      aria-label={isOpen ? "Cerrar Ava" : "Abrir Ava (arrastrable)"}
     >
       {/* Outer glow */}
       <div
