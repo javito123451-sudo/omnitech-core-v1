@@ -15,6 +15,20 @@
       "when": 1789757013271,
       "tag": "0001_fleet_module",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789769284971,
+      "tag": "0002_seed_taller_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789769326694,
+      "tag": "0003_taller_module",
+      "breakpoints": true
     }
   ]
 }

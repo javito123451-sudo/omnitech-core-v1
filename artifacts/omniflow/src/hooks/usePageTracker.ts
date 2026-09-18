@@ -45,6 +45,7 @@ const ROUTE_MODULE_MAP: Array<{ pattern: RegExp; module: string }> = [
   { pattern: /^\/manual/,            module: "omni_docs" },
   { pattern: /^\/time/,              module: "omni_time" },
   { pattern: /^\/fleet/,             module: "omni_fleet" },
+  { pattern: /^\/taller/,            module: "omni_taller" },
   { pattern: /^\/control-center/,    module: "platform" },
   { pattern: /^\/assistant/,         module: "ai_agents" },
 ];
