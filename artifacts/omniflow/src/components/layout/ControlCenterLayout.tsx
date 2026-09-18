@@ -11,6 +11,9 @@ import { useClerk } from "@clerk/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { authFetch } from "@/lib/authFetch";
 import { useOrg } from "@/lib/orgContext";
+import { AvaProvider } from "@/components/ava/AvaContext";
+import AvaFloatingButton from "@/components/ava/AvaFloatingButton";
+import AvaPanel from "@/components/ava/AvaPanel";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -131,6 +134,7 @@ export default function ControlCenterLayout({ children }: { children: ReactNode 
   const strippedLocation = basePath && location.startsWith(basePath) ? location.slice(basePath.length) || "/" : location;
 
   return (
+    <AvaProvider>
     <div className="flex h-screen bg-[#0a0b14] text-white overflow-hidden">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-60 flex-col bg-[#0d0e1e] border-r border-white/[0.06] flex-shrink-0">
@@ -178,5 +182,10 @@ export default function ControlCenterLayout({ children }: { children: ReactNode 
         {children}
       </main>
     </div>
+
+    {/* ── Ava floating assistant (AVA CORE super_admin context) ─────── */}
+    <AvaFloatingButton />
+    <AvaPanel />
+    </AvaProvider>
   );
 }
