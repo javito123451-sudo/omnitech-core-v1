@@ -20,7 +20,7 @@ const MODULE_GREETINGS: Record<string, string> = {
 };
 
 export default function AvaHeader() {
-  const { close, moduleLabel } = useAva();
+  const { close, moduleLabel, useAvaCoreSuperAdmin } = useAva();
   const greeting = moduleLabel ? (MODULE_GREETINGS[moduleLabel] ?? `Estás en ${moduleLabel}.`) : null;
 
   return (
@@ -28,15 +28,24 @@ export default function AvaHeader() {
       <AvaAvatar size={48} breathing={false} />
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="font-bold text-white text-[15px] leading-snug">Hola, soy Ava.</span>
+        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+          <span className="font-bold text-white text-[15px] leading-snug">
+            {useAvaCoreSuperAdmin ? "Ava Super Admin" : "Hola, soy Ava."}
+          </span>
           <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/20">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[10px] text-emerald-400 font-medium">Online</span>
           </div>
+          {useAvaCoreSuperAdmin && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-violet-500/15 border border-violet-500/25">
+              <span className="text-[10px] text-violet-300 font-medium">AVA CORE · solo lectura</span>
+            </div>
+          )}
         </div>
-        <p className="text-[13px] text-slate-400 leading-snug">¿En qué puedo ayudarte?</p>
-        {greeting && (
+        <p className="text-[13px] text-slate-400 leading-snug">
+          {useAvaCoreSuperAdmin ? "Pregúntame sobre workspaces, usuarios, seguridad, IA o facturación." : "¿En qué puedo ayudarte?"}
+        </p>
+        {greeting && !useAvaCoreSuperAdmin && (
           <div className="mt-1.5 flex items-center gap-1.5">
             <Sparkles className="w-3 h-3 text-primary/50 shrink-0" />
             <span className="text-[11px] text-primary/60 leading-none">{greeting}</span>
