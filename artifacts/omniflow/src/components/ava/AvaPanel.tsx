@@ -5,7 +5,7 @@ import AvaQuickActions from "./AvaQuickActions";
 import AvaChat from "./AvaChat";
 
 export default function AvaPanel() {
-  const { isOpen, close, pendingMessage, clearPendingMessage, injectMessage, moduleLabel } = useAva();
+  const { isOpen, close, pendingMessage, clearPendingMessage, injectMessage, moduleLabel, useAvaCoreSuperAdmin } = useAva();
 
   return (
     <AnimatePresence>
@@ -47,6 +47,7 @@ export default function AvaPanel() {
                 pendingMessage={pendingMessage}
                 onClearPending={clearPendingMessage}
                 moduleLabel={moduleLabel}
+                useAvaCoreSuperAdmin={useAvaCoreSuperAdmin}
               />
             </div>
           </motion.div>

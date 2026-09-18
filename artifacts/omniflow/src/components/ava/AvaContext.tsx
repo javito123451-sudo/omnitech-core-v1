@@ -10,11 +10,16 @@ interface AvaContextValue {
   injectMessage: (msg: string) => void;
   pendingMessage: string | null;
   clearPendingMessage: () => void;
+  // True while browsing Control Center — AvaChat routes messages to the new
+  // AVA CORE engine (context: "super_admin") instead of the legacy /api/chat
+  // while here. Everywhere else keeps using the existing chat unchanged.
+  useAvaCoreSuperAdmin: boolean;
 }
 
 const Ctx = createContext<AvaContextValue | null>(null);
 
 const ROUTE_LABELS: Array<[string, string]> = [
+  ["/control-center",      "Control Center"],
   ["/executive-dashboard", "Dashboard Ejecutivo"],
   ["/executive",           "Intelligence"],
   ["/dashboard",           "Panel CRM"],
@@ -64,9 +69,10 @@ export function AvaProvider({ children }: { children: ReactNode }) {
   const clearPendingMessage = useCallback(() => setPending(null), []);
 
   const moduleLabel = resolveLabel(location);
+  const useAvaCoreSuperAdmin = location === "/control-center" || location.startsWith("/control-center/");
 
   return (
-    <Ctx.Provider value={{ isOpen, open, close, toggle, moduleLabel, injectMessage, pendingMessage, clearPendingMessage }}>
+    <Ctx.Provider value={{ isOpen, open, close, toggle, moduleLabel, injectMessage, pendingMessage, clearPendingMessage, useAvaCoreSuperAdmin }}>
       {children}
     </Ctx.Provider>
   );
