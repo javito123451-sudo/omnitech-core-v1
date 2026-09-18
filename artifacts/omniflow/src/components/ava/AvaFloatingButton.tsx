@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence, type PanInfo } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, type PanInfo } from "framer-motion";
 import { X } from "lucide-react";
 import { useAva } from "./AvaContext";
 import AvaAvatar from "./AvaAvatar";
@@ -43,6 +43,14 @@ export default function AvaFloatingButton() {
   const [pos, setPos]   = useState<Pos>(loadPos);
   const [dragging, setDragging] = useState(false);
   const draggedRef = useRef(false);
+  // framer-motion's `drag` moves the element via its own x/y transform,
+  // layered on top of the top/left we set in style. If we never reset that
+  // transform, the next render's top/left gets applied ON TOP of the
+  // leftover drag transform instead of replacing it — the button then
+  // looks like it snaps back / doesn't move on the next drag. So x/y are
+  // owned here and explicitly zeroed once their offset is folded into pos.
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
 
   // Never let a resize (rotating a phone, resizing the window) leave Ava
   // stranded off-screen.
@@ -59,6 +67,8 @@ export default function AvaFloatingButton() {
     });
     setPos(next);
     savePos(next);
+    x.set(0);
+    y.set(0);
     setDragging(false);
     // Swallow the click that would otherwise fire right after a drag.
     setTimeout(() => { draggedRef.current = false; }, 0);
@@ -70,10 +80,10 @@ export default function AvaFloatingButton() {
       drag
       dragMomentum={false}
       dragElastic={0}
+      style={{ x, y, width: SIZE, height: SIZE, top: pos.top, left: pos.left }}
       onDragStart={() => { draggedRef.current = true; setDragging(true); }}
       onDragEnd={handleDragEnd}
       className="fixed z-[9999] rounded-full group focus:outline-none touch-none"
-      style={{ width: SIZE, height: SIZE, top: pos.top, left: pos.left }}
       whileHover={{ scale: dragging ? 1 : 1.08 }}
       whileTap={{ scale: 0.92 }}
       aria-label={isOpen ? "Cerrar Ava" : "Abrir Ava (arrastrable)"}
