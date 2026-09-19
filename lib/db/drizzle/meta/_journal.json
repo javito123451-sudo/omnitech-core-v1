@@ -29,6 +29,13 @@
       "when": 1789769326694,
       "tag": "0003_taller_module",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789817908079,
+      "tag": "0004_ai_agents",
+      "breakpoints": true
     }
   ]
 }
