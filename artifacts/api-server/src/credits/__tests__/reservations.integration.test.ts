@@ -316,8 +316,8 @@ describe.skipIf(!hasRealDb)("OmniCredits — reservas, carreras e idempotencia",
     await expect(reserveCredits({ orgId: org, credits: 9, reference: "a2-1", agentId: a2.id })).resolves.toBeTruthy(); // otro agente
 
     // el tope propio del agente (más bajo que el del plan) manda
-    await expect(reserveCredits({ orgId: org, credits: 3, reference: "cap", agentId: a2.id, agentCap: 10 })).rejects.toMatchObject({ scope: "agent_monthly", limit: 10 });
-    await expect(reserveCredits({ orgId: org, credits: 1, reference: "cap2", agentId: a2.id, agentCap: 100 })).resolves.toBeTruthy();
+    await expect(reserveCredits({ orgId: org, credits: 3, reference: "cap", agentId: a2.id, agentLimits: { monthly: 10 } })).rejects.toMatchObject({ scope: "agent_monthly", limit: 10 });
+    await expect(reserveCredits({ orgId: org, credits: 1, reference: "cap2", agentId: a2.id, agentLimits: { monthly: 100 } })).resolves.toBeTruthy();
   });
 
   it("alertas de consumo: una por umbral y periodo, y quedan auditadas", async () => {

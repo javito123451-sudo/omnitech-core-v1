@@ -17,9 +17,11 @@ import { CreditError, ReferenceConflictError } from "../credits/errors";
 import { detectAnomalies, raiseAnomalyAlerts } from "../credits/alerts";
 import { listPlanConfigs, upsertPlanConfig, type PlanPatch } from "../credits/planService";
 import { listPurchases, recordPurchase, reversePurchase } from "../credits/purchaseService";
+import { listPacks, purchasePack, upsertPack, type PackPatch } from "../credits/packService";
 import { getDashboard, getGlobalOverview } from "../credits/reporting";
 import { renewSubscription } from "../credits/subscriptionService";
-import { deactivateModelPricing, listPricing, PricingError, setModelPricing, type PricingInput } from "../ai-gateway/pricingService";
+import { deactivateModelPricing, getPricingReport, listPricing, PricingError, setModelPricing, type PricingInput } from "../ai-gateway/pricingService";
+import { applyOfficialPricing, type OfficialPriceInput } from "../ai-gateway/officialPricing";
 
 export const creditsAdminRouter = Router();
 
@@ -80,6 +82,24 @@ creditsAdminRouter.put("/pricing", async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// Estado del pricing: modelos con precio oficial validado vs. provisionales (legacy / sin validar).
+creditsAdminRouter.get("/pricing/report", async (_req, res) => {
+  try { res.json(await getPricingReport()); } catch (err) { fail(res, err); }
+});
+
+// Carga de precios OFICIALES: todo-o-nada, con 'source' obligatorio y provisional=false. Sin valores por defecto.
+creditsAdminRouter.post("/pricing/official", async (req, res) => {
+  if (!requireStrictSuperAdmin(req, res)) return;
+  try {
+    const entries = (req.body as { entries?: Array<Omit<OfficialPriceInput, "effectiveFrom"> & { effectiveFrom?: string }> }).entries ?? [];
+    const applied = await applyOfficialPricing(entries.map((e) => ({ ...e, effectiveFrom: e.effectiveFrom ? new Date(e.effectiveFrom) : undefined })), req.clerkUserId ?? null);
+    for (const a of applied) {
+      await audit(req, "ai_pricing_changed", a.current.id, undefined, { provider: a.current.provider, model: a.current.model, official: true, source: a.current.source, previous: a.previous, current: a.current });
+    }
+    res.status(201).json(applied);
+  } catch (err) { fail(res, err); }
+});
+
 creditsAdminRouter.delete("/pricing/:id", async (req, res) => {
   if (!requireStrictSuperAdmin(req, res)) return;
   try {
@@ -106,6 +126,22 @@ creditsAdminRouter.put("/plans/:plan", async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// ── Catálogo de OmniCredits extra (packs) ────────────────────────────────────
+
+creditsAdminRouter.get("/packs", async (_req, res) => {
+  try { res.json(await listPacks()); } catch (err) { fail(res, err); }
+});
+
+creditsAdminRouter.put("/packs/:code", async (req, res) => {
+  if (!requireStrictSuperAdmin(req, res)) return;
+  try {
+    const code = String(req.params["code"]);
+    const result = await upsertPack(code, req.body as PackPatch, req.clerkUserId ?? null);
+    await audit(req, "credit_pack_changed", code, undefined, { code, previous: result.previous, current: result.current });
+    res.json(result);
+  } catch (err) { fail(res, err); }
+});
+
 // ── Un workspace ─────────────────────────────────────────────────────────────
 
 creditsAdminRouter.get("/:orgId", async (req, res) => {
@@ -113,7 +149,7 @@ creditsAdminRouter.get("/:orgId", async (req, res) => {
   if (!orgId) { res.status(400).json({ error: "orgId no válido" }); return; }
   try {
     res.json({
-      dashboard: await getDashboard(orgId), ledger: await listLedger(orgId, { limit: 50 }),
+      dashboard: await getDashboard(orgId, new Date(), { technical: true }), ledger: await listLedger(orgId, { limit: 50 }),
       purchases: await listPurchases(orgId, 20), integrity: await verifyLedgerIntegrity(orgId),
     });
   } catch (err) { fail(res, err); }
@@ -157,15 +193,22 @@ creditsAdminRouter.post("/:orgId/purchases", async (req, res) => {
   const orgId = orgIdOf(req);
   if (!orgId) { res.status(400).json({ error: "orgId no válido" }); return; }
   try {
-    const b = req.body as { credits?: number; priceAmount?: number; currency?: string; paymentReference?: string; expiresAt?: string };
-    const result = await recordPurchase({
-      orgId, credits: Number(b.credits), priceAmount: b.priceAmount ?? null, currency: b.currency,
-      paymentReference: b.paymentReference ?? null, expiresAt: b.expiresAt ? new Date(b.expiresAt) : null, userClerkId: req.clerkUserId ?? null,
-    });
+    const b = req.body as { packCode?: string; credits?: number; priceAmount?: number; currency?: string; paymentReference?: string; expiresAt?: string };
+    // paymentReference es la clave de idempotencia y es obligatoria (cuerpo o cabecera Idempotency-Key).
+    const paymentReference = (b.paymentReference ?? req.header("idempotency-key") ?? "").trim();
+    if (!paymentReference) { res.status(400).json({ status: "CREDIT_INVALID", error: "Falta paymentReference (o la cabecera Idempotency-Key): es la clave de idempotencia de la compra." }); return; }
+    const expiresAt = b.expiresAt ? new Date(b.expiresAt) : null;
+    // Compra de un pack del catálogo (créditos y precio salen del catálogo) o una compra libre.
+    const result = b.packCode
+      ? await purchasePack({ orgId, packCode: b.packCode, paymentReference, expiresAt, userClerkId: req.clerkUserId ?? null })
+      : await recordPurchase({
+          orgId, credits: Number(b.credits), priceAmount: b.priceAmount ?? null, currency: b.currency,
+          paymentReference, expiresAt, userClerkId: req.clerkUserId ?? null,
+        });
     if (!result.duplicate) {
       await audit(req, "credits_purchase", result.purchase.id, orgId, {
-        credits: b.credits, priceAmount: b.priceAmount ?? null, currency: b.currency ?? "EUR", paymentReference: b.paymentReference ?? null,
-        balanceAfter: result.entry?.balanceAfter,
+        packCode: b.packCode ?? null, credits: Number(result.purchase.credits), priceAmount: Number(result.purchase.priceAmount ?? 0),
+        currency: result.purchase.currency, paymentReference, balanceAfter: result.entry?.balanceAfter,
       });
     }
     res.status(result.duplicate ? 200 : 201).json(result);

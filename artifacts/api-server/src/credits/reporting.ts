@@ -8,7 +8,7 @@ import {
   db, creditLedgerTable, creditPurchasesTable, creditAlertsTable, aiUsageLogsTable, organizationsTable,
 } from "@workspace/db";
 import { listAlerts } from "./alerts";
-import { getAvailable } from "./creditService";
+import { getAvailable, getBalances } from "./creditService";
 import { consumedBetween, dayBounds, getPlanConfig, monthBounds, resolveOrgPlan } from "./planService";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -16,7 +16,13 @@ const num = (v: string | null | undefined) => Number(v ?? 0);
 const neg = sql<string>`sum(-${creditLedgerTable.credits})`;
 const cost = sql<string>`coalesce(sum(${creditLedgerTable.technicalCostUsd}), 0)`;
 
-export async function getDashboard(orgId: number, at: Date = new Date()) {
+/**
+ * Panel de créditos de un workspace. Por defecto es lo que ve el CLIENTE: créditos, nunca tokens ni
+ * costes en dinero. `technical: true` (modo técnico/admin) añade el coste técnico en USD.
+ */
+export async function getDashboard(orgId: number, at: Date = new Date(), opts: { technical?: boolean } = {}) {
+  const technical = opts.technical === true;
+  const usd = (v: number) => (technical ? { technicalCostUsd: v } : {});
   const { plan, license } = await resolveOrgPlan(orgId, db, at);
   const cfg = plan ? await getPlanConfig(plan) : null;
   const month = monthBounds(at);
@@ -24,8 +30,9 @@ export async function getDashboard(orgId: number, at: Date = new Date()) {
   const consumption = and(eq(creditLedgerTable.orgId, orgId), eq(creditLedgerTable.entryType, "consumption"));
   const inMonth = and(consumption, gte(creditLedgerTable.createdAt, month.start));
 
-  const [balances, used, usedToday, byAgent, byModel, byFeature, daily, monthly, alerts, [prov]] = await Promise.all([
+  const [balances, buckets, used, usedToday, byAgent, byModel, byFeature, daily, monthly, alerts, [prov], [origin]] = await Promise.all([
     getAvailable(orgId),
+    getBalances(orgId),
     consumedBetween(db, orgId, month.start, month.end),
     consumedBetween(db, orgId, day.start, day.end),
     db.select({ agentId: creditLedgerTable.agentId, credits: neg, costUsd: cost, runs: sql<string>`count(*)` })
@@ -44,6 +51,12 @@ export async function getDashboard(orgId: number, at: Date = new Date()) {
     // Consumo del periodo calculado con un precio no configurado (legacy/fallback): no es un coste definitivo.
     db.select({ credits: sql<string>`coalesce(sum(-${creditLedgerTable.credits}), 0)`, runs: sql<string>`count(*)` })
       .from(creditLedgerTable).where(and(inMonth, sql`${creditLedgerTable.metadata}->>'provisional' = 'true'`)),
+    // De qué cubo salió lo consumido este periodo (incluidos / rollover / extra).
+    db.select({
+      included: sql<string>`coalesce(sum((${creditLedgerTable.breakdown}->>'included')::numeric), 0)`,
+      rollover: sql<string>`coalesce(sum((${creditLedgerTable.breakdown}->>'rollover')::numeric), 0)`,
+      extra:    sql<string>`coalesce(sum((${creditLedgerTable.breakdown}->>'extra')::numeric), 0)`,
+    }).from(creditLedgerTable).where(inMonth),
   ]);
 
   const base = cfg?.includedCredits ?? cfg?.monthlyLimit ?? null;
@@ -59,10 +72,22 @@ export async function getDashboard(orgId: number, at: Date = new Date()) {
     pctConsumed: base ? Math.round((used / base) * 1000) / 10 : null,
     limits: cfg ? { monthly: cfg.monthlyLimit, daily: cfg.dailyLimit, perAgentMonthly: cfg.perAgentMonthlyLimit, blockAtLimit: cfg.blockAtLimit } : null,
     pricing:   { provisionalCredits: num(prov?.credits), provisionalRuns: num(prov?.runs), provisional: num(prov?.runs) > 0 },
-    byAgent:   byAgent.map((r) => ({ agentId: r.agentId, credits: num(r.credits), technicalCostUsd: num(r.costUsd), runs: num(r.runs) })),
-    byModel:   byModel.map((r) => ({ provider: r.provider, model: r.model, credits: num(r.credits), technicalCostUsd: num(r.costUsd), runs: num(r.runs) })),
+    // ── Datos listos para mostrar al usuario ──────────────────────────────────
+    creditsUsed:       used,
+    creditsRemaining:  balances.available,
+    monthlyCredits:    cfg?.includedCredits ?? null,
+    rolloverCredits:   buckets.rollover,
+    extraCredits:      buckets.extra,
+    includedRemaining: buckets.included,
+    usagePercentage:   base ? Math.round((used / base) * 1000) / 10 : null,
+    renewalDate:       license?.validUntil ?? month.end,
+    provisionalCredits: num(prov?.credits),
+    usedByOrigin:      { included: num(origin?.included), rollover: num(origin?.rollover), extra: num(origin?.extra) },
+    byAgent:   byAgent.map((r) => ({ agentId: r.agentId, credits: num(r.credits), ...usd(num(r.costUsd)), runs: num(r.runs) })),
+    byModel:   byModel.map((r) => ({ provider: r.provider, model: r.model, credits: num(r.credits), ...usd(num(r.costUsd)), runs: num(r.runs) })),
     byFeature: byFeature.map((r) => ({ feature: r.feature, credits: num(r.credits), runs: num(r.runs) })),
     daily:     daily.map((r) => ({ day: r.day, credits: num(r.credits) })),
+    byDay:     daily.map((r) => ({ day: r.day, credits: num(r.credits) })),
     monthly:   monthly.map((r) => ({ month: r.month, credits: num(r.credits) })),
     forecast:  { projectedMonthCredits: Math.round((used / elapsed) * daysInMonth * 100) / 100, basis: "linear" as const },
     alerts,
@@ -77,7 +102,7 @@ export async function getGlobalOverview(opts: { days?: number; orgIds?: number[]
   const inWindow = and(gte(creditLedgerTable.createdAt, since), ledgerOrg);
   const consumptionWindow = and(inWindow, eq(creditLedgerTable.entryType, "consumption"));
 
-  const [byType, byModel, topWorkspaces, topAgents, errors, purchases, alerts] = await Promise.all([
+  const [byType, byModel, topWorkspaces, topAgents, errors, purchases, alerts, [prov], byPriceSource, [origin]] = await Promise.all([
     db.select({ type: creditLedgerTable.entryType, entries: sql<string>`count(*)`, credits: sql<string>`sum(${creditLedgerTable.credits})` })
       .from(creditLedgerTable).where(inWindow).groupBy(creditLedgerTable.entryType),
     db.select({ provider: creditLedgerTable.provider, model: creditLedgerTable.model, credits: neg, costUsd: cost, runs: sql<string>`count(*)` })
@@ -101,6 +126,16 @@ export async function getGlobalOverview(opts: { days?: number; orgIds?: number[]
     db.select().from(creditAlertsTable)
       .where(and(gte(creditAlertsTable.createdAt, since), opts.orgIds?.length ? inArray(creditAlertsTable.orgId, opts.orgIds) : undefined))
       .orderBy(desc(creditAlertsTable.id)).limit(20),
+    // Consumo con precio provisional (legacy/fallback o fila sin validar).
+    db.select({ credits: sql<string>`coalesce(sum(-${creditLedgerTable.credits}), 0)`, runs: sql<string>`count(*)` })
+      .from(creditLedgerTable).where(and(consumptionWindow, sql`${creditLedgerTable.metadata}->>'provisional' = 'true'`)),
+    db.select({ priceSource: sql<string>`coalesce(${creditLedgerTable.metadata}->>'priceSource', 'sin_dato')`, credits: neg, runs: sql<string>`count(*)` })
+      .from(creditLedgerTable).where(consumptionWindow).groupBy(sql`1`).orderBy(desc(neg)),
+    db.select({
+      included: sql<string>`coalesce(sum((${creditLedgerTable.breakdown}->>'included')::numeric), 0)`,
+      rollover: sql<string>`coalesce(sum((${creditLedgerTable.breakdown}->>'rollover')::numeric), 0)`,
+      extra:    sql<string>`coalesce(sum((${creditLedgerTable.breakdown}->>'extra')::numeric), 0)`,
+    }).from(creditLedgerTable).where(consumptionWindow),
   ]);
 
   const total = (types: string[]) => byType.filter((r) => types.includes(r.type)).reduce((s, r) => s + num(r.credits), 0);
@@ -114,10 +149,18 @@ export async function getGlobalOverview(opts: { days?: number; orgIds?: number[]
       adjustments: total(["adjustment"]),
       expired:     -total(["expiration"]),
     },
+    consumedByOrigin: { included: num(origin?.included), rollover: num(origin?.rollover), extra: num(origin?.extra) },
+    pricing: {
+      provisionalCredits: num(prov?.credits), provisionalRuns: num(prov?.runs), provisional: num(prov?.runs) > 0,
+      byPriceSource: byPriceSource.map((r) => ({ priceSource: r.priceSource, credits: num(r.credits), runs: num(r.runs) })),
+    },
     byType:  byType.map((r) => ({ type: r.type, entries: num(r.entries), credits: num(r.credits) })),
     byModel: byModel.map((r) => ({ provider: r.provider, model: r.model, credits: num(r.credits), technicalCostUsd: num(r.costUsd), runs: num(r.runs) })),
     topWorkspaces: topWorkspaces.map((r) => ({ orgId: r.orgId, name: r.name, credits: num(r.credits), technicalCostUsd: num(r.costUsd) })),
     topAgents: topAgents.map((r) => ({ orgId: r.orgId, agentId: r.agentId, credits: num(r.credits), runs: num(r.runs) })),
+    // Alias con el nombre del brief: consumo por workspace / por agente.
+    byWorkspace: topWorkspaces.map((r) => ({ orgId: r.orgId, name: r.name, credits: num(r.credits), technicalCostUsd: num(r.costUsd) })),
+    byAgent: topAgents.map((r) => ({ orgId: r.orgId, agentId: r.agentId, credits: num(r.credits), runs: num(r.runs) })),
     errors: errors.map((r) => ({ status: r.status, functionName: r.functionName, count: num(r.count) })),
     purchases: purchases.map((r) => ({ currency: r.currency, purchases: num(r.purchases), credits: num(r.credits), amount: num(r.amount) })),
     alerts,

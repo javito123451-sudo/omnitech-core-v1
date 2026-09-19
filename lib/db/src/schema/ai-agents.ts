@@ -46,7 +46,10 @@ export const aiAgentsTable = pgTable("ai_agents", {
 
   // Topes operativos, independientes de la versión. NULL = sin tope.
   limits:             jsonb("limits").notNull().default({}),
+  // Presupuestos de créditos del agente (NULL = sin tope): mensual, diario y por ejecución.
   monthlyCreditLimit: integer("monthly_credit_limit"),
+  dailyCreditLimit:   integer("daily_credit_limit"),
+  perExecutionCreditLimit: integer("per_execution_credit_limit"),
 
   createdBy:          text("created_by"),
   createdAt:          timestamp("created_at").notNull().defaultNow(),

@@ -1,20 +1,23 @@
-// Créditos incluidos en el plan: renovación por periodo (mes natural UTC).
+// Créditos incluidos en el plan: renovación por ciclo (mes natural UTC).
 //
-// Todo idempotente por referencia: ejecutarlo dos veces en el mismo periodo no
-// concede ni caduca nada de más. Los importes salen de credit_plans; sin
-// configurar, no hace nada (status "not_configured"). No hay planificador
-// todavía: se invoca a mano desde Super Admin o desde un cron futuro.
+// Todo en UNA transacción y idempotente por referencia: ejecutarlo dos veces en el mismo ciclo
+// no concede ni caduca nada de más, y un fallo a medias no deja un ciclo a medio cerrar. Los
+// importes salen de credit_plans; sin configurar, no hace nada (status "not_configured"). No hay
+// planificador todavía: se invoca a mano desde Super Admin o desde un cron futuro.
 //
-// Política de fin de periodo (documentada, pendiente de confirmar con negocio):
-// los créditos incluidos que sobran del periodo anterior caducan (EXPIRATION)
-// salvo que el plan tenga rollover, con tope opcional (rolloverCap). Se asume
-// que el consumo del periodo salió primero de lo incluido. Los créditos
-// comprados no se tocan aquí.
+// Al abrir un ciclo nuevo, con los créditos por ORIGEN (cubos) del ledger:
+//   1. el rollover del ciclo anterior que sobró CADUCA (no se acumula indefinidamente);
+//   2. los créditos incluidos que sobraron caducan, y la parte que el plan permite arrastrar
+//      (rolloverPct del sobrante, con tope opcional) se re-acredita como ROLLOVER;
+//   3. se conceden los créditos incluidos del ciclo nuevo.
+// Los créditos EXTRA (compras, concesiones) no se tocan. Cada paso es un movimiento del ledger
+// con su origen, así que el arrastre queda trazado (caducidad + alta de rollover).
 
-import { and, eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db, creditLedgerTable } from "@workspace/db";
-import { appendEntry, expireCredits, getBalance } from "./creditService";
-import { consumedBetween, getPlanConfig, monthBounds, resolveOrgPlan } from "./planService";
+import { insertEntry } from "./creditService";
+import { getPlanConfig, monthBounds, resolveOrgPlan, rolloverCarry } from "./planService";
+import { ensureAccountLocked } from "./creditService";
 
 const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
 
@@ -25,7 +28,10 @@ export interface RenewalResult {
   plan:    string | null;
   period?: string;
   granted: number;
+  /** Créditos que caducaron en este cierre de ciclo (sobrante que NO pasa como rollover). */
   expired: number;
+  /** Créditos incluidos sobrantes que pasan al ciclo nuevo como rollover. */
+  carried: number;
   entryId?: number;
 }
 
@@ -33,39 +39,53 @@ export async function renewSubscription(orgId: number, opts: { at?: Date; userCl
   const at = opts.at ?? new Date();
   const { plan } = await resolveOrgPlan(orgId, db, at);
   const cfg = plan ? await getPlanConfig(plan) : null;
-  if (!cfg || !cfg.active || cfg.includedCredits === null) return { status: "not_configured", plan, granted: 0, expired: 0 };
+  if (!cfg || !cfg.active || cfg.includedCredits === null) return { status: "not_configured", plan, granted: 0, expired: 0, carried: 0 };
 
+  const includedCredits = cfg.includedCredits;
   const month = monthBounds(at);
-  const prev = monthBounds(new Date(month.start.getTime() - 1));
+  const subRef = `subscription:${orgId}:${month.key}`;
+  const base = { orgId, userClerkId: opts.userClerkId ?? null };
 
-  // 1) Lo que sobró del periodo anterior.
-  let expired = 0;
-  const [prevGrant] = await db.select().from(creditLedgerTable)
-    .where(and(eq(creditLedgerTable.orgId, orgId), eq(creditLedgerTable.reference, `subscription:${orgId}:${prev.key}`)));
-  if (prevGrant) {
-    const consumed = await consumedBetween(db, orgId, prev.start, prev.end);
-    const balance = await getBalance(orgId);
-    const leftover = Math.min(Math.max(0, Number(prevGrant.credits) - consumed), Math.max(0, balance));
-    const carried = cfg.rollover ? (cfg.rolloverCap !== null ? Math.min(leftover, cfg.rolloverCap) : leftover) : 0;
-    const toExpire = round4(leftover - carried);
-    if (toExpire > 0) {
-      const res = await expireCredits(orgId, toExpire, {
-        reference: `expiration:${orgId}:${prev.key}`, source: "subscription", userClerkId: opts.userClerkId,
-        reason: cfg.rollover ? "Fin de periodo: excede el tope de rollover" : "Fin de periodo: créditos incluidos sin rollover",
-        metadata: { plan, period: prev.key },
+  return db.transaction(async (tx): Promise<RenewalResult> => {
+    const account = await ensureAccountLocked(tx, orgId); // serializa renovaciones y consumos de la org
+
+    const [already] = await tx.select().from(creditLedgerTable)
+      .where(and(eq(creditLedgerTable.orgId, orgId), eq(creditLedgerTable.reference, subRef)));
+    if (already) return { status: "already_granted" as const, plan, period: month.key, granted: 0, expired: 0, carried: 0, entryId: already.id };
+
+    // 1) Cierre del ciclo anterior: lo que queda en cada cubo.
+    const rollover = round4(Math.max(0, Number(account.rolloverBalance)));
+    const included = round4(Math.max(0, Number(account.includedBalance)));
+    const carried = rolloverCarry(cfg, included);
+    let expired = 0;
+
+    if (rollover > 0) {
+      await insertEntry(tx, {
+        ...base, type: "expiration", credits: -rollover, bucket: "rollover", reference: `expiration-rollover:${orgId}:${month.key}`,
+        source: "subscription", metadata: { reason: "Fin de ciclo: rollover no consumido", plan, period: month.key },
       });
-      expired = res.duplicate ? 0 : toExpire;
+      expired += rollover;
     }
-  }
+    if (included > 0) {
+      await insertEntry(tx, {
+        ...base, type: "expiration", credits: -included, bucket: "included", reference: `expiration:${orgId}:${month.key}`,
+        source: "subscription", metadata: { reason: "Fin de ciclo: créditos incluidos sin consumir", plan, period: month.key, carriedOver: carried },
+      });
+      expired += round4(included - carried);
+      if (carried > 0) {
+        await insertEntry(tx, {
+          ...base, type: "subscription", credits: carried, bucket: "rollover", reference: `rollover:${orgId}:${month.key}`,
+          source: "rollover", metadata: { plan, period: month.key, rolloverPct: cfg.rolloverPct, from: "included" },
+        });
+      }
+    }
 
-  // 2) Créditos incluidos del periodo actual.
-  if (cfg.includedCredits <= 0) return { status: "no_credits_included", plan, period: month.key, granted: 0, expired };
-  const res = await appendEntry({
-    orgId, type: "subscription", credits: cfg.includedCredits, reference: `subscription:${orgId}:${month.key}`,
-    source: "subscription", userClerkId: opts.userClerkId ?? null, metadata: { plan, period: month.key },
+    // 2) Créditos incluidos del ciclo nuevo.
+    if (includedCredits <= 0) return { status: "no_credits_included" as const, plan, period: month.key, granted: 0, expired: round4(expired), carried };
+    const { entry } = await insertEntry(tx, {
+      ...base, type: "subscription", credits: includedCredits, bucket: "included", reference: subRef,
+      source: "subscription", metadata: { plan, period: month.key },
+    });
+    return { status: "granted" as const, plan, period: month.key, granted: includedCredits, expired: round4(expired), carried, entryId: entry.id };
   });
-  return {
-    status: res.duplicate ? "already_granted" : "granted", plan, period: month.key,
-    granted: res.duplicate ? 0 : cfg.includedCredits, expired, entryId: res.entry.id,
-  };
 }

@@ -130,7 +130,15 @@ export async function runAgent(req: RunRequest, deps: RunnerDeps = defaultRunner
         ...(schemas.length ? { tools: schemas, toolChoice: "auto" as const } : {}),
       },
       routing: { agent: config.model, plan },
-      billing: { ledger: true, monthlyCreditLimit: agent.monthlyCreditLimit },
+      usageKind: "agent_execution",
+      // Presupuestos del agente. executionUsed acumula lo gastado en ESTA ejecución (varias llamadas).
+      billing: {
+        ledger: true,
+        agentLimits: {
+          monthly: agent.monthlyCreditLimit, daily: agent.dailyCreditLimit,
+          perExecution: agent.perExecutionCreditLimit, executionUsed: usage.credits,
+        },
+      },
     });
 
     usage.provider = result.provider; usage.model = result.model;

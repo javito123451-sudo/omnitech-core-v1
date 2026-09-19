@@ -34,6 +34,10 @@ export const aiModelPricingTable = pgTable("ai_model_pricing", {
   effectiveTo:     timestamp("effective_to"),
   active:          boolean("active").notNull().default(true),
   notes:           text("notes"),
+  // De dónde sale el precio (URL o documento oficial). Obligatorio para un precio definitivo.
+  source:          text("source"),
+  // true = precio aún sin validar. Un precio configurado y validado es provisional=false.
+  provisional:     boolean("provisional").notNull().default(false),
   createdBy:       text("created_by"),
   createdAt:       timestamp("created_at").notNull().defaultNow(),
 }, (t) => [

@@ -7,7 +7,8 @@ export type CreditErrorCode =
   | "INSUFFICIENT_CREDITS"
   | "CREDIT_LIMIT_REACHED"
   | "DUPLICATE_REQUEST"
-  | "REFERENCE_CONFLICT";
+  | "REFERENCE_CONFLICT"
+  | "AGENT_CREDIT_LIMIT_REACHED";
 
 export class CreditError extends Error {
   readonly code: CreditErrorCode = "CREDIT_INVALID";
@@ -29,7 +30,8 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
-export type CreditLimitScope = "workspace_monthly" | "workspace_daily" | "agent_monthly";
+export type CreditLimitScope = "workspace_monthly" | "workspace_daily";
+export type AgentLimitScope = "agent_monthly" | "agent_daily" | "agent_execution";
 
 export class CreditLimitReachedError extends Error {
   readonly code = "CREDIT_LIMIT_REACHED" as const;
@@ -41,6 +43,23 @@ export class CreditLimitReachedError extends Error {
   ) {
     super(`Límite de créditos alcanzado (${scope}): ${used} usados de ${limit}.`);
     this.name = "CreditLimitReachedError";
+  }
+}
+
+/**
+ * Un agente no puede superar su presupuesto (mensual, diario o por ejecución).
+ * Es un límite del AGENTE, distinto de los límites del workspace/plan.
+ */
+export class AgentCreditLimitReachedError extends Error {
+  readonly code = "AGENT_CREDIT_LIMIT_REACHED" as const;
+  constructor(
+    public readonly scope: AgentLimitScope,
+    public readonly used: number,
+    public readonly limit: number,
+    public readonly requested: number,
+  ) {
+    super(`El agente alcanzó su presupuesto de créditos (${scope}): ${used} usados de ${limit}.`);
+    this.name = "AgentCreditLimitReachedError";
   }
 }
 

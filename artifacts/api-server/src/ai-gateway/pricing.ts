@@ -53,12 +53,17 @@ export const PRICING = LEGACY_PRICING;
 export const FALLBACK_PRICING: ModelPricing = GPT_4O_MINI;
 
 // ── Conversión a OmniCredits ─────────────────────────────────────────────────
-// Parámetro comercial, no técnico: 1 OmniCredit NO es 1 token. creditsPerUsd
-// convierte coste técnico a créditos y markup es el margen. Sobrescribibles por
-// entorno hasta que negocio fije los valores definitivos.
+// Unidad comercial OFICIAL v1: 1 USD de coste técnico de IA = 4.000 OmniCredits
+// (creditsPerUsd = 4000). Es una regla interna del Cost Engine: al cliente NO se le
+// muestra una conversión monetaria de OmniCredits, y 1 OmniCredit NO es 1 token.
+// markup = 1: el 4000 ya ES la unidad comercial; no se aplica ningún multiplicador
+// adicional sobre los créditos del cliente. Ambos siguen siendo sobrescribibles por
+// entorno (OMNICREDITS_PER_USD / OMNICREDITS_MARKUP) para pruebas o cambios futuros.
+export const DEFAULT_CREDITS_PER_USD = 4000;
+export const DEFAULT_MARKUP = 1;
 export const OMNICREDITS = {
-  creditsPerUsd: Number(process.env["OMNICREDITS_PER_USD"] ?? 1000),
-  markup:        Number(process.env["OMNICREDITS_MARKUP"] ?? 1),
+  creditsPerUsd: Number(process.env["OMNICREDITS_PER_USD"] ?? DEFAULT_CREDITS_PER_USD),
+  markup:        Number(process.env["OMNICREDITS_MARKUP"] ?? DEFAULT_MARKUP),
 } as const;
 
 // ── Reserva de créditos ──────────────────────────────────────────────────────

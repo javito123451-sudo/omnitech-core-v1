@@ -51,8 +51,16 @@ describe.skipIf(!hasRealDb)("OmniCredits — ledger protegido y operaciones manu
       expect((await verifyLedgerIntegrity(org)).ok).toBe(true);
     });
 
-    it("TRUNCATE también se rechaza (incluso en cascada, que salta la protección de claves foráneas)", async () => {
-      await expectPgError(db.execute(sql`TRUNCATE credit_ledger CASCADE`), /no se puede vaciar|inmutable/);
+    // TRUNCATE toma un bloqueo exclusivo sobre el ledger y sus tablas enlazadas: ejecutarlo aquí bloquearía (y llegaría a
+    // interbloquear) a los demás tests que corren en paralelo. Se comprueba que la protección existe, es de tipo TRUNCATE
+    // y está activa; su efecto (rechazar TRUNCATE ... CASCADE) se verificó directamente contra la base al añadir la migración.
+    it("TRUNCATE también está protegido: hay un trigger BEFORE TRUNCATE activo sobre el ledger", async () => {
+      const rows = await db.execute(sql`SELECT tgtype::int AS tgtype, tgenabled AS enabled FROM pg_trigger WHERE tgrelid = 'credit_ledger'::regclass AND tgname = 'credit_ledger_no_truncate'`);
+      const t = rows.rows[0] as { tgtype: number; enabled: string } | undefined;
+      expect(t).toBeTruthy();
+      expect(t!.tgtype & 32).toBe(32);   // TRIGGER_TYPE_TRUNCATE
+      expect(t!.tgtype & 2).toBe(2);     // BEFORE
+      expect(t!.enabled).toBe("O");      // habilitado
     });
 
     it("eliminar la organización limpia su ledger, cuenta y reservas en cascada (y solo las suyas)", async () => {

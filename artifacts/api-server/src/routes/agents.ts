@@ -24,6 +24,8 @@ import { getDashboard } from "../credits/reporting";
 import { getAgentUsage } from "../agents/usageService";
 import { toApiError } from "../ai-gateway/apiErrors";
 import { ensurePricingLoaded } from "../ai-gateway/pricingService";
+import { stripTechnical } from "../credits/customerView";
+import { listPacks } from "../credits/packService";
 
 export const agentsRouter = Router();
 
@@ -32,6 +34,11 @@ function actorOf(req: Request): RunActor {
     orgId: req.orgId!, userId: req.userId!, userClerkId: req.clerkUserId!,
     orgRole: req.effectiveRole ?? req.orgRole ?? "none", platformRole: req.platformRole ?? null,
   };
+}
+
+/** Modo técnico/admin: tokens y costes técnicos solo con ?technical=1 y permiso de edición de agentes. */
+function technicalView(req: Request): boolean {
+  return req.query["technical"] === "1" && (req.isSuperAdmin === true || hasPermission(req, "agents.write"));
 }
 
 function agentId(req: Request): number | null {
@@ -88,7 +95,12 @@ agentsRouter.get("/scenarios", requirePermission("agents.read"), (_req, res) => 
 
 // Panel de créditos del workspace: saldo, incluidos, consumo, por agente/modelo/funcionalidad, series y alertas.
 agentsRouter.get("/credits", requirePermission("agents.read"), async (req, res) => {
-  try { res.json(await getDashboard(req.orgId!)); } catch (err) { fail(res, err); }
+  try { res.json(await getDashboard(req.orgId!, new Date(), { technical: technicalView(req) })); } catch (err) { fail(res, err); }
+});
+
+// Catálogo de packs de OmniCredits extra (solo catálogo: la compra no está integrada con ningún pago).
+agentsRouter.get("/credits/packs", requirePermission("agents.read"), async (_req, res) => {
+  try { res.json(await listPacks({ activeOnly: true })); } catch (err) { fail(res, err); }
 });
 
 agentsRouter.get("/credits/balance", requirePermission("agents.read"), async (req, res) => {
@@ -98,10 +110,11 @@ agentsRouter.get("/credits/balance", requirePermission("agents.read"), async (re
 agentsRouter.get("/credits/ledger", requirePermission("agents.read"), async (req, res) => {
   try {
     const agent = Number(req.query["agentId"]);
-    res.json(await listLedger(req.orgId!, {
+    const rows = await listLedger(req.orgId!, {
       limit: req.query["limit"] ? Number(req.query["limit"]) : undefined,
       agentId: Number.isInteger(agent) && agent > 0 ? agent : undefined,
-    }));
+    });
+    res.json(technicalView(req) ? rows : stripTechnical(rows));
   } catch (err) { fail(res, err); }
 });
 
@@ -144,9 +157,29 @@ agentsRouter.get("/:id/usage", requirePermission("agents.read"), async (req, res
     const id = agentId(req);
     if (!id) { res.status(400).json({ error: "id no válido" }); return; }
     await ensurePricingLoaded();
-    res.json(await getAgentUsage(req.orgId!, id));
+    const usage = await getAgentUsage(req.orgId!, id);
+    res.json(technicalView(req) ? usage : stripTechnical(usage));
   } catch (err) { fail(res, err); }
 });
+
+/** Lee un presupuesto opcional: undefined = no tocar, null = sin tope, número = entero >= 0. */
+function budgetValue(v: unknown): number | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) ? Math.max(0, n) : undefined;
+}
+
+function budgetPatch(b: Record<string, unknown>) {
+  const monthly = budgetValue(b["monthlyBudget"] ?? b["monthlyCreditLimit"]);
+  const daily = budgetValue(b["dailyBudget"] ?? b["dailyCreditLimit"]);
+  const perExecution = budgetValue(b["perExecutionBudget"] ?? b["perExecutionCreditLimit"]);
+  return {
+    ...(monthly !== undefined ? { monthlyCreditLimit: monthly } : {}),
+    ...(daily !== undefined ? { dailyCreditLimit: daily } : {}),
+    ...(perExecution !== undefined ? { perExecutionCreditLimit: perExecution } : {}),
+  };
+}
 
 agentsRouter.patch("/:id", requirePermission("agents.write"), async (req, res) => {
   try {
@@ -158,9 +191,8 @@ agentsRouter.patch("/:id", requirePermission("agents.write"), async (req, res) =
       ...(b["description"] !== undefined ? { description: b["description"] === null ? null : String(b["description"]) } : {}),
       ...(b["avatarUrl"] !== undefined ? { avatarUrl: b["avatarUrl"] === null ? null : String(b["avatarUrl"]) } : {}),
       ...(b["limits"] && typeof b["limits"] === "object" ? { limits: b["limits"] as Record<string, unknown> } : {}),
-      ...(b["monthlyCreditLimit"] !== undefined
-        ? { monthlyCreditLimit: b["monthlyCreditLimit"] === null ? null : Math.max(0, Math.floor(Number(b["monthlyCreditLimit"]))) }
-        : {}),
+      // Presupuestos del agente (créditos). Se aceptan como monthlyBudget/dailyBudget/perExecutionBudget o con el nombre de columna.
+      ...budgetPatch(b),
     });
     audit(req, "ai_agent_updated", id);
     res.json(updated);
@@ -231,13 +263,15 @@ agentsRouter.post("/:id/simulate", requirePermission("agents.read"), async (req,
     const knowledge = await loadKnowledge(actor.orgId, config.knowledge);
     const plan = await defaultRunnerDeps.getOrgPlan(actor.orgId);
 
-    res.json({
+    const simulation = {
       ...simulateAgent({
         agent, versionNumber: version.versionNumber, config, message,
         readTools: access.read, actionTools: access.action, knowledge, routing: { plan },
       }),
       denied: access.denied,
-    });
+    };
+    // Solo se filtran los campos de coste/tokens de la estimación; los parámetros de la acción propuesta no se tocan.
+    res.json(technicalView(req) ? simulation : { ...simulation, tokensEstimated: undefined, estimate: stripTechnical(simulation.estimate) });
   } catch (err) { fail(res, err); }
 });
 
@@ -271,7 +305,7 @@ agentsRouter.post("/:id/run", requirePermission("agents.read"), async (req, res)
       credits: result.usage.credits, costUsd: result.usage.costUsd, requestIds: result.usage.requestIds,
       toolsUsed: result.toolsUsed, proposals: result.proposals.map((p) => p.toolId),
     });
-    res.json(result);
+    res.json(technicalView(req) ? result : { ...result, usage: stripTechnical(result.usage) });
   } catch (err) { fail(res, err); }
 });
 

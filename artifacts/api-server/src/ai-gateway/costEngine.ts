@@ -22,7 +22,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { OMNICREDITS, type ModelPricing } from "./pricing";
-import { isProvisionalSource, resolvePricing, type PriceSource } from "./pricingRegistry";
+import { resolvePricing, type PriceSource } from "./pricingRegistry";
 
 export interface UsageInput {
   provider:                 string;
@@ -56,7 +56,7 @@ export interface CostBreakdown {
   };
 }
 
-export function lookupPricing(provider: string, model: string, at?: Date): { pricing: ModelPricing; known: boolean; source: PriceSource; rowId: number | null } {
+export function lookupPricing(provider: string, model: string, at?: Date): { pricing: ModelPricing; known: boolean; source: PriceSource; rowId: number | null; provisional: boolean } {
   return resolvePricing(provider, model, at);
 }
 
@@ -71,13 +71,13 @@ const perMillion = (tokens: number, price: number) => (Math.max(0, tokens) / 1_0
 const ZERO_LINES = { input: 0, cachedInput: 0, output: 0, reasoning: 0, images: 0, audio: 0, video: 0 };
 
 export function computeCost(usage: UsageInput, basis: "estimated" | "final" = "final", at?: Date): CostBreakdown {
-  const { pricing, known, source, rowId } = resolvePricing(usage.provider, usage.model, at);
+  const { pricing, known, source, rowId, provisional } = resolvePricing(usage.provider, usage.model, at);
 
   if (usage.providerReportedCostUsd !== undefined && usage.providerReportedCostUsd >= 0) {
     const cost = round6(usage.providerReportedCostUsd);
     return {
       technicalCostUsd: cost, credits: usdToCredits(cost), basis: "provider_reported",
-      priceKnown: known, priceSource: source, provisional: isProvisionalSource(source), pricingRowId: rowId, lines: { ...ZERO_LINES },
+      priceKnown: known, priceSource: source, provisional, pricingRowId: rowId, lines: { ...ZERO_LINES },
     };
   }
 
@@ -95,7 +95,7 @@ export function computeCost(usage: UsageInput, basis: "estimated" | "final" = "f
   const technicalCostUsd = round6(
     lines.input + lines.cachedInput + lines.output + lines.reasoning + lines.images + lines.audio + lines.video,
   );
-  return { technicalCostUsd, credits: usdToCredits(technicalCostUsd), basis, priceKnown: known, priceSource: source, provisional: isProvisionalSource(source), pricingRowId: rowId, lines };
+  return { technicalCostUsd, credits: usdToCredits(technicalCostUsd), basis, priceKnown: known, priceSource: source, provisional, pricingRowId: rowId, lines };
 }
 
 /** Pre-call estimate: assumes the worst case for output (the cap) and no cache hits. */

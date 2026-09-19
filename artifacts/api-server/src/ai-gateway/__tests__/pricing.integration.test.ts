@@ -6,7 +6,8 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { eq, like } from "drizzle-orm";
 import { db, aiModelPricingTable } from "@workspace/db";
-import { deactivateModelPricing, listPricing, PricingError, refreshPricing, setModelPricing } from "../pricingService";
+import { deactivateModelPricing, getPricingReport, listPricing, PricingError, refreshPricing, setModelPricing } from "../pricingService";
+import { applyOfficialPricing, OFFICIAL_MODEL_PRICING_V1 } from "../officialPricing";
 import { computeCost, estimateCost } from "../costEngine";
 
 const hasRealDb = !process.env.DATABASE_URL?.includes("placeholder");
@@ -27,7 +28,7 @@ describe.skipIf(!hasRealDb)("Precios de modelos (ai_model_pricing)", () => {
   });
 
   it("una fila vigente se usa y queda referenciada en el desglose", async () => {
-    const { previous, current } = await setModelPricing({ provider: PROVIDER, model: MODEL, inputCost: 2, outputCost: 8, cachedInputCost: 1 }, "admin");
+    const { previous, current } = await setModelPricing({ provider: PROVIDER, model: MODEL, inputCost: 2, outputCost: 8, cachedInputCost: 1, source: "documento-oficial-test" }, "admin");
     expect(previous).toBeNull();
     const c = computeCost({ provider: PROVIDER, model: MODEL, inputTokens: 1_000_000, outputTokens: 500_000, cachedTokens: 200_000 });
     expect(c.priceSource).toBe("db");
@@ -41,7 +42,7 @@ describe.skipIf(!hasRealDb)("Precios de modelos (ai_model_pricing)", () => {
     const before = await listPricing({ provider: PROVIDER, model: MODEL });
     const old = before[0]!;
     const from = new Date(old.effectiveFrom.getTime() + HOUR);
-    const { previous, current } = await setModelPricing({ provider: PROVIDER, model: MODEL, inputCost: 4, outputCost: 16, effectiveFrom: from }, "admin2");
+    const { previous, current } = await setModelPricing({ provider: PROVIDER, model: MODEL, inputCost: 4, outputCost: 16, effectiveFrom: from, source: "documento-oficial-test" }, "admin2");
     expect(previous!.id).toBe(old.id);
     expect(current.id).not.toBe(old.id);
     expect(current.createdBy).toBe("admin2");
@@ -73,5 +74,48 @@ describe.skipIf(!hasRealDb)("Precios de modelos (ai_model_pricing)", () => {
     expect(still).toBeTruthy();
     const c = computeCost({ provider: PROVIDER, model: MODEL, inputTokens: 1_000_000, outputTokens: 0 });
     expect(c.pricingRowId).not.toBe(live.id);
+  });
+
+  it("un precio definitivo exige su fuente; solo entra sin fuente como provisional", async () => {
+    await expect(setModelPricing({ provider: PROVIDER + "-nosrc", model: MODEL, inputCost: 1, outputCost: 2 }, "u")).rejects.toThrow(/source/);
+    await expect(setModelPricing({ provider: PROVIDER + "-nosrc", model: MODEL, inputCost: 1, outputCost: 2, source: "  " }, "u")).rejects.toThrow(PricingError);
+    const { current } = await setModelPricing({ provider: PROVIDER + "-prov", model: MODEL, inputCost: 1, outputCost: 2, provisional: true }, "u");
+    expect(current).toMatchObject({ provisional: true, source: null });
+    // una fila en la BD marcada provisional sigue produciendo un coste provisional, y no oculta que viene de la BD
+    const c = computeCost({ provider: PROVIDER + "-prov", model: MODEL, inputTokens: 1_000_000, outputTokens: 0 });
+    expect(c).toMatchObject({ priceSource: "db", provisional: true, pricingRowId: current.id });
+  });
+
+  it("precio oficial validado: db => provisional=false, con procedencia y sin tocar los modelos antiguos", async () => {
+    const official = { provider: PROVIDER + "-off", model: MODEL, inputCost: 2, cachedInputCost: 0.5, outputCost: 8, source: "https://docs.example.test/pricing" };
+    const [applied] = await applyOfficialPricing([official], "admin");
+    expect(applied!.current).toMatchObject({ provider: official.provider, model: MODEL, source: official.source, provisional: false });
+    expect(Number(applied!.current.cachedInputCost)).toBe(0.5);
+    const c = computeCost({ provider: official.provider, model: MODEL, inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 });
+    expect(c).toMatchObject({ priceSource: "db", provisional: false, priceKnown: true });
+    expect(c.technicalCostUsd).toBeCloseTo(0.5 + 8, 6);
+
+    // los modelos antiguos siguen ahí, como legacy/provisional, hasta que exista un precio oficial
+    expect(computeCost({ provider: "openai", model: "gpt-4o-mini", inputTokens: 1000, outputTokens: 1000 })).toMatchObject({ priceSource: "legacy", provisional: true });
+    const report = await getPricingReport();
+    expect(report.official.map((r) => r.provider)).toContain(official.provider);
+    expect(report.legacyProvisional).toEqual(expect.arrayContaining([{ provider: "openai", model: "gpt-4o-mini", priceSource: "legacy", provisional: true }]));
+    expect(report.dbProvisional.map((r) => r.provider)).toContain(PROVIDER + "-prov");
+  });
+
+  it("la carga oficial es todo-o-nada: una entrada sin fuente o con importe no válido no escribe NADA", async () => {
+    const ok = { provider: PROVIDER + "-atom", model: MODEL, inputCost: 1, cachedInputCost: 0.1, outputCost: 2, source: "doc" };
+    await expect(applyOfficialPricing([ok, { ...ok, model: "otro", source: "" }], "u")).rejects.toThrow(/source/);
+    await expect(applyOfficialPricing([ok, { ...ok, model: "otro", outputCost: -1 }], "u")).rejects.toThrow(PricingError);
+    await expect(applyOfficialPricing([ok, { ...ok, model: "otro", cachedInputCost: Number.NaN }], "u")).rejects.toThrow(PricingError);
+    await expect(applyOfficialPricing([], "u")).rejects.toThrow(/No hay precios/);
+    expect(await listPricing({ provider: PROVIDER + "-atom" })).toEqual([]);
+  });
+
+  it("la lista oficial v1 no lleva precios inventados: cada entrada que exista lleva fuente y costes válidos", () => {
+    for (const e of OFFICIAL_MODEL_PRICING_V1) {
+      expect(e.source.trim()).not.toBe("");
+      for (const k of ["inputCost", "cachedInputCost", "outputCost"] as const) expect(e[k]).toBeGreaterThanOrEqual(0);
+    }
   });
 });

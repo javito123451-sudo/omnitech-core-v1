@@ -5,7 +5,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { clearPricingSnapshot, resolvePricing, setPricingSnapshot, type PricingRow } from "../pricingRegistry";
 import { computeCost, estimateCost, estimateTokens, usdToCredits, lookupPricing } from "../costEngine";
-import { OMNICREDITS, PRICING } from "../pricing";
+import { DEFAULT_CREDITS_PER_USD, DEFAULT_MARKUP, OMNICREDITS, PRICING } from "../pricing";
 import { calculateCost } from "../../utils/aiUsageLogger";
 
 describe("Cost Engine — coste técnico", () => {
@@ -80,6 +80,25 @@ describe("Cost Engine — coste técnico", () => {
   });
 });
 
+describe("Cost Engine — unidad comercial OmniCredits v1", () => {
+  it("1 USD de coste técnico = 4.000 OmniCredits, sin multiplicador adicional", () => {
+    expect(DEFAULT_CREDITS_PER_USD).toBe(4000);
+    expect(DEFAULT_MARKUP).toBe(1);
+    // Con el entorno sin sobrescribir, el motor usa la unidad oficial.
+    if (!process.env["OMNICREDITS_PER_USD"] && !process.env["OMNICREDITS_MARKUP"]) {
+      expect(OMNICREDITS).toEqual({ creditsPerUsd: 4000, markup: 1 });
+      expect(usdToCredits(1)).toBe(4000);
+      expect(usdToCredits(0.25)).toBe(1000);
+      expect(usdToCredits(0.0001)).toBe(0.4);
+    }
+  });
+
+  it("los créditos salen SOLO del coste técnico: el Cost Engine no conoce planes ni límites", () => {
+    const c = computeCost({ provider: "openai", model: "gpt-4o-mini", inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    expect(c.credits).toBe(usdToCredits(c.technicalCostUsd));
+  });
+});
+
 describe("Cost Engine — OmniCredits", () => {
   it("convierte coste a créditos con el parámetro comercial y redondea hacia arriba", () => {
     const usd = 0.00045;
@@ -105,7 +124,7 @@ describe("Cost Engine — OmniCredits", () => {
 
 const row = (over: Partial<PricingRow> = {}): PricingRow => ({
   id: 1, provider: "openai", model: "gpt-4o-mini", inputCost: 1, outputCost: 2, cachedInputCost: null, reasoningCost: null,
-  imageCost: null, audioCost: null, videoCost: null, effectiveFrom: new Date("2026-01-01"), effectiveTo: null, active: true, ...over,
+  imageCost: null, audioCost: null, videoCost: null, effectiveFrom: new Date("2026-01-01"), effectiveTo: null, active: true, source: "test", provisional: false, ...over,
 });
 
 describe("Cost Engine — precios configurables (ai_model_pricing)", () => {

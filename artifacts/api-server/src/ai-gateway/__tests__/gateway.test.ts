@@ -8,9 +8,10 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   callAI, AiBudgetBlockedError, AiSimulationModeError, AiProviderError, InsufficientCreditsError,
-  CreditLimitReachedError, DuplicateRequestError, type GatewayDeps,
+  AgentCreditLimitReachedError, CreditLimitReachedError, DuplicateRequestError, type GatewayDeps,
 } from "../gateway";
 import { HOLD_SAFETY_FACTOR } from "../pricing";
+import { AI_USAGE_KINDS, NON_BILLABLE_OPERATIONS, NonBillableUsageError, isAiUsageKind } from "../usageKinds";
 import { estimateCost, estimateTokens } from "../costEngine";
 import { ResponseCache } from "../responseCache";
 import type { AIProvider, GenerateResult } from "../../ai/types";
@@ -159,14 +160,14 @@ describe("AI Gateway — OmniCredits: reserva → llamada → liquidación", () 
     const order: string[] = [];
     const a = fakeRoute("fake", async () => { order.push("provider"); return OK; });
     const d = makeDeps([a.route], { reserve: async (i) => { order.push("reserve"); return { holdId: 1, credits: i.credits, available: 1 }; } });
-    await callAI({ ...billed, requestId: "req-7", userClerkId: "u1", billing: { ledger: true, monthlyCreditLimit: 50 } }, d.deps);
+    await callAI({ ...billed, requestId: "req-7", userClerkId: "u1", billing: { ledger: true, agentLimits: { monthly: 50 } } }, d.deps);
     expect(order).toEqual(["reserve", "provider"]);
 
     const estimate = estimateCost("fake", "gpt-4o-mini", {
       inputTokens: estimateTokens(JSON.stringify(base.messages)), maxOutputTokens: 1024,
     }).credits;
     const held = d.reserve.mock.calls[0]![0];
-    expect(held).toMatchObject({ orgId: 7, reference: "req-7", agentId: 9, userClerkId: "u1", agentCap: 50 });
+    expect(held).toMatchObject({ orgId: 7, reference: "req-7", agentId: 9, userClerkId: "u1", agentLimits: { monthly: 50 } });
     expect(held.credits).toBeGreaterThanOrEqual(estimate * HOLD_SAFETY_FACTOR - 1e-4);
   });
 
@@ -205,7 +206,7 @@ describe("AI Gateway — OmniCredits: reserva → llamada → liquidación", () 
   });
 
   it("CREDIT_LIMIT_REACHED y DUPLICATE_REQUEST tampoco llegan al proveedor", async () => {
-    for (const thrown of [new CreditLimitReachedError("agent_monthly", 99, 100, 5), new DuplicateRequestError("req-x")]) {
+    for (const thrown of [new CreditLimitReachedError("workspace_daily", 99, 100, 5), new AgentCreditLimitReachedError("agent_monthly", 99, 100, 5), new DuplicateRequestError("req-x")]) {
       const a = fakeRoute("fake", async () => OK);
       const d = makeDeps([a.route], { reserve: async () => { throw thrown; } });
       await expect(callAI(billed, d.deps)).rejects.toBe(thrown);
@@ -273,5 +274,57 @@ describe("AI Gateway — caché", () => {
     await callAI(cached, d.deps);
     await callAI(cached, d.deps);
     expect(withTools.generate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("AI Gateway — qué consume créditos (usageKind)", () => {
+  it("registra el tipo de uso: agent_execution si hay agente, llm_response si no, y lo lleva al ledger", async () => {
+    const a = fakeRoute("fake", async () => OK);
+    const d = makeDeps([a.route]);
+    await callAI({ ...billed, requestId: "k-1" }, d.deps);                                  // con agente
+    expect(lastLog(d.logAiCall)["metadata"]).toMatchObject({ usageKind: "agent_execution" });
+    expect(d.settle.mock.calls[0]![0]).toMatchObject({ metadata: expect.objectContaining({ usageKind: "agent_execution" }) });
+
+    const d2 = makeDeps([a.route]);
+    await callAI({ ...base, billing: { ledger: true }, requestId: "k-2" }, d2.deps);         // sin agente
+    expect(lastLog(d2.logAiCall)["metadata"]).toMatchObject({ usageKind: "llm_response" });
+  });
+
+  it("acepta todos los tipos de uso de IA y los cobra", async () => {
+    for (const kind of AI_USAGE_KINDS) {
+      const a = fakeRoute("fake", async () => OK);
+      const d = makeDeps([a.route]);
+      await callAI({ ...base, usageKind: kind, billing: { ledger: true }, requestId: `kind-${kind}` }, d.deps);
+      expect(d.settle).toHaveBeenCalledTimes(1);
+      expect(lastLog(d.logAiCall)["metadata"]).toMatchObject({ usageKind: kind });
+    }
+    expect([...AI_USAGE_KINDS]).toEqual([
+      "agent_execution", "llm_response", "ai_analysis", "ai_content_generation", "ai_document_processing",
+      "ocr", "image_generation", "audio_generation", "external_ai_tool",
+    ]);
+  });
+
+  it("no cobra operaciones que no son IA: CRUD, navegación, consultas directas, tareas manuales", async () => {
+    for (const notAi of NON_BILLABLE_OPERATIONS) {
+      const a = fakeRoute("fake", async () => OK);
+      const d = makeDeps([a.route]);
+      await expect(callAI({ ...base, usageKind: notAi as never, billing: { ledger: true } }, d.deps)).rejects.toBeInstanceOf(NonBillableUsageError);
+      expect(a.generate).not.toHaveBeenCalled();
+      expect(d.reserve).not.toHaveBeenCalled();
+      expect(d.settle).not.toHaveBeenCalled();
+      expect(isAiUsageKind(notAi)).toBe(false);
+    }
+  });
+
+  it("un presupuesto de agente agotado llega al gateway como AGENT_CREDIT_LIMIT_REACHED, sin proveedor ni cobro", async () => {
+    const a = fakeRoute("fake", async () => OK);
+    const thrown = new AgentCreditLimitReachedError("agent_execution", 8, 10, 4);
+    const d = makeDeps([a.route], { reserve: async () => { throw thrown; } });
+    await expect(callAI({ ...billed, billing: { ledger: true, agentLimits: { perExecution: 10, executionUsed: 8 } } }, d.deps)).rejects.toBe(thrown);
+    expect(a.generate).not.toHaveBeenCalled();
+    expect(d.settle).not.toHaveBeenCalled();
+    expect(lastLog(d.logAiCall)).toMatchObject({ status: "blocked" });
+    expect(lastLog(d.logAiCall)["metadata"]).toMatchObject({ code: "AGENT_CREDIT_LIMIT_REACHED" });
+    expect(d.reserve.mock.calls[0]![0]).toMatchObject({ agentLimits: { perExecution: 10, executionUsed: 8 } });
   });
 });

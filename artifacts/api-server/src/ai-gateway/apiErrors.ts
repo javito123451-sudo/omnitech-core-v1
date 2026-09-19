@@ -8,7 +8,7 @@ import {
   AiBudgetBlockedError, AiProviderError,
 } from "./gateway";
 import { NoProviderAvailableError } from "./providerRouter";
-import { CreditError, CreditLimitReachedError, DuplicateRequestError, InsufficientCreditsError, ReferenceConflictError } from "../credits/errors";
+import { AgentCreditLimitReachedError, CreditError, CreditLimitReachedError, DuplicateRequestError, InsufficientCreditsError, ReferenceConflictError } from "../credits/errors";
 
 export interface ApiErrorBody {
   status:  string;
@@ -22,6 +22,9 @@ export function toApiError(err: unknown): { http: number; body: ApiErrorBody } |
   }
   if (err instanceof CreditLimitReachedError) {
     return { http: 402, body: { status: "CREDIT_LIMIT_REACHED", message: err.message, scope: err.scope, used: err.used, limit: err.limit, requested: err.requested } };
+  }
+  if (err instanceof AgentCreditLimitReachedError) {
+    return { http: 402, body: { status: "AGENT_CREDIT_LIMIT_REACHED", message: err.message, scope: err.scope, used: err.used, limit: err.limit, requested: err.requested } };
   }
   if (err instanceof DuplicateRequestError) {
     return { http: 409, body: { status: "DUPLICATE_REQUEST", message: err.message, reference: err.reference } };

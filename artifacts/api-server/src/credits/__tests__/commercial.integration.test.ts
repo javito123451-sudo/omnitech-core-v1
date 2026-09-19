@@ -12,7 +12,7 @@ import {
   db, creditLedgerTable, creditPlansTable, creditPurchasesTable, aiUsageLogsTable, licensePlansTable, organizationsTable,
 } from "@workspace/db";
 import {
-  appendEntry, getBalance, grantCredits, listLedger, verifyLedgerIntegrity, CreditError,
+  allocateDebit, appendEntry, getBalance, getBalances, grantCredits, listLedger, verifyLedgerIntegrity, CreditError,
 } from "../creditService";
 import { getPlanConfig, resolveOrgPlan, upsertPlanConfig } from "../planService";
 import { renewSubscription } from "../subscriptionService";
@@ -35,10 +35,13 @@ const balanceOf = getBalance;
 
 /** Un movimiento con fecha pasada (la API no lo permite a propósito: aquí se inserta en crudo, respetando la cadena). */
 async function backdated(orgId: number, type: string, credits: number, at: Date, reference: string) {
-  const bal = await getBalance(orgId);
+  const b = await getBalances(orgId);
   const [acc] = await db.execute(sql`SELECT id FROM credit_accounts WHERE org_id = ${orgId}`).then((r) => r.rows as Array<{ id: number }>);
-  await db.execute(sql`INSERT INTO credit_ledger (org_id, account_id, entry_type, credits, balance_before, balance_after, reference, source, created_at)
-    VALUES (${orgId}, ${acc!.id}, ${type}, ${credits.toFixed(4)}, ${bal.toFixed(4)}, ${(bal + credits).toFixed(4)}, ${reference}, 'test', ${at.toISOString()}::timestamp)`);
+  // Un consumo con fecha pasada respeta la prioridad de origen, igual que uno real.
+  const breakdown = credits < 0 ? JSON.stringify(allocateDebit(credits, b)) : null;
+  const bucket = credits > 0 ? "extra" : null;
+  await db.execute(sql`INSERT INTO credit_ledger (org_id, account_id, entry_type, credits, balance_before, balance_after, bucket, breakdown, reference, source, created_at)
+    VALUES (${orgId}, ${acc!.id}, ${type}, ${credits.toFixed(4)}, ${b.balance.toFixed(4)}, ${(b.balance + credits).toFixed(4)}, ${bucket}, ${breakdown}::jsonb, ${reference}, 'test', ${at.toISOString()}::timestamp)`);
 }
 
 const types = async (orgId: number) => (await listLedger(orgId)).reverse().map((e) => e.entryType);
@@ -144,15 +147,16 @@ describe.skipIf(!hasRealDb)("OmniCredits — capa comercial", () => {
       await upsertPlanConfig(plan, { includedCredits: 100, rollover: true }, "u");
       await renewSubscription(free, { at: JAN });
       await backdated(free, "consumption", -30, new Date("2026-01-20T10:00:00Z"), "c1");
-      expect(await renewSubscription(free, { at: FEB })).toMatchObject({ expired: 0, granted: 100 });
-      expect(await balanceOf(free)).toBe(170); // 70 sobrantes + 100 nuevos
+      expect(await renewSubscription(free, { at: FEB })).toMatchObject({ expired: 0, carried: 70, granted: 100 });
+      expect(await balanceOf(free)).toBe(170); // 70 sobrantes (ahora rollover) + 100 nuevos
+      expect(await getBalances(free)).toMatchObject({ included: 100, rollover: 70, extra: 0 });
 
       const planCap = newPlan("rollovercap");
       await setPlan(capped, planCap);
       await upsertPlanConfig(planCap, { includedCredits: 100, rollover: true, rolloverCap: 20 }, "u");
       await renewSubscription(capped, { at: JAN });
       await backdated(capped, "consumption", -30, new Date("2026-01-20T10:00:00Z"), "c1");
-      expect(await renewSubscription(capped, { at: FEB })).toMatchObject({ expired: 50, granted: 100 });
+      expect(await renewSubscription(capped, { at: FEB })).toMatchObject({ expired: 50, carried: 20, granted: 100 });
       expect(await balanceOf(capped)).toBe(120); // 20 conservados + 100 nuevos
     });
 
@@ -277,7 +281,7 @@ describe.skipIf(!hasRealDb)("OmniCredits — capa comercial", () => {
       await cons(20, "c3", { agentId: a2.id, provider: "openai", model: "gpt-4o", technicalCostUsd: 0.02, metadata: { functionName: `agent_${a2.id}` } });
       await cons(3,  "c4");
 
-      const d = await getDashboard(org);
+      const d = await getDashboard(org, new Date(), { technical: true });
       expect(d).toMatchObject({ plan, balance: 62, held: 0, available: 62, included: 100, used: 38, usedToday: 38, pctConsumed: 38 });
       expect(d.period.renewsAt.getTime()).toBe(renewsAt.getTime());
       expect(d.limits).toMatchObject({ daily: 80, monthly: null, blockAtLimit: true });

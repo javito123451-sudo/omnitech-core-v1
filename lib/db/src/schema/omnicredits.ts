@@ -40,14 +40,30 @@ export const CREDIT_NEGATIVE_TYPES = ["consumption", "expiration"] as const;
 
 const quoted = (list: readonly string[]) => list.map((t) => `'${t}'`).join(", ");
 
+/**
+ * Origen de los créditos. El saldo total se reparte en tres cubos y el consumo los
+ * gasta en este orden: 1) incluidos del ciclo actual, 2) rollover, 3) extra
+ * (compras, concesiones, devoluciones). Cada movimiento del ledger conserva de
+ * qué cubo entró (bucket) o de cuáles salió (breakdown): no se pierde trazabilidad.
+ */
+export const CREDIT_BUCKETS = ["included", "rollover", "extra"] as const;
+export type CreditBucket = (typeof CREDIT_BUCKETS)[number];
+
 export const creditAccountsTable = pgTable("credit_accounts", {
   id:        serial("id").primaryKey(),
   orgId:     integer("org_id").notNull().unique().references(() => organizationsTable.id, { onDelete: "cascade" }),
-  // Saldo cacheado. Solo lo modifica el trigger del ledger; la fuente de verdad es el ledger.
-  balance:   numeric("balance", { precision: 16, scale: 4 }).notNull().default("0"),
+  // Saldos cacheados. Solo los modifica el trigger del ledger; la fuente de verdad es el ledger.
+  // included + rollover + extra = balance, garantizado por Postgres. extra puede quedar
+  // negativo si un consumo real supera lo reservado (el desvío se apunta al último cubo).
+  balance:         numeric("balance", { precision: 16, scale: 4 }).notNull().default("0"),
+  includedBalance: numeric("included_balance", { precision: 16, scale: 4 }).notNull().default("0"),
+  rolloverBalance: numeric("rollover_balance", { precision: 16, scale: 4 }).notNull().default("0"),
+  extraBalance:    numeric("extra_balance", { precision: 16, scale: 4 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  check("credit_accounts_buckets_check", sql`${t.includedBalance} + ${t.rolloverBalance} + ${t.extraBalance} = ${t.balance}`),
+]);
 
 export const creditLedgerTable = pgTable("credit_ledger", {
   id:               serial("id").primaryKey(),
@@ -59,6 +75,10 @@ export const creditLedgerTable = pgTable("credit_ledger", {
   credits:          numeric("credits", { precision: 16, scale: 4 }).notNull(),
   balanceBefore:    numeric("balance_before", { precision: 16, scale: 4 }).notNull(),
   balanceAfter:     numeric("balance_after", { precision: 16, scale: 4 }).notNull(),
+  // Origen. Movimientos que suman: cubo al que entran (included | rollover | extra).
+  // Movimientos que restan: reparto por cubo {included, rollover, extra} que suma |credits|.
+  bucket:           text("bucket"),
+  breakdown:        jsonb("breakdown"),
 
   agentId:          integer("agent_id").references(() => aiAgentsTable.id, { onDelete: "set null" }),
   agentVersionId:   integer("agent_version_id"),
@@ -86,6 +106,7 @@ export const creditLedgerTable = pgTable("credit_ledger", {
     or ${t.entryType} = 'adjustment')`),
   // Operaciones manuales: la referencia (clave de idempotencia) es obligatoria.
   check("credit_ledger_manual_reference_check", sql`${t.entryType} not in ('grant', 'adjustment', 'refund', 'expiration') or (${t.reference} is not null and btrim(${t.reference}) <> '')`),
+  check("credit_ledger_origin_check", sql`(${t.bucket} is null or ${t.bucket} in ('included', 'rollover', 'extra')) and (${t.credits} > 0 or ${t.bucket} is null) and (${t.credits} < 0 or ${t.breakdown} is null)`),
   check("credit_ledger_chain_check", sql`${t.balanceAfter} = ${t.balanceBefore} + ${t.credits}`),
 ]);
 
@@ -125,15 +146,43 @@ export const creditPlansTable = pgTable("credit_plans", {
   dailyLimit:           numeric("daily_limit", { precision: 16, scale: 4 }),
   perAgentMonthlyLimit: numeric("per_agent_monthly_limit", { precision: 16, scale: 4 }),
   rollover:             boolean("rollover").notNull().default(false),
+  // % de los créditos incluidos SIN consumir al cierre del ciclo que pasa al siguiente como rollover
+  // (0-100). NULL = usar solo el booleano rollover (todo lo sobrante, sujeto a rolloverCap).
+  rolloverPct:          numeric("rollover_pct", { precision: 5, scale: 2 }),
   rolloverCap:          numeric("rollover_cap", { precision: 16, scale: 4 }),
   blockAtLimit:         boolean("block_at_limit").notNull().default(true),
   // Porcentajes del tope mensual (o de los créditos incluidos) que disparan una alerta. Vacío = sin alertas.
   alertThresholds:      jsonb("alert_thresholds").notNull().default([]),
   active:               boolean("active").notNull().default(true),
+  // Datos comerciales del plan. Son presentación/configuración: el cobro real no está integrado.
+  displayName:          text("display_name"),
+  priceAmount:          numeric("price_amount", { precision: 12, scale: 2 }),
+  currency:             text("currency").notNull().default("EUR"),
+  priceCustom:          boolean("price_custom").notNull().default(false), // precio a medida (Enterprise)
+  agentLimit:           integer("agent_limit"),      // máximo de agentes. NULL = sin límite / configurable
+  workspaceLimit:       integer("workspace_limit"),  // máximo de workspaces. NULL = sin límite / configurable
   updatedBy:            text("updated_by"),
   createdAt:            timestamp("created_at").notNull().defaultNow(),
   updatedAt:            timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Catálogo de packs de OmniCredits extra. Configurable: cambiar un precio o un pack no toca
+// código. Sin integración de pago (Stripe/Hotmart): solo el catálogo. Cada compra usa su
+// paymentReference como clave de idempotencia.
+export const creditPacksTable = pgTable("credit_packs", {
+  id:          serial("id").primaryKey(),
+  code:        text("code").notNull().unique(),
+  credits:     numeric("credits", { precision: 16, scale: 4 }).notNull(),
+  priceAmount: numeric("price_amount", { precision: 12, scale: 2 }).notNull(),
+  currency:    text("currency").notNull().default("EUR"),
+  active:      boolean("active").notNull().default(true),
+  sortOrder:   integer("sort_order").notNull().default(0),
+  updatedBy:   text("updated_by"),
+  createdAt:   timestamp("created_at").notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  check("credit_packs_positive_check", sql`${t.credits} > 0 and ${t.priceAmount} >= 0`),
+]);
 
 // Compras de OmniCredits extra (independientes del plan). Sin integración de
 // pago: paymentReference es solo la referencia externa.
@@ -178,4 +227,5 @@ export type CreditLedgerEntry = typeof creditLedgerTable.$inferSelect;
 export type CreditHold = typeof creditHoldsTable.$inferSelect;
 export type CreditPlan = typeof creditPlansTable.$inferSelect;
 export type CreditPurchase = typeof creditPurchasesTable.$inferSelect;
+export type CreditPack = typeof creditPacksTable.$inferSelect;
 export type CreditAlert = typeof creditAlertsTable.$inferSelect;

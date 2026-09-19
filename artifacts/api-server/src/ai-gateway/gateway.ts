@@ -31,15 +31,16 @@ import type { GenerateOptions, GenerateResult, Message } from "../ai/types";
 import { checkBudgetBlocked, logAiCall } from "../utils/aiUsageLogger";
 import { logAuditSystem } from "../utils/auditLogger";
 import {
-  creditsPort, CreditLimitReachedError, DuplicateRequestError, InsufficientCreditsError, type CreditsPort,
+  creditsPort, AgentCreditLimitReachedError, CreditLimitReachedError, DuplicateRequestError, InsufficientCreditsError, type CreditsPort,
 } from "../credits/creditService";
 import { computeCost, estimateCost, estimateTokens } from "./costEngine";
+import { isAiUsageKind, NonBillableUsageError, type AiUsageKind } from "./usageKinds";
 import { HOLD_SAFETY_FACTOR } from "./pricing";
 import { ensurePricingLoaded } from "./pricingService";
 import { resolveRoutes, type ResolvedRoute, type RoutingContext } from "./providerRouter";
 import { ResponseCache, responseCache } from "./responseCache";
 
-export { InsufficientCreditsError, CreditLimitReachedError, DuplicateRequestError };
+export { InsufficientCreditsError, CreditLimitReachedError, AgentCreditLimitReachedError, DuplicateRequestError };
 
 export type AiExecutionMode = "simulation" | "live";
 
@@ -48,13 +49,15 @@ export interface GatewayRequest {
   orgId:           number | null;
   userClerkId?:    string | null;
   functionName:    string;
+  /** Tipo de uso de IA (consume créditos). Por defecto: agent_execution si hay agente, si no llm_response. */
+  usageKind?:      AiUsageKind;
   agentId?:        number | null;
   agentVersionId?: number | null;
   messages:        Message[];
   options?:        Omit<GenerateOptions, "model">;
   routing?:        RoutingContext;
   /** Charge the OmniCredits ledger (and enforce credits/limits) for this call. */
-  billing?:        { ledger: boolean; monthlyCreditLimit?: number | null };
+  billing?:        { ledger: boolean; agentLimits?: { monthly?: number | null; daily?: number | null; perExecution?: number | null; executionUsed?: number } };
   cache?:          { ttlSeconds: number };
   timeoutMs?:      number;
   maxRetries?:     number;
@@ -158,13 +161,15 @@ export async function callAI(req: GatewayRequest, deps: GatewayDeps = defaultDep
   if (req.mode !== "live") throw new AiSimulationModeError();
   const ledger = req.billing?.ledger === true;
   if (ledger && req.orgId === null) throw new Error("billing.ledger requiere un orgId.");
+  const usageKind: AiUsageKind = req.usageKind ?? (req.agentId != null ? "agent_execution" : "llm_response");
+  if (ledger && !isAiUsageKind(usageKind)) throw new NonBillableUsageError(usageKind);
 
   await deps.ensurePricingLoaded();
   const requestId = req.requestId ?? randomUUID();
   const routes = deps.resolveRoutes(req.routing);
   const primary = routes[0]!;
   const baseLog = { orgId: req.orgId, userClerkId: req.userClerkId ?? null, functionName: req.functionName };
-  const baseMeta = { requestId, mode: req.mode, agentId: req.agentId ?? null, agentVersionId: req.agentVersionId ?? null };
+  const baseMeta = { requestId, mode: req.mode, usageKind, agentId: req.agentId ?? null, agentVersionId: req.agentVersionId ?? null };
   const blocked = async (reason: string, code: string, details: Record<string, unknown> = {}) => {
     await deps.logAiCall({
       ...baseLog, model: primary.model, tokensInput: 0, tokensOutput: 0, status: "blocked", errorMsg: reason,
@@ -210,11 +215,11 @@ export async function callAI(req: GatewayRequest, deps: GatewayDeps = defaultDep
     try {
       await deps.credits.reserve({
         orgId: req.orgId!, credits: Math.max(ceil4(estimate.credits * HOLD_SAFETY_FACTOR), 0.0001), reference: requestId,
-        agentId: req.agentId ?? null, userClerkId: req.userClerkId ?? null, agentCap: req.billing?.monthlyCreditLimit ?? null,
+        agentId: req.agentId ?? null, userClerkId: req.userClerkId ?? null, agentLimits: req.billing?.agentLimits,
       });
     } catch (err) {
       if (err instanceof InsufficientCreditsError) await blocked(err.message, err.code, { balance: err.balance, available: err.available, required: err.required });
-      else if (err instanceof CreditLimitReachedError) await blocked(err.message, err.code, { scope: err.scope, used: err.used, limit: err.limit });
+      else if (err instanceof CreditLimitReachedError || err instanceof AgentCreditLimitReachedError) await blocked(err.message, err.code, { scope: err.scope, used: err.used, limit: err.limit });
       else if (err instanceof DuplicateRequestError) await blocked(err.message, err.code);
       throw err;
     }
@@ -288,7 +293,7 @@ export async function callAI(req: GatewayRequest, deps: GatewayDeps = defaultDep
         agentVersionId: req.agentVersionId ?? null, userClerkId: req.userClerkId ?? null,
         provider: used.providerId, model: used.model, technicalCostUsd: cost.technicalCostUsd,
         estimatedCredits, usageLogId,
-        metadata: { functionName: req.functionName, costBasis: cost.basis, priceKnown: cost.priceKnown, priceSource: cost.priceSource, provisional: cost.provisional, pricingRowId: cost.pricingRowId },
+        metadata: { functionName: req.functionName, usageKind, costBasis: cost.basis, priceKnown: cost.priceKnown, priceSource: cost.priceSource, provisional: cost.provisional, pricingRowId: cost.pricingRowId },
       });
     } catch (err) {
       // The answer was already produced and paid for: don't fail the user's

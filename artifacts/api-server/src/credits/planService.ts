@@ -1,9 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  Credit plans — configurable commercial rules per plan.
 //
-//  NOTHING here has a default commercial value: credit_plans starts empty and
-//  a NULL field means "not configured" (no limit / no included credits). Until
-//  business fills it in, the limit checks below are inert.
+//  The commercial values of each plan (price, included credits, daily limit, rollover,
+//  alerts) live in credit_plans, seeded by migration 0008 and editable from Super Admin.
+//  A NULL field means "not configured" (no limit / no included credits); ENTERPRISE
+//  is custom, so its values stay NULL until they are agreed per customer.
 //
 //  The plan of a workspace is resolved from what already exists: an active
 //  license (license_plans) wins, otherwise organizations.plan.
@@ -16,7 +17,7 @@ import {
   db, creditPlansTable, creditLedgerTable, licensePlansTable, organizationsTable,
   type CreditPlan, type LicensePlan,
 } from "@workspace/db";
-import { CreditError, CreditLimitReachedError } from "./errors";
+import { AgentCreditLimitReachedError, CreditError, CreditLimitReachedError } from "./errors";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Db = typeof db | Tx;
@@ -28,17 +29,39 @@ export interface PlanConfig {
   dailyLimit:           number | null;
   perAgentMonthlyLimit: number | null;
   rollover:             boolean;
+  /** % de los créditos incluidos sin consumir que pasa al ciclo siguiente (0-100). null = usa solo `rollover` (todo el sobrante). */
+  rolloverPct:          number | null;
   rolloverCap:          number | null;
   blockAtLimit:         boolean;
   alertThresholds:      number[];
   active:               boolean;
+  displayName:          string | null;
+  priceAmount:          number | null;
+  currency:             string;
+  /** Precio a medida (Enterprise): no hay precio de catálogo. */
+  priceCustom:          boolean;
+  agentLimit:           number | null;
+  workspaceLimit:       number | null;
+}
+
+/**
+ * Cuánto de lo incluido sin consumir pasa como rollover. Con rolloverPct manda el porcentaje;
+ * sin él, el booleano `rollover` conserva todo el sobrante. En ambos casos rolloverCap acota.
+ */
+export function rolloverCarry(cfg: Pick<PlanConfig, "rollover" | "rolloverPct" | "rolloverCap">, leftover: number): number {
+  const pct = cfg.rolloverPct !== null ? cfg.rolloverPct / 100 : cfg.rollover ? 1 : 0;
+  if (!(leftover > 0) || pct <= 0) return 0;
+  const carried = Math.round(leftover * pct * 1e4) / 1e4;
+  return cfg.rolloverCap !== null ? Math.min(carried, cfg.rolloverCap) : carried;
 }
 
 const n = (v: string | null): number | null => (v === null ? null : Number(v));
 
 export const toPlanConfig = (r: CreditPlan): PlanConfig => ({
   plan: r.plan, includedCredits: n(r.includedCredits), monthlyLimit: n(r.monthlyLimit), dailyLimit: n(r.dailyLimit),
-  perAgentMonthlyLimit: n(r.perAgentMonthlyLimit), rollover: r.rollover, rolloverCap: n(r.rolloverCap),
+  perAgentMonthlyLimit: n(r.perAgentMonthlyLimit), rollover: r.rollover, rolloverPct: n(r.rolloverPct), rolloverCap: n(r.rolloverCap),
+  displayName: r.displayName, priceAmount: n(r.priceAmount), currency: r.currency, priceCustom: r.priceCustom,
+  agentLimit: r.agentLimit, workspaceLimit: r.workspaceLimit,
   blockAtLimit: r.blockAtLimit, alertThresholds: (r.alertThresholds as number[]) ?? [], active: r.active,
 });
 
@@ -77,6 +100,17 @@ function validatePatch(patch: PlanPatch) {
     if (v === undefined || v === null) continue;
     if (!Number.isFinite(v) || v < 0) throw new CreditError(`${f} debe ser un número mayor o igual que 0 (o null = sin configurar).`);
   }
+  if (patch.rolloverPct !== undefined && patch.rolloverPct !== null && (!Number.isFinite(patch.rolloverPct) || patch.rolloverPct < 0 || patch.rolloverPct > 100)) {
+    throw new CreditError("rolloverPct debe estar entre 0 y 100 (o null).");
+  }
+  if (patch.priceAmount !== undefined && patch.priceAmount !== null && (!Number.isFinite(patch.priceAmount) || patch.priceAmount < 0)) {
+    throw new CreditError("priceAmount debe ser un número mayor o igual que 0 (o null).");
+  }
+  if (patch.currency !== undefined && !/^[A-Z]{3}$/.test(patch.currency)) throw new CreditError("currency debe ser un código de 3 letras.");
+  for (const f of ["agentLimit", "workspaceLimit"] as const) {
+    const v = patch[f];
+    if (v !== undefined && v !== null && (!Number.isInteger(v) || v < 0)) throw new CreditError(`${f} debe ser un entero mayor o igual que 0 (o null).`);
+  }
   if (patch.alertThresholds !== undefined) {
     const t = patch.alertThresholds;
     if (!Array.isArray(t) || t.some((x) => !Number.isInteger(x) || x < 1 || x > 1000)) {
@@ -101,6 +135,13 @@ export async function upsertPlanConfig(plan: string, patch: PlanPatch, userClerk
       ...(patch.perAgentMonthlyLimit !== undefined ? { perAgentMonthlyLimit: d(patch.perAgentMonthlyLimit) } : {}),
       ...(patch.rolloverCap !== undefined ? { rolloverCap: d(patch.rolloverCap) } : {}),
       ...(patch.rollover !== undefined ? { rollover: patch.rollover } : {}),
+      ...(patch.rolloverPct !== undefined ? { rolloverPct: patch.rolloverPct === null ? null : patch.rolloverPct.toFixed(2) } : {}),
+      ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
+      ...(patch.priceAmount !== undefined ? { priceAmount: patch.priceAmount === null ? null : patch.priceAmount.toFixed(2) } : {}),
+      ...(patch.currency !== undefined ? { currency: patch.currency } : {}),
+      ...(patch.priceCustom !== undefined ? { priceCustom: patch.priceCustom } : {}),
+      ...(patch.agentLimit !== undefined ? { agentLimit: patch.agentLimit } : {}),
+      ...(patch.workspaceLimit !== undefined ? { workspaceLimit: patch.workspaceLimit } : {}),
       ...(patch.blockAtLimit !== undefined ? { blockAtLimit: patch.blockAtLimit } : {}),
       ...(patch.alertThresholds !== undefined ? { alertThresholds: [...new Set(patch.alertThresholds)].sort((a, b) => a - b) } : {}),
       ...(patch.active !== undefined ? { active: patch.active } : {}),
@@ -143,8 +184,12 @@ export interface LimitCheckInput {
   agentId?:  number | null;
   /** Créditos que la operación quiere reservar. */
   credits:   number;
-  /** Tope propio del agente (ai_agents.monthly_credit_limit). Aplica aunque el plan no esté configurado. */
-  agentCap?: number | null;
+  /**
+   * Presupuestos propios del agente (ai_agents): mensual, diario y por ejecución. Aplican aunque el
+   * plan no esté configurado. NULL/ausente = sin tope. executionUsed = créditos ya gastados en la
+   * ejecución en curso (varias llamadas al gateway pueden formar una misma ejecución).
+   */
+  agentLimits?: { monthly?: number | null; daily?: number | null; perExecution?: number | null; executionUsed?: number };
   /** Reservas vigentes de la org y del agente (las calcula el llamador dentro de la misma transacción). */
   heldOrg:   number;
   heldAgent: number;
@@ -181,15 +226,24 @@ export async function checkReserveLimits(tx: Tx, input: LimitCheckInput): Promis
   }
 
   if (input.agentId != null) {
-    const caps = [
-      input.agentCap ?? null,
-      enforce ? cfg.perAgentMonthlyLimit : null,
-    ].filter((c): c is number => c !== null);
-    if (caps.length > 0) {
-      const cap = Math.min(...caps);
+    const lim = input.agentLimits ?? {};
+    // Por ejecución: no hace falta consultar nada, se acumula en la propia ejecución.
+    if (lim.perExecution != null) {
+      const used = lim.executionUsed ?? 0;
+      if (used + input.credits > lim.perExecution) throw new AgentCreditLimitReachedError("agent_execution", used, lim.perExecution, input.credits);
+    }
+    if (lim.daily != null) {
+      const used = await consumedBetween(tx, input.orgId, day.start, day.end, input.agentId);
+      if (used + input.heldAgent + input.credits > lim.daily) {
+        throw new AgentCreditLimitReachedError("agent_daily", used + input.heldAgent, lim.daily, input.credits);
+      }
+    }
+    const monthlyCaps = [lim.monthly ?? null, enforce ? cfg.perAgentMonthlyLimit : null].filter((c): c is number => c !== null);
+    if (monthlyCaps.length > 0) {
+      const cap = Math.min(...monthlyCaps);
       const used = await consumedBetween(tx, input.orgId, month.start, month.end, input.agentId);
       if (used + input.heldAgent + input.credits > cap) {
-        throw new CreditLimitReachedError("agent_monthly", used + input.heldAgent, cap, input.credits);
+        throw new AgentCreditLimitReachedError("agent_monthly", used + input.heldAgent, cap, input.credits);
       }
     }
   }

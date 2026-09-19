@@ -36,7 +36,7 @@ function makeDeps(cfg: AgentConfig, script: GatewayResult[], o: { status?: "live
   const resolveTarget = vi.fn(async (_org: number, _id: number, mode: string) => {
     if (mode === "live" && o.status === "paused") throw new AgentError(409, "El agente está pausado.");
     return {
-      agent: { id: 5, name: "Ana", description: null, monthlyCreditLimit: null } as any,
+      agent: { id: 5, name: "Ana", description: null, monthlyCreditLimit: null, dailyCreditLimit: null, perExecutionCreditLimit: null } as any,
       version: { id: 50, versionNumber: 2, config: cfg } as any,
     };
   });
@@ -118,13 +118,22 @@ describe("runAgent", () => {
     expect(d.executeSkill).not.toHaveBeenCalled();
   });
 
-  it("pasa al gateway el agente, la versión, el ledger y el tope mensual", async () => {
+  it("pasa al gateway el agente, la versión, el ledger, el tipo de uso y los presupuestos del agente", async () => {
     const d = makeDeps(config([], []), [answer("hola")]);
     await runAgent(req("live"), d.runner);
     expect((d.callAI.mock.calls[0] as unknown as [object])[0]).toMatchObject({
       mode: "live", orgId: 1, agentId: 5, agentVersionId: 50, functionName: "agent_5",
-      billing: { ledger: true, monthlyCreditLimit: null },
+      usageKind: "agent_execution",
+      billing: { ledger: true, agentLimits: { monthly: null, daily: null, perExecution: null, executionUsed: 0 } },
     });
+  });
+
+  it("acumula lo gastado en la ejecución: la segunda llamada al gateway lleva executionUsed", async () => {
+    const d = makeDeps(config([], []), [answer("uno")]);
+    (d.callAI as unknown as { mockClear: () => void }).mockClear?.();
+    await runAgent(req("live"), d.runner);
+    const first = (d.callAI.mock.calls[0] as unknown as [{ billing: { agentLimits: { executionUsed: number } } }])[0];
+    expect(first.billing.agentLimits.executionUsed).toBe(0);
   });
 
   it("limita el historial recibido y descarta roles no permitidos (no confía en el cliente)", async () => {

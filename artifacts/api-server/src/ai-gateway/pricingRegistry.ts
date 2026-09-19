@@ -24,6 +24,10 @@ export interface PricingRow {
   effectiveFrom:   Date;
   effectiveTo:     Date | null;
   active:          boolean;
+  /** Documento/URL oficial del precio. */
+  source:          string | null;
+  /** true = fila cargada pero aún sin validar: el coste sigue siendo provisional. */
+  provisional:     boolean;
 }
 
 export type PriceSource = "db" | "legacy" | "fallback";
@@ -42,6 +46,8 @@ export interface ResolvedPricing {
   known:   boolean;
   source:  PriceSource;
   rowId:   number | null;
+  /** db validado → false. legacy, fallback o una fila db marcada provisional → true. */
+  provisional: boolean;
 }
 
 let snapshot: PricingRow[] = [];
@@ -64,7 +70,7 @@ export function resolvePricing(provider: string, model: string, at: Date = new D
 
   if (row) {
     return {
-      known: true, source: "db", rowId: row.id,
+      known: true, source: "db", rowId: row.id, provisional: row.provisional,
       pricing: {
         inputPer1M: row.inputCost, outputPer1M: row.outputCost,
         cachedInputPer1M: opt(row.cachedInputCost), reasoningPer1M: opt(row.reasoningCost),
@@ -73,6 +79,6 @@ export function resolvePricing(provider: string, model: string, at: Date = new D
     };
   }
   const legacy = LEGACY_PRICING[provider]?.[model];
-  if (legacy) return { pricing: legacy, known: true, source: "legacy", rowId: null };
-  return { pricing: FALLBACK_PRICING, known: false, source: "fallback", rowId: null };
+  if (legacy) return { pricing: legacy, known: true, source: "legacy", rowId: null, provisional: true };
+  return { pricing: FALLBACK_PRICING, known: false, source: "fallback", rowId: null, provisional: true };
 }

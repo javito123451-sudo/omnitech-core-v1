@@ -8,7 +8,7 @@ import { db, organizationsTable } from "@workspace/db";
 export async function createTempOrgs(count: number, label: string): Promise<number[]> {
   const tag = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const rows = await db.insert(organizationsTable)
-    .values(Array.from({ length: count }, (_, i) => ({ name: `smoke ${tag} ${i}`, slug: `smoke-${tag}-${i}`, plan: "starter" })))
+    .values(Array.from({ length: count }, (_, i) => ({ name: `smoke ${tag} ${i}`, slug: `smoke-${tag}-${i}`, plan: "test-none" })))
     .returning({ id: organizationsTable.id });
   return rows.map((r) => r.id);
 }

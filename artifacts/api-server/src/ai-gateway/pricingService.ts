@@ -10,6 +10,7 @@
 
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db, aiModelPricingTable, type AiModelPricing } from "@workspace/db";
+import { LEGACY_PRICING } from "./pricing";
 import { pricingSnapshotAgeMs, setPricingSnapshot, type PricingRow } from "./pricingRegistry";
 
 const SNAPSHOT_TTL_MS = 60_000;
@@ -21,6 +22,7 @@ const toRow = (r: AiModelPricing): PricingRow => ({
   cachedInputCost: num(r.cachedInputCost), reasoningCost: num(r.reasoningCost),
   imageCost: num(r.imageCost), audioCost: num(r.audioCost), videoCost: num(r.videoCost),
   effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, active: r.active,
+  source: r.source, provisional: r.provisional,
 });
 
 export async function refreshPricing(): Promise<PricingRow[]> {
@@ -48,6 +50,10 @@ export interface PricingInput {
   currency?:        string;
   effectiveFrom?:   Date;
   notes?:           string | null;
+  /** Documento/URL oficial del precio. Obligatorio si el precio es definitivo (provisional=false). */
+  source?:          string | null;
+  /** Por defecto false (precio validado). true = cargado pero pendiente de revisión. */
+  provisional?:     boolean;
 }
 
 export class PricingError extends Error {
@@ -65,6 +71,10 @@ function validate(input: PricingInput) {
     if (!Number.isFinite(v) || v < 0) throw new PricingError(`${name} debe ser un número mayor o igual que 0.`);
   }
   if (input.currency && !/^[A-Z]{3}$/.test(input.currency)) throw new PricingError("currency debe ser un código de 3 letras (p. ej. USD).");
+  // Nunca un precio definitivo sin procedencia: sin fuente, solo puede entrar como provisional.
+  if (input.provisional !== true && !input.source?.trim()) {
+    throw new PricingError("Un precio definitivo (provisional=false) requiere 'source': el documento o URL oficial del precio.");
+  }
 }
 
 const fmt = (v: number | null | undefined) => (v === null || v === undefined ? null : v.toFixed(6));
@@ -88,6 +98,7 @@ export async function setModelPricing(input: PricingInput, userClerkId: string |
       cachedInputCost: fmt(input.cachedInputCost), reasoningCost: fmt(input.reasoningCost),
       imageCost: fmt(input.imageCost), audioCost: fmt(input.audioCost), videoCost: fmt(input.videoCost),
       currency: input.currency ?? "USD", effectiveFrom: from, notes: input.notes ?? null, createdBy: userClerkId,
+      source: input.source?.trim() || null, provisional: input.provisional === true,
     }).returning();
     return { previous: current[0] ?? null, current: created! };
   });
@@ -110,4 +121,25 @@ export async function listPricing(filter: { provider?: string; model?: string } 
   ].filter((c) => c !== undefined);
   return db.select().from(aiModelPricingTable).where(conds.length ? and(...conds) : undefined)
     .orderBy(asc(aiModelPricingTable.provider), asc(aiModelPricingTable.model), desc(aiModelPricingTable.effectiveFrom));
+}
+
+/**
+ * Estado del pricing: qué modelos tienen precio oficial validado y cuáles siguen provisionales
+ * (fila marcada provisional, valor heredado o tarifa de referencia). Para Super Admin.
+ */
+export async function getPricingReport(at: Date = new Date()) {
+  const rows = (await db.select().from(aiModelPricingTable).where(eq(aiModelPricingTable.active, true)))
+    .filter((r) => r.effectiveFrom <= at && (r.effectiveTo === null || r.effectiveTo > at));
+  const key = (p: string, m: string) => `${p}/${m}`;
+  const official = rows.filter((r) => !r.provisional);
+  const officialKeys = new Set(official.map((r) => key(r.provider, r.model)));
+  return {
+    official: official.map((r) => ({ provider: r.provider, model: r.model, source: r.source, effectiveFrom: r.effectiveFrom, provisional: false })),
+    dbProvisional: rows.filter((r) => r.provisional).map((r) => ({ provider: r.provider, model: r.model, source: r.source, effectiveFrom: r.effectiveFrom, provisional: true })),
+    // Modelos heredados: se conservan, pero como legacy/provisional hasta que exista un precio oficial.
+    legacyProvisional: Object.entries(LEGACY_PRICING)
+      .flatMap(([provider, models]) => Object.keys(models).map((model) => ({ provider, model })))
+      .filter((m) => !officialKeys.has(key(m.provider, m.model)))
+      .map((m) => ({ ...m, priceSource: "legacy" as const, provisional: true })),
+  };
 }

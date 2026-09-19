@@ -104,7 +104,9 @@ export async function createAgent(orgId: number, userClerkId: string | null, inp
 
 export async function updateAgentMeta(orgId: number, agentId: number, patch: {
   name?: string; description?: string | null; avatarUrl?: string | null;
-  limits?: Record<string, unknown>; monthlyCreditLimit?: number | null;
+  limits?: Record<string, unknown>;
+  /** Presupuestos de créditos del agente (NULL = sin tope): mensual, diario y por ejecución. */
+  monthlyCreditLimit?: number | null; dailyCreditLimit?: number | null; perExecutionCreditLimit?: number | null;
 }) {
   assertEditable(await requireAgent(orgId, agentId));
   const [updated] = await db.update(aiAgentsTable).set({ ...patch, updatedAt: new Date() })
