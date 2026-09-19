@@ -24,6 +24,16 @@ export function outputTokenLimit(model: string, limit: number): { max_tokens: nu
   return usesMaxCompletionTokens(model) ? { max_completion_tokens: limit } : { max_tokens: limit };
 }
 
+/**
+ * Esos mismos modelos (GPT-5.x y razonadores) solo admiten la temperatura por defecto (1): con cualquier
+ * otro valor OpenAI responde 400 ("Unsupported value: 'temperature' does not support 0.3 with this
+ * model. Only the default (1) value is supported."). Para ellos NO se envía `temperature` y se usa la
+ * del proveedor; el resto de modelos conserva la temperatura pedida (0.7 por defecto), sin cambios.
+ */
+export function temperatureParam(model: string, temperature: number): { temperature?: number } {
+  return usesMaxCompletionTokens(model) ? {} : { temperature };
+}
+
 export class OpenAIProvider implements AIProvider {
   id   = "openai";
   name = "OpenAI";
@@ -69,7 +79,7 @@ export class OpenAIProvider implements AIProvider {
         return msg;
       }) as any,
       ...outputTokenLimit(model, options.maxTokens ?? 4000),
-      temperature:     options.temperature ?? 0.7,
+      ...temperatureParam(model, options.temperature ?? 0.7),
     };
 
     if (options.tools && options.tools.length > 0) {
@@ -157,7 +167,7 @@ export class OpenAIProvider implements AIProvider {
         return msg;
       }),
       ...outputTokenLimit(model, options.maxTokens ?? 4000),
-      temperature: options.temperature ?? 0.7,
+      ...temperatureParam(model, options.temperature ?? 0.7),
       stream:      true,
       stream_options: { include_usage: true },
     };
