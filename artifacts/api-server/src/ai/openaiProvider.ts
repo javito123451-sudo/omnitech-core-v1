@@ -9,6 +9,21 @@ import type {
 } from "./types";
 import { trackLLMDirectCall } from "../utils/avaMetrics";
 
+/**
+ * Los modelos de la familia GPT-5 y los razonadores (o1, o3, o4…) rechazan `max_tokens` con un 400
+ * ("Use 'max_completion_tokens' instead") y exigen `max_completion_tokens`; el resto de modelos
+ * (gpt-4o, gpt-4o-mini…) siguen usando `max_tokens` como hasta ahora. En estos modelos el límite
+ * cuenta también los tokens de razonamiento.
+ */
+export function usesMaxCompletionTokens(model: string): boolean {
+  return /^(gpt-5|o[0-9])/i.test(model.trim());
+}
+
+/** El parámetro de límite de salida que corresponde al modelo. */
+export function outputTokenLimit(model: string, limit: number): { max_tokens: number } | { max_completion_tokens: number } {
+  return usesMaxCompletionTokens(model) ? { max_completion_tokens: limit } : { max_tokens: limit };
+}
+
 export class OpenAIProvider implements AIProvider {
   id   = "openai";
   name = "OpenAI";
@@ -53,7 +68,7 @@ export class OpenAIProvider implements AIProvider {
         }
         return msg;
       }) as any,
-      max_tokens:      options.maxTokens ?? 4000,
+      ...outputTokenLimit(model, options.maxTokens ?? 4000),
       temperature:     options.temperature ?? 0.7,
     };
 
@@ -141,7 +156,7 @@ export class OpenAIProvider implements AIProvider {
         }
         return msg;
       }),
-      max_tokens:  options.maxTokens ?? 4000,
+      ...outputTokenLimit(model, options.maxTokens ?? 4000),
       temperature: options.temperature ?? 0.7,
       stream:      true,
       stream_options: { include_usage: true },
