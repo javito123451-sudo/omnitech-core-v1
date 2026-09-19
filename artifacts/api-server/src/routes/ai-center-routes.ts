@@ -3,18 +3,16 @@ import { db } from "@workspace/db";
 import { aiUsageLogsTable, aiBudgetsTable, organizationsTable } from "@workspace/db";
 import { eq, desc, sum, count, sql, and, gte, lt } from "drizzle-orm";
 import { requireSuperAdmin } from "../middlewares/superAdmin";
+import { listPlanConfigs } from "../credits/planService";
 
 export const aiCenterRouter = Router();
 aiCenterRouter.use(requireSuperAdmin);
 
 const USD_TO_EUR = 0.93;
 
-const PLAN_REVENUE: Record<string, number> = {
-  starter:      0,
-  professional: 49,
-  enterprise:   200,
-  free:         0,
-};
+// Los ingresos mensuales por plan NO se duplican aquí: la fuente comercial única es credit_plans
+// (OmniCredits: Starter 149, Professional 349, Business 699 EUR/mes; Enterprise a medida). Un plan sin
+// precio de catálogo (Enterprise, free, nombres antiguos) cuenta 0 de ingreso estimado.
 
 function monthRange() {
   const now   = new Date();
@@ -128,6 +126,7 @@ aiCenterRouter.post("/budgets/unblock", async (req, res) => {
 export async function getFinancialData() {
   const { start, end } = monthRange();
   const orgs    = await db.select().from(organizationsTable);
+  const planPrices = new Map((await listPlanConfigs()).map((p) => [p.plan, p]));
 
   const spendRows = await db.execute(sql`
     SELECT org_id, SUM(cost_usd)::float AS spend, COUNT(*)::int AS calls
@@ -139,13 +138,15 @@ export async function getFinancialData() {
 
   return orgs.map(org => {
     const plan        = org.plan ?? "free";
-    const revenueEur  = PLAN_REVENUE[plan] ?? 0;
+    const planCfg     = planPrices.get(plan);
+    const revenueEur  = planCfg && !planCfg.priceCustom && planCfg.currency === "EUR" ? planCfg.priceAmount ?? 0 : 0;
+    const priceCustom = planCfg?.priceCustom === true; // Enterprise: precio a medida, no hay ingreso de catálogo
     const aiData      = spendMap.get(org.id) ?? { spend: 0, calls: 0 };
     const aiCostUsd   = aiData.spend;
     const aiCostEur   = aiCostUsd * USD_TO_EUR;
     const marginEur   = revenueEur - aiCostEur;
     const marginPct   = revenueEur > 0 ? (marginEur / revenueEur) * 100 : marginEur < 0 ? -100 : 100;
-    return { orgId: org.id, orgName: org.name, plan, revenueEur, aiCostUsd, aiCostEur, marginEur, marginPct, calls: aiData.calls };
+    return { orgId: org.id, orgName: org.name, plan, revenueEur, priceCustom, aiCostUsd, aiCostEur, marginEur, marginPct, calls: aiData.calls };
   });
 }
 aiCenterRouter.get("/financial", async (_req, res) => {

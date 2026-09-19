@@ -14,6 +14,7 @@ import { bumpOrgModuleVersion } from "../lib/moduleVersion";
 import { logAudit as _logAudit } from "../utils/auditLogger";
 import { sendInvitationEmail } from "../lib/email";
 import { randomUUID } from "crypto";
+import { creditsAdminRouter } from "./credits-admin";
 
 export const controlCenterRouter = Router();
 
@@ -722,6 +723,9 @@ controlCenterRouter.post("/licenses", async (req, res) => {
   await logAudit({ actorClerkId: req.clerkUserId!, action: "license_assigned", resource: "license", orgId, details: { plan, seats, validUntil }, req });
   res.json({ ok: true });
 });
+
+// ── OmniCredits: administración (consumo global, planes, precios, movimientos) ─
+controlCenterRouter.use("/credits", creditsAdminRouter);
 
 // ── GET /audit ────────────────────────────────────────────────────────────────
 export interface AuditLogsFilter {

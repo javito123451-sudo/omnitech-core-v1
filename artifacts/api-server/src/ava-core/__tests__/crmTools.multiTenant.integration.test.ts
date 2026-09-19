@@ -8,7 +8,7 @@
 // Requires a real disposable database in DATABASE_URL — same ci-test branch
 // used by the other integration tests. Skips cleanly otherwise.
 import { describe, it, expect, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, notLike } from "drizzle-orm";
 import { db, organizationsTable, tasksTable, activityTable } from "@workspace/db";
 import { CRM_TOOLS } from "../tools/crmTools";
 import type { AvaContext } from "../types";
@@ -34,7 +34,7 @@ describe.skipIf(!hasRealDb)("Ava Core — CRM tools multi-tenant isolation", () 
   });
 
   async function twoOrgIds(): Promise<[number, number]> {
-    const orgs = await db.select({ id: organizationsTable.id }).from(organizationsTable).limit(2);
+    const orgs = await db.select({ id: organizationsTable.id }).from(organizationsTable).where(notLike(organizationsTable.slug, "smoke-%")).orderBy(organizationsTable.id).limit(2); // orgs reales: las temporales (smoke-*) de otros tests se crean y borran en paralelo
     if (orgs.length < 2) throw new Error("Test database needs at least 2 organizations — seed them before running this test.");
     return [orgs[0]!.id, orgs[1]!.id];
   }
