@@ -36,6 +36,13 @@
       "when": 1789817908079,
       "tag": "0004_ai_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789820008529,
+      "tag": "0005_omnicredits_and_agent_defaults",
+      "breakpoints": true
     }
   ]
 }

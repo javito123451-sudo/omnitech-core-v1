@@ -1,19 +1,11 @@
 import { db, aiUsageLogsTable, aiBudgetsTable } from "@workspace/db";
 import { eq, and, gte, lt, sum, sql } from "drizzle-orm";
+import { computeCost } from "../ai-gateway/costEngine";
 
-// ── Cost rates (USD per 1K tokens) ───────────────────────────────────────────
-const COST_RATES: Record<string, { input: number; output: number }> = {
-  "gpt-4o":                    { input: 0.005,    output: 0.015    },
-  "gpt-4o-2024-11-20":         { input: 0.005,    output: 0.015    },
-  "gpt-4o-mini":               { input: 0.000150, output: 0.000600 },
-  "gpt-4o-mini-2024-07-18":    { input: 0.000150, output: 0.000600 },
-  "text-embedding-3-small":    { input: 0.000020, output: 0         },
-  "text-embedding-3-large":    { input: 0.000130, output: 0         },
-};
-
+// Prices live in ai-gateway/pricing.ts (single source); this keeps the old
+// signature for callers that only know model + token counts (OpenAI-priced).
 export function calculateCost(model: string, tokensInput: number, tokensOutput: number): number {
-  const rate = COST_RATES[model] ?? COST_RATES["gpt-4o-mini"]!;
-  return (tokensInput / 1000) * rate.input + (tokensOutput / 1000) * rate.output;
+  return computeCost({ provider: "openai", model, inputTokens: tokensInput, outputTokens: tokensOutput }).technicalCostUsd;
 }
 
 export interface AiCallParams {
@@ -23,6 +15,8 @@ export interface AiCallParams {
   model:        string;
   tokensInput:  number;
   tokensOutput: number;
+  /** Final technical cost from the Cost Engine. Computed from the tokens when omitted. */
+  costUsd?:     number;
   durationMs?:  number;
   status?:      "ok" | "error" | "blocked";
   errorMsg?:    string;
@@ -30,12 +24,13 @@ export interface AiCallParams {
 }
 
 // ── Log a completed AI call (fire-and-forget safe) ────────────────────────────
-export async function logAiCall(params: AiCallParams): Promise<void> {
+// Returns the ai_usage_logs id so the OmniCredits ledger can point at it.
+export async function logAiCall(params: AiCallParams): Promise<number | null> {
   try {
     const tokensTotal = params.tokensInput + params.tokensOutput;
-    const costUsd     = calculateCost(params.model, params.tokensInput, params.tokensOutput);
+    const costUsd     = params.costUsd ?? calculateCost(params.model, params.tokensInput, params.tokensOutput);
 
-    await db.insert(aiUsageLogsTable).values({
+    const [inserted] = await db.insert(aiUsageLogsTable).values({
       orgId:        params.orgId,
       userClerkId:  params.userClerkId ?? null,
       functionName: params.functionName,
@@ -48,14 +43,16 @@ export async function logAiCall(params: AiCallParams): Promise<void> {
       status:       params.status ?? "ok",
       errorMsg:     params.errorMsg ?? null,
       metadata:     params.metadata ?? null,
-    });
+    }).returning({ id: aiUsageLogsTable.id });
 
     // After logging, check budget threshold and maybe block
     if (params.orgId && costUsd > 0) {
       checkAndUpdateBudget(params.orgId).catch(() => {});
     }
+    return inserted?.id ?? null;
   } catch (err) {
     console.error("[AiUsageLogger] Failed to log AI call:", err);
+    return null;
   }
 }
 

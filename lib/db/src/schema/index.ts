@@ -31,3 +31,4 @@ export * from "./trend-snapshots";
 export * from "./fleet";
 export * from "./taller";
 export * from "./ai-agents";
+export * from "./omnicredits";

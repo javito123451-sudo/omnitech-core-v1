@@ -26,7 +26,12 @@ import { organizationsTable } from "./organizations";
 export const AGENT_STATUSES = ["draft", "published", "paused", "archived"] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
-export const AGENT_CHANNELS = ["web", "whatsapp", "telegram", "email"] as const;
+// Un agente puede tener uno o varios canales; no se asume un agente por canal.
+export const AGENT_CHANNELS = ["web", "crm", "super_admin", "telegram", "whatsapp", "email"] as const;
+export type AgentChannel = (typeof AGENT_CHANNELS)[number];
+
+// Clave del agente por defecto que vale para todo el workspace.
+export const DEFAULT_AGENT_ALL_CHANNELS = "all";
 
 export const aiAgentsTable = pgTable("ai_agents", {
   id:                 serial("id").primaryKey(),
@@ -72,12 +77,34 @@ export const aiAgentVersionsTable = pgTable("ai_agent_versions", {
   index("idx_ai_agent_versions_org").on(t.orgId),
 ]);
 
+// Agente por defecto de un workspace: channel = "all" (todo el workspace) o un
+// canal concreto. La resolución prefiere el del canal y cae al de "all".
+// Solo prepara el concepto: los bots actuales de Telegram/WhatsApp NO lo usan todavía.
+export const aiAgentDefaultsTable = pgTable("ai_agent_defaults", {
+  id:        serial("id").primaryKey(),
+  orgId:     integer("org_id").notNull().references(() => organizationsTable.id, { onDelete: "cascade" }),
+  channel:   text("channel").notNull(),
+  agentId:   integer("agent_id").notNull().references(() => aiAgentsTable.id, { onDelete: "cascade" }),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  unique("ai_agent_defaults_org_channel_unique").on(t.orgId, t.channel),
+  index("idx_ai_agent_defaults_agent").on(t.agentId),
+]);
+
 export type AiAgent        = typeof aiAgentsTable.$inferSelect;
 export type AiAgentVersion = typeof aiAgentVersionsTable.$inferSelect;
+export type AiAgentDefault = typeof aiAgentDefaultsTable.$inferSelect;
 
 // ── Configuración de una versión ─────────────────────────────────────────────
 
 export const agentConfigSchema = z.object({
+  // La identidad visible (nombre, avatar, descripción) vive en la fila del
+  // agente; el rol es parte del comportamiento versionado.
+  identity: z.object({
+    role: z.string(),
+  }),
   objective: z.object({
     what:            z.string(),
     audience:        z.string(),
@@ -96,10 +123,28 @@ export const agentConfigSchema = z.object({
     avoid:        z.array(z.string()),
   }),
   businessContext: z.string(),
-  // routing por complejidad queda para más adelante; hoy el modelo es fijo.
+  // Preferencia de proveedor/modelo de ESTA versión. El AI Gateway decide la
+  // ruta final (disponibilidad, plan) y usa `fallbacks` si falla. Routing por
+  // complejidad queda para más adelante.
   model: z.object({
-    provider: z.string().optional(),
-    model:    z.string().optional(),
+    provider:  z.string().optional(),
+    model:     z.string().optional(),
+    fallbacks: z.array(z.object({ provider: z.string().optional(), model: z.string().optional() })).optional(),
+  }),
+  // Parámetros de ejecución de esta versión.
+  parameters: z.object({
+    temperature:        z.number().min(0).max(2),
+    maxOutputTokens:    z.number().int().min(1).max(8000),
+    maxToolRounds:      z.number().int().min(1).max(10),
+    maxHistoryMessages: z.number().int().min(0).max(50),
+  }),
+  // Conocimiento del agente. Reutiliza knowledge_base (siempre de SU workspace):
+  // `workspace` incluye todo el conocimiento activo de la org; `entryIds` y
+  // `categories` acotan a entradas concretas.
+  knowledge: z.object({
+    workspace:  z.boolean(),
+    entryIds:   z.array(z.number().int()),
+    categories: z.array(z.string()),
   }),
   // "Puede leer" y "puede hacer" son listas separadas: que una herramienta
   // exista no da permiso de escritura.
@@ -117,11 +162,14 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
 export function defaultAgentConfig(): AgentConfig {
   return {
+    identity:    { role: "" },
     objective:   { what: "", audience: "", expectedOutcome: "" },
     personality: { tone: "cercano y profesional", style: "claro y conciso", language: "es", formality: "medio" },
     behavior:    { instructions: "", rules: [], restrictions: [], avoid: [] },
     businessContext: "",
     model:       {},
+    parameters:  { temperature: 0.3, maxOutputTokens: 1024, maxToolRounds: 4, maxHistoryMessages: 12 },
+    knowledge:   { workspace: false, entryIds: [], categories: [] },
     tools:       { read: [], write: [] },
     permissions: { writesRequireConfirmation: true },
     channels:    [],

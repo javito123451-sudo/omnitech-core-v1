@@ -12,6 +12,8 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { isReadTool } from "./toolClassification";
+import { findUnavailableKnowledgeIds } from "./knowledge";
+import { PROVIDER_CONFIG } from "../ai-gateway/providerRouter";
 
 export class AgentError extends Error {
   constructor(public readonly status: 404 | 409 | 422, message: string, public readonly problems: string[] = []) {
@@ -40,6 +42,14 @@ export function validateForPublish(agent: Pick<AiAgent, "name">, config: AgentCo
   }
   const dup = config.tools.read.filter((id) => config.tools.write.includes(id));
   for (const id of new Set(dup)) problems.push(`'${id}' está en lectura y en escritura a la vez.`);
+
+  // Las acciones siempre pasan por confirmación humana en esta fase.
+  if (!config.permissions.writesRequireConfirmation) {
+    problems.push("Ejecutar acciones sin confirmación humana todavía no está soportado.");
+  }
+  for (const p of [config.model.provider, ...(config.model.fallbacks ?? []).map((f) => f.provider)]) {
+    if (p && !PROVIDER_CONFIG[p]) problems.push(`Proveedor de IA desconocido: ${p}`);
+  }
   return problems;
 }
 
@@ -145,6 +155,34 @@ export async function restoreVersion(orgId: number, agentId: number, versionId: 
   return saveDraft(orgId, agentId, userClerkId, readConfig(source), `Restaurada desde la versión ${source.versionNumber}`);
 }
 
+// ── Ejecución ────────────────────────────────────────────────────────────────
+
+export type RunTargetMode = "testing" | "live";
+
+/**
+ * Qué versión ejecuta un agente. LIVE solo corre la versión activa de un agente
+ * publicado (pausado/archivado/sin publicar → 409). TESTING puede correr un
+ * borrador o cualquier versión indicada, pero nunca de un agente archivado.
+ */
+export async function resolveRunTarget(orgId: number, agentId: number, mode: RunTargetMode, versionId?: number) {
+  const { agent, versions } = await getAgentDetail(orgId, agentId);
+  if (agent.status === "archived") throw new AgentError(409, "El agente está archivado.");
+
+  if (mode === "live") {
+    if (agent.status === "paused") throw new AgentError(409, "El agente está pausado.");
+    if (agent.status !== "published" || !agent.activeVersionId) throw new AgentError(409, "El agente no está publicado.");
+    const active = versions.find((v) => v.id === agent.activeVersionId);
+    if (!active) throw new AgentError(409, "El agente no tiene una versión activa.");
+    return { agent, version: active };
+  }
+
+  const version = versionId
+    ? versions.find((v) => v.id === versionId)
+    : versions.find((v) => v.publishedAt === null) ?? versions.find((v) => v.id === agent.activeVersionId) ?? versions[0];
+  if (!version) throw new AgentError(404, "Versión no encontrada.");
+  return { agent, version };
+}
+
 // ── Estado ───────────────────────────────────────────────────────────────────
 
 export async function publishAgent(orgId: number, agentId: number, knownToolIds: Set<string>) {
@@ -159,7 +197,10 @@ export async function publishAgent(orgId: number, agentId: number, knownToolIds:
       .orderBy(desc(aiAgentVersionsTable.versionNumber)).limit(1);
     if (!draft) throw new AgentError(409, "No hay ningún borrador que publicar.");
 
-    const problems = validateForPublish(agent, readConfig(draft), knownToolIds);
+    const draftConfig = readConfig(draft);
+    const problems = validateForPublish(agent, draftConfig, knownToolIds);
+    const foreign = await findUnavailableKnowledgeIds(orgId, draftConfig.knowledge.entryIds);
+    for (const id of foreign) problems.push(`El conocimiento #${id} no existe en este workspace.`);
     if (problems.length > 0) throw new AgentError(422, "El agente no está listo para publicarse.", problems);
 
     await tx.update(aiAgentVersionsTable).set({ publishedAt: new Date() }).where(eq(aiAgentVersionsTable.id, draft.id));
