@@ -11,7 +11,7 @@
 
 import { db, aiSessionsTable, aiMessagesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { getProviderSingleton } from "../ai/types";
+import { callAI } from "../ai-gateway/gateway";
 import type { Message, ToolDefinition } from "../ai/types";
 import { buildAceSummary } from "./aceBridge";
 import { PRESENT_FINDINGS_TOOL, parsePresentFindingsArgs } from "./responseFormat";
@@ -104,7 +104,6 @@ export async function runAvaCoreAsk(
 
   const aceSummary = buildAceSummary(ctx);
   const { definitions, byName } = toolsForContext(ctx);
-  const aiProvider = getProviderSingleton();
 
   const messages: Message[] = [
     { role: "system", content: systemPrompt(ctx, aceSummary) },
@@ -114,11 +113,16 @@ export async function runAvaCoreAsk(
   let proposal: ActionProposal | undefined;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const result = await aiProvider.generate(messages, {
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      tools: definitions,
-      toolChoice: "auto",
+    // Ava Super Admin is platform-level supervision: logged with no org so a
+    // workspace's own AI budget can never block it. CRM usage is attributed
+    // to (and budgeted against) the workspace.
+    const result = await callAI({
+      mode: "live",
+      orgId: ctx.type === "super_admin" ? null : ctx.orgId,
+      userClerkId: ctx.clerkUserId,
+      functionName: `ava_core_${ctx.type}`,
+      messages,
+      options: { temperature: 0.3, tools: definitions, toolChoice: "auto" },
     });
 
     if (!result.toolCalls || result.toolCalls.length === 0) {
