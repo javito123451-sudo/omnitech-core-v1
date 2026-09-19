@@ -102,6 +102,7 @@ export class OpenAIProvider implements AIProvider {
             promptTokens:     resp.usage.prompt_tokens,
             completionTokens: resp.usage.completion_tokens,
             totalTokens:      resp.usage.total_tokens,
+            cachedTokens:     resp.usage.prompt_tokens_details?.cached_tokens,
           }
         : undefined,
     };

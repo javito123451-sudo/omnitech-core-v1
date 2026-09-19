@@ -9,6 +9,7 @@ import { Router } from "express";
 import { resolveAvaContext, AvaContextRouterError } from "../ava-core/contextRouter";
 import { runAvaCoreAsk, confirmAvaAction } from "../ava-core/engine";
 import { logAudit } from "../utils/auditLogger";
+import { AiBudgetBlockedError } from "../ai-gateway/gateway";
 import type { AvaAskRequest, AvaContextType } from "../ava-core/types";
 
 export const avaCoreRouter = Router();
@@ -41,6 +42,10 @@ avaCoreRouter.post("/ask", async (req, res) => {
   } catch (err) {
     if (err instanceof AvaContextRouterError) {
       res.status(403).json({ error: err.message });
+      return;
+    }
+    if (err instanceof AiBudgetBlockedError) {
+      res.status(429).json({ error: err.reason });
       return;
     }
     res.status(500).json({ error: String(err instanceof Error ? err.message : err) });

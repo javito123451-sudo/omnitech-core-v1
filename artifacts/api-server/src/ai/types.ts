@@ -54,7 +54,7 @@ export interface GenerateOptions {
 export interface GenerateResult {
   text:       string;
   toolCalls?: ToolCall[];
-  usage?:     { promptTokens: number; completionTokens: number; totalTokens: number };
+  usage?:     { promptTokens: number; completionTokens: number; totalTokens: number; cachedTokens?: number };
 }
 
 export interface EmbedResult {
