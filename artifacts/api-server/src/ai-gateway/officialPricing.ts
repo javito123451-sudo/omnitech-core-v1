@@ -23,8 +23,17 @@ export interface OfficialPriceInput {
   source:          string;
 }
 
-/** Precios oficiales v1 validados por negocio. Vacío hasta que se aporten los valores reales. */
-export const OFFICIAL_MODEL_PRICING_V1: OfficialPriceInput[] = [];
+/**
+ * Precios oficiales v1 validados por negocio: OpenAI GPT-5.6, tarifa STANDARD de contexto corto
+ * (https://developers.openai.com/api/docs/pricing). NO incluye Batch, Flex, Fast/Priority ni contexto largo.
+ * USD por 1.000.000 de tokens. Llegan a la base de datos con la migración 0009 (mismos valores, en una
+ * sola sentencia); un test comprueba que esta lista y la base coinciden.
+ */
+export const OFFICIAL_MODEL_PRICING_V1: OfficialPriceInput[] = [
+  { provider: "openai", model: "gpt-5.6-luna",  inputCost: 0.20, cachedInputCost: 0.02, outputCost: 1.20,  source: "https://developers.openai.com/api/docs/models/gpt-5.6-luna" },
+  { provider: "openai", model: "gpt-5.6-terra", inputCost: 2.00, cachedInputCost: 0.20, outputCost: 12.00, source: "https://developers.openai.com/api/docs/models/gpt-5.6-terra" },
+  { provider: "openai", model: "gpt-5.6-sol",   inputCost: 4.00, cachedInputCost: 0.40, outputCost: 20.00, source: "https://developers.openai.com/api/docs/models/gpt-5.6-sol" },
+];
 
 function assertOfficial(e: OfficialPriceInput) {
   const label = `${e.provider}/${e.model}`;
