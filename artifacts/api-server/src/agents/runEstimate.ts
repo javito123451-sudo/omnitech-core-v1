@@ -20,6 +20,8 @@ export interface RunEstimate {
   max:           { costUsd: number; credits: number };
   priceKnown:    boolean;
   priceSource:   "db" | "legacy" | "fallback";
+  /** true si el precio no está configurado en ai_model_pricing: estimación provisional, no un coste comercial definitivo. */
+  provisional:   boolean;
 }
 
 export function estimateRunCost(input: {
@@ -42,6 +44,6 @@ export function estimateRunCost(input: {
     tokens: { input: inputTokens, outputTypical: TYPICAL_OUTPUT_TOKENS, outputMax },
     typical: { costUsd: typical.technicalCostUsd, credits: typical.credits },
     max: { costUsd: max.technicalCostUsd, credits: max.credits },
-    priceKnown: typical.priceKnown, priceSource: typical.priceSource,
+    priceKnown: typical.priceKnown, priceSource: typical.priceSource, provisional: typical.provisional,
   };
 }

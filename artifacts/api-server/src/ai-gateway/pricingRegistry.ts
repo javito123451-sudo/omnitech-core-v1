@@ -28,6 +28,15 @@ export interface PricingRow {
 
 export type PriceSource = "db" | "legacy" | "fallback";
 
+/**
+ * Tres conceptos distintos:
+ *   priceSource  de dónde salió el precio (db | legacy | fallback).
+ *   priceKnown   el modelo tiene un precio explícito (fila en la BD o valor heredado); falso = tarifa de referencia.
+ *   provisional  el coste/créditos NO están respaldados por un precio configurado en ai_model_pricing.
+ * Solo una fila vigente de ai_model_pricing hace el precio definitivo: legacy y fallback son provisionales.
+ */
+export const isProvisionalSource = (source: PriceSource): boolean => source !== "db";
+
 export interface ResolvedPricing {
   pricing: ModelPricing;
   known:   boolean;

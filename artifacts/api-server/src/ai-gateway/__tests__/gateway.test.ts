@@ -102,7 +102,7 @@ describe("AI Gateway — registro de coste (AI Usage Log)", () => {
     expect(log).toMatchObject({ orgId: 7, userClerkId: "user_x", functionName: "test_fn", model: "gpt-4o-mini", tokensInput: 1000, tokensOutput: 500, status: "ok", costUsd: r.costUsd });
     expect(log["metadata"]).toMatchObject({
       provider: "fake", mode: "live", agentId: 42, agentVersionId: 5, requestId: "req-1", cachedTokens: 200, cache: false,
-      credits: r.credits, priceSource: "fallback", pricingRowId: null,
+      credits: r.credits, priceSource: "fallback", provisional: true, pricingRowId: null,
     });
   });
 });

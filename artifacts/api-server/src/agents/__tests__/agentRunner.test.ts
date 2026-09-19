@@ -25,7 +25,7 @@ const schema = (name: string): ToolDefinition => ({ type: "function", function: 
 const call = (name: string, args: object = {}, id = `c-${name}`) => ({ id, type: "function" as const, function: { name, arguments: JSON.stringify(args) } });
 const answer = (text: string, toolCalls?: ReturnType<typeof call>[]): GatewayResult => ({
   text, toolCalls, requestId: `r-${Math.random()}`, provider: "fake", model: "gpt-4o-mini", costUsd: 0.001, credits: 1.5,
-  estimatedCredits: 2, cached: false, attempts: 1, fallbackUsed: false, durationMs: 5,
+  estimatedCredits: 2, provisional: false, cached: false, attempts: 1, fallbackUsed: false, durationMs: 5,
   usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
 });
 

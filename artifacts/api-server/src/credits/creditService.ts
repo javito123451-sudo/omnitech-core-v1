@@ -26,10 +26,10 @@ import {
 } from "@workspace/db";
 import { HOLD_TTL_MS } from "../ai-gateway/pricing";
 import { checkThresholdAlerts } from "./alerts";
-import { CreditError, DuplicateRequestError, InsufficientCreditsError } from "./errors";
+import { CreditError, DuplicateRequestError, InsufficientCreditsError, ReferenceConflictError } from "./errors";
 import { checkReserveLimits, monthBounds, type Tx } from "./planService";
 
-export { CreditError, InsufficientCreditsError, CreditLimitReachedError, DuplicateRequestError } from "./errors";
+export { CreditError, InsufficientCreditsError, CreditLimitReachedError, DuplicateRequestError, ReferenceConflictError } from "./errors";
 
 const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
 const dec = (n: number) => round4(n).toFixed(4);
@@ -55,6 +55,13 @@ export interface EntryInput {
 const POSITIVE: CreditEntryType[] = ["grant", "purchase", "subscription", "refund"];
 const NEGATIVE: CreditEntryType[] = ["consumption", "expiration"];
 const NEEDS_REASON: CreditEntryType[] = ["adjustment", "refund", "expiration"];
+/**
+ * Operaciones manuales: la referencia es la clave de idempotencia y es OBLIGATORIA,
+ * para que un doble envío (doble clic, reintento) nunca genere un segundo movimiento.
+ * El resto de tipos ya llevan la suya: consumo → requestId, compra → paymentReference,
+ * suscripción → subscription:{org}:{YYYY-MM}, anulación/caducidad de compra → purchase-*:{id}.
+ */
+export const MANUAL_TYPES: CreditEntryType[] = ["grant", "adjustment", "refund", "expiration"];
 
 function validate(input: EntryInput) {
   if (!Number.isFinite(input.credits) || round4(input.credits) === 0) throw new CreditError("El importe de créditos no es válido.");
@@ -62,6 +69,9 @@ function validate(input: EntryInput) {
   if (NEGATIVE.includes(input.type) && input.credits > 0) throw new CreditError(`Un movimiento '${input.type}' debe restar créditos.`);
   if (NEEDS_REASON.includes(input.type) && !String(input.metadata?.["reason"] ?? "").trim()) {
     throw new CreditError(`Un movimiento '${input.type}' requiere un motivo (metadata.reason).`);
+  }
+  if (MANUAL_TYPES.includes(input.type) && !String(input.reference ?? "").trim()) {
+    throw new CreditError(`Un movimiento '${input.type}' requiere una referencia (clave de idempotencia) para que un doble envío no se aplique dos veces.`);
   }
 }
 
@@ -79,7 +89,14 @@ export async function insertEntry(tx: Tx, input: EntryInput, account?: CreditAcc
   if (input.reference) {
     const [existing] = await tx.select().from(creditLedgerTable)
       .where(and(eq(creditLedgerTable.orgId, input.orgId), eq(creditLedgerTable.reference, input.reference)));
-    if (existing) return { entry: existing, balance: Number(acc.balance), duplicate: true };
+    if (existing) {
+      // Mismo envío repetido → no hace nada. Misma referencia para OTRA operación manual → error claro,
+      // nunca un descarte silencioso.
+      if (MANUAL_TYPES.includes(input.type) && (existing.entryType !== input.type || round4(Number(existing.credits)) !== round4(input.credits))) {
+        throw new ReferenceConflictError(input.reference, `${existing.entryType} ${existing.credits}, no ${input.type} ${dec(input.credits)}`);
+      }
+      return { entry: existing, balance: Number(acc.balance), duplicate: true };
+    }
   }
 
   const credits = round4(input.credits);

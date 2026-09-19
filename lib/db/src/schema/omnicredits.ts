@@ -84,6 +84,8 @@ export const creditLedgerTable = pgTable("credit_ledger", {
     (${t.entryType} in (${sql.raw(quoted(CREDIT_POSITIVE_TYPES))}) and ${t.credits} > 0)
     or (${t.entryType} in (${sql.raw(quoted(CREDIT_NEGATIVE_TYPES))}) and ${t.credits} < 0)
     or ${t.entryType} = 'adjustment')`),
+  // Operaciones manuales: la referencia (clave de idempotencia) es obligatoria.
+  check("credit_ledger_manual_reference_check", sql`${t.entryType} not in ('grant', 'adjustment', 'refund', 'expiration') or (${t.reference} is not null and btrim(${t.reference}) <> '')`),
   check("credit_ledger_chain_check", sql`${t.balanceAfter} = ${t.balanceBefore} + ${t.credits}`),
 ]);
 

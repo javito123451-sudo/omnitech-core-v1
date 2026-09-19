@@ -13,7 +13,7 @@ import { logAudit } from "../utils/auditLogger";
 import {
   adjustCredits, expireCredits, grantCredits, listLedger, refundCredits, verifyLedgerIntegrity,
 } from "../credits/creditService";
-import { CreditError } from "../credits/errors";
+import { CreditError, ReferenceConflictError } from "../credits/errors";
 import { detectAnomalies, raiseAnomalyAlerts } from "../credits/alerts";
 import { listPlanConfigs, upsertPlanConfig, type PlanPatch } from "../credits/planService";
 import { listPurchases, recordPurchase, reversePurchase } from "../credits/purchaseService";
@@ -35,6 +35,7 @@ function requireStrictSuperAdmin(req: Request, res: Response): boolean {
 }
 
 function fail(res: Response, err: unknown) {
+  if (err instanceof ReferenceConflictError) { res.status(409).json({ status: err.code, error: err.message, reference: err.reference }); return; }
   if (err instanceof CreditError || err instanceof PricingError) { res.status(400).json({ error: err.message }); return; }
   res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
 }
@@ -131,7 +132,10 @@ creditsAdminRouter.post("/:orgId/entries", async (req, res) => {
   const { type, credits, reason, reference } = req.body as { type?: string; credits?: number; reason?: string; reference?: string };
   const amount = Number(credits);
   if (!orgId || !Number.isFinite(amount)) { res.status(400).json({ error: "orgId o credits no válidos" }); return; }
-  const opts = { userClerkId: req.clerkUserId!, reference: reference ?? null, reason, source: "manual" };
+  // La referencia es la clave de idempotencia: obligatoria. Se acepta en el cuerpo o como cabecera Idempotency-Key.
+  const key = (reference ?? req.header("idempotency-key") ?? "").trim() || null;
+  if (!key) { res.status(400).json({ status: "CREDIT_INVALID", error: "Falta la referencia: envía `reference` en el cuerpo o la cabecera Idempotency-Key (evita aplicar dos veces un doble envío)." }); return; }
+  const opts = { userClerkId: req.clerkUserId!, reference: key, reason, source: "manual" };
   try {
     const result =
       type === "grant"      ? await grantCredits(orgId, amount, opts) :
@@ -141,7 +145,7 @@ creditsAdminRouter.post("/:orgId/entries", async (req, res) => {
       null;
     if (!result) { res.status(400).json({ error: "type debe ser grant, adjustment, refund o expiration (las compras van en /purchases)" }); return; }
     await audit(req, `credits_${type}`, result.entry.id, orgId, {
-      credits: amount, reason: reason ?? null, reference: reference ?? null,
+      credits: amount, reason: reason ?? null, reference: key,
       balanceBefore: result.entry.balanceBefore, balanceAfter: result.entry.balanceAfter, duplicate: result.duplicate,
     });
     res.status(result.duplicate ? 200 : 201).json({ entry: result.entry, balance: result.balance, duplicate: result.duplicate });

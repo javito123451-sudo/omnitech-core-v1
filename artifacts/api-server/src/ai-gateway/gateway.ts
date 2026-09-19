@@ -68,6 +68,8 @@ export interface GatewayResult extends GenerateResult {
   costUsd:          number;
   credits:          number;
   estimatedCredits: number | null;
+  /** true si el coste/créditos usan un precio no configurado (legacy/fallback): no es un coste comercial definitivo. */
+  provisional:      boolean;
   cached:           boolean;
   attempts:         number;
   fallbackUsed:     boolean;
@@ -182,7 +184,7 @@ export async function callAI(req: GatewayRequest, deps: GatewayDeps = defaultDep
         ...baseLog, model: hit.model, tokensInput: 0, tokensOutput: 0, costUsd: 0, durationMs: 0, status: "ok",
         metadata: { ...baseMeta, provider: hit.provider, cache: true, credits: 0 },
       });
-      return { ...hit, requestId, costUsd: 0, credits: 0, estimatedCredits: null, cached: true, attempts: 0, fallbackUsed: false, durationMs: 0 };
+      return { ...hit, requestId, costUsd: 0, credits: 0, estimatedCredits: null, provisional: false, cached: true, attempts: 0, fallbackUsed: false, durationMs: 0 };
     }
   }
 
@@ -273,7 +275,7 @@ export async function callAI(req: GatewayRequest, deps: GatewayDeps = defaultDep
     metadata: {
       ...baseMeta, provider: used.providerId, cache: false,
       ...(cachedTokens !== undefined ? { cachedTokens } : {}),
-      costBasis: cost.basis, priceKnown: cost.priceKnown, priceSource: cost.priceSource, pricingRowId: cost.pricingRowId,
+      costBasis: cost.basis, priceKnown: cost.priceKnown, priceSource: cost.priceSource, provisional: cost.provisional, pricingRowId: cost.pricingRowId,
       credits: cost.credits, estimatedCredits,
       attempts: attempts.length, ...(fallbackUsed ? { fallbackFrom: `${primary.providerId}/${primary.model}` } : {}),
     },
@@ -286,7 +288,7 @@ export async function callAI(req: GatewayRequest, deps: GatewayDeps = defaultDep
         agentVersionId: req.agentVersionId ?? null, userClerkId: req.userClerkId ?? null,
         provider: used.providerId, model: used.model, technicalCostUsd: cost.technicalCostUsd,
         estimatedCredits, usageLogId,
-        metadata: { functionName: req.functionName, costBasis: cost.basis, priceKnown: cost.priceKnown, priceSource: cost.priceSource, pricingRowId: cost.pricingRowId },
+        metadata: { functionName: req.functionName, costBasis: cost.basis, priceKnown: cost.priceKnown, priceSource: cost.priceSource, provisional: cost.provisional, pricingRowId: cost.pricingRowId },
       });
     } catch (err) {
       // The answer was already produced and paid for: don't fail the user's
@@ -302,7 +304,7 @@ export async function callAI(req: GatewayRequest, deps: GatewayDeps = defaultDep
 
   return {
     ...result, requestId, provider: used.providerId, model: used.model,
-    costUsd: cost.technicalCostUsd, credits: cost.credits, estimatedCredits,
+    costUsd: cost.technicalCostUsd, credits: cost.credits, estimatedCredits, provisional: cost.provisional,
     cached: false, attempts: attempts.length, fallbackUsed, durationMs,
   };
 }

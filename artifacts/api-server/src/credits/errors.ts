@@ -6,7 +6,8 @@ export type CreditErrorCode =
   | "CREDIT_INVALID"
   | "INSUFFICIENT_CREDITS"
   | "CREDIT_LIMIT_REACHED"
-  | "DUPLICATE_REQUEST";
+  | "DUPLICATE_REQUEST"
+  | "REFERENCE_CONFLICT";
 
 export class CreditError extends Error {
   readonly code: CreditErrorCode = "CREDIT_INVALID";
@@ -40,6 +41,15 @@ export class CreditLimitReachedError extends Error {
   ) {
     super(`Límite de créditos alcanzado (${scope}): ${used} usados de ${limit}.`);
     this.name = "CreditLimitReachedError";
+  }
+}
+
+/** La misma referencia (clave de idempotencia) ya se usó para una operación DISTINTA. */
+export class ReferenceConflictError extends Error {
+  readonly code = "REFERENCE_CONFLICT" as const;
+  constructor(public readonly reference: string, detail: string) {
+    super(`La referencia '${reference}' ya se usó para otra operación (${detail}). Usa una referencia nueva para una operación distinta.`);
+    this.name = "ReferenceConflictError";
   }
 }
 

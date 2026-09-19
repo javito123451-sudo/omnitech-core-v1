@@ -50,7 +50,7 @@ export interface SimulationResult {
   proposedAction: { toolId: string; params: Record<string, unknown>; requiresConfirmation: true } | null;
   /** Tokens estimados (no reales): entrada, salida típica y tope de salida. */
   tokensEstimated: { input: number; outputTypical: number; outputMax: number };
-  estimate: { typicalCostUsd: number; typicalCredits: number; maxCostUsd: number; maxCredits: number; priceKnown: boolean; priceSource: "db" | "legacy" | "fallback" };
+  estimate: { typicalCostUsd: number; typicalCredits: number; maxCostUsd: number; maxCredits: number; priceKnown: boolean; priceSource: "db" | "legacy" | "fallback"; provisional: boolean };
   reply:        string;
   notes:        string[];
 }
@@ -89,6 +89,7 @@ export function simulateAgent(input: SimulationInput): SimulationResult {
       : `[SIMULACIÓN] ${agent.name} respondería con sus instrucciones y su conocimiento, sin usar herramientas (tono: ${config.personality.tone}).`;
 
   const notes = ["Simulación: no se ha llamado a ningún proveedor de IA, no se han consumido créditos y no se ha ejecutado ninguna acción."];
+  if (est.provisional) notes.push("Precio PROVISIONAL: no hay un precio configurado para este modelo, así que el coste y los créditos son orientativos y no un coste comercial definitivo.");
   if (!est.priceKnown) notes.push(`No hay precio registrado para ${route.provider}/${route.model}; el coste usa una tarifa de referencia.`);
   if (config.tools.read.length + config.tools.write.length > input.readTools.length + input.actionTools.length) {
     notes.push("Algunas herramientas configuradas no están disponibles para este usuario o workspace y se han excluido.");
@@ -103,7 +104,7 @@ export function simulateAgent(input: SimulationInput): SimulationResult {
     tokensEstimated: est.tokens,
     estimate: {
       typicalCostUsd: est.typical.costUsd, typicalCredits: est.typical.credits,
-      maxCostUsd: est.max.costUsd, maxCredits: est.max.credits, priceKnown: est.priceKnown, priceSource: est.priceSource,
+      maxCostUsd: est.max.costUsd, maxCredits: est.max.credits, priceKnown: est.priceKnown, priceSource: est.priceSource, provisional: est.provisional,
     },
     reply,
     notes,

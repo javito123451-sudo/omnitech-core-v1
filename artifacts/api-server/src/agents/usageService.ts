@@ -16,10 +16,12 @@ export async function getAgentUsage(orgId: number, agentId: number, at: Date = n
   const credits = sql<string>`coalesce(sum(-${creditLedgerTable.credits}), 0)`;
   const costUsd = sql<string>`coalesce(sum(${creditLedgerTable.technicalCostUsd}), 0)`;
 
+  const provisional = sql<string>`coalesce(sum(-${creditLedgerTable.credits}) filter (where ${creditLedgerTable.metadata}->>'provisional' = 'true'), 0)`;
+
   const [[all], [period], byModel] = await Promise.all([
     db.select({ credits, costUsd, runs: sql<string>`count(*)`, last: sql<Date | null>`max(${creditLedgerTable.createdAt})` })
       .from(creditLedgerTable).where(mine),
-    db.select({ credits, costUsd, runs: sql<string>`count(*)` })
+    db.select({ credits, costUsd, runs: sql<string>`count(*)`, provisionalCredits: provisional })
       .from(creditLedgerTable).where(and(mine, gte(creditLedgerTable.createdAt, month.start))),
     db.select({ provider: creditLedgerTable.provider, model: creditLedgerTable.model, credits, costUsd, runs: sql<string>`count(*)` })
       .from(creditLedgerTable).where(and(mine, gte(creditLedgerTable.createdAt, month.start)))
@@ -38,7 +40,7 @@ export async function getAgentUsage(orgId: number, agentId: number, at: Date = n
     agentId, period: month.key,
     estimatedPerRun: estimate,
     accumulated: { credits: num(all?.credits), technicalCostUsd: num(all?.costUsd), runs: num(all?.runs), lastRunAt: all?.last ?? null },
-    thisPeriod:  { credits: num(period?.credits), technicalCostUsd: num(period?.costUsd), runs: num(period?.runs) },
+    thisPeriod:  { credits: num(period?.credits), technicalCostUsd: num(period?.costUsd), runs: num(period?.runs), provisionalCredits: num(period?.provisionalCredits) },
     byModel: byModel.map((r) => ({ provider: r.provider, model: r.model, credits: num(r.credits), technicalCostUsd: num(r.costUsd), runs: num(r.runs) })),
     monthlyCreditLimit: agent.monthlyCreditLimit,
   };

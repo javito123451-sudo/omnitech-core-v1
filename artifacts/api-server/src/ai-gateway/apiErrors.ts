@@ -8,7 +8,7 @@ import {
   AiBudgetBlockedError, AiProviderError,
 } from "./gateway";
 import { NoProviderAvailableError } from "./providerRouter";
-import { CreditError, CreditLimitReachedError, DuplicateRequestError, InsufficientCreditsError } from "../credits/errors";
+import { CreditError, CreditLimitReachedError, DuplicateRequestError, InsufficientCreditsError, ReferenceConflictError } from "../credits/errors";
 
 export interface ApiErrorBody {
   status:  string;
@@ -25,6 +25,9 @@ export function toApiError(err: unknown): { http: number; body: ApiErrorBody } |
   }
   if (err instanceof DuplicateRequestError) {
     return { http: 409, body: { status: "DUPLICATE_REQUEST", message: err.message, reference: err.reference } };
+  }
+  if (err instanceof ReferenceConflictError) {
+    return { http: 409, body: { status: "REFERENCE_CONFLICT", message: err.message, reference: err.reference } };
   }
   if (err instanceof AiBudgetBlockedError) {
     return { http: 429, body: { status: "BUDGET_BLOCKED", message: err.reason, pct: err.pct } };

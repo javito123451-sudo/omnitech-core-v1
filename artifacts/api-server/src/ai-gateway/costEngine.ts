@@ -22,7 +22,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { OMNICREDITS, type ModelPricing } from "./pricing";
-import { resolvePricing, type PriceSource } from "./pricingRegistry";
+import { isProvisionalSource, resolvePricing, type PriceSource } from "./pricingRegistry";
 
 export interface UsageInput {
   provider:                 string;
@@ -48,6 +48,8 @@ export interface CostBreakdown {
   priceKnown:       boolean;
   /** De dónde salió el precio: fila de ai_model_pricing, valores heredados, o tarifa de referencia. */
   priceSource:      PriceSource;
+  /** true si el precio no viene de ai_model_pricing (legacy/fallback): el coste y los créditos no son definitivos. */
+  provisional:      boolean;
   pricingRowId:     number | null;
   lines: {
     input: number; cachedInput: number; output: number; reasoning: number; images: number; audio: number; video: number;
@@ -75,7 +77,7 @@ export function computeCost(usage: UsageInput, basis: "estimated" | "final" = "f
     const cost = round6(usage.providerReportedCostUsd);
     return {
       technicalCostUsd: cost, credits: usdToCredits(cost), basis: "provider_reported",
-      priceKnown: known, priceSource: source, pricingRowId: rowId, lines: { ...ZERO_LINES },
+      priceKnown: known, priceSource: source, provisional: isProvisionalSource(source), pricingRowId: rowId, lines: { ...ZERO_LINES },
     };
   }
 
@@ -93,7 +95,7 @@ export function computeCost(usage: UsageInput, basis: "estimated" | "final" = "f
   const technicalCostUsd = round6(
     lines.input + lines.cachedInput + lines.output + lines.reasoning + lines.images + lines.audio + lines.video,
   );
-  return { technicalCostUsd, credits: usdToCredits(technicalCostUsd), basis, priceKnown: known, priceSource: source, pricingRowId: rowId, lines };
+  return { technicalCostUsd, credits: usdToCredits(technicalCostUsd), basis, priceKnown: known, priceSource: source, provisional: isProvisionalSource(source), pricingRowId: rowId, lines };
 }
 
 /** Pre-call estimate: assumes the worst case for output (the cap) and no cache hits. */

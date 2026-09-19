@@ -82,6 +82,15 @@ describe("simulateAgent", () => {
     expect(r.notes.join(" ")).toMatch(/No hay precio/);
   });
 
+  it("marca la estimación como provisional cuando el precio no está configurado (legacy o fallback)", () => {
+    const legacy = simulateAgent(input("hola"));
+    expect(legacy.estimate).toMatchObject({ priceSource: "legacy", provisional: true });
+    expect(legacy.notes.join(" ")).toMatch(/PROVISIONAL/);
+    const i = input("hola");
+    i.config.model = { provider: "claude", model: "algo" };
+    expect(simulateAgent(i).estimate).toMatchObject({ priceSource: "fallback", priceKnown: false, provisional: true });
+  });
+
   it("ofrece los escenarios de prueba del brief", () => {
     expect(SIMULATION_SCENARIOS.map((s) => s.id)).toEqual(
       expect.arrayContaining(["new_client", "angry", "undecided", "asks_price", "wants_appt", "cancels", "returning", "asks_info"]),

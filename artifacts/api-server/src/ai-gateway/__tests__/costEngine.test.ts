@@ -47,6 +47,19 @@ describe("Cost Engine — coste técnico", () => {
     expect(c.technicalCostUsd).toBeGreaterThan(0);
   });
 
+  it("priceSource, priceKnown y provisional son conceptos distintos: solo una fila configurada es definitiva", () => {
+    const legacy = computeCost({ provider: "openai", model: "gpt-4o-mini", inputTokens: 1000, outputTokens: 1000 });
+    expect(legacy).toMatchObject({ priceSource: "legacy", priceKnown: true, provisional: true });
+    const fallback = computeCost({ provider: "claude", model: "algo", inputTokens: 1000, outputTokens: 1000 });
+    expect(fallback).toMatchObject({ priceSource: "fallback", priceKnown: false, provisional: true });
+    expect(estimateCost("openai", "gpt-4o-mini", { inputTokens: 10, maxOutputTokens: 10 }).provisional).toBe(true);
+    setPricingSnapshot([row({})]);
+    expect(computeCost({ provider: "openai", model: "gpt-4o-mini", inputTokens: 1000, outputTokens: 1000 })).toMatchObject({ priceSource: "db", priceKnown: true, provisional: false });
+    // un coste informado por el proveedor hereda la procedencia del precio del modelo, no la oculta
+    expect(computeCost({ provider: "claude", model: "algo", inputTokens: 1, outputTokens: 1, providerReportedCostUsd: 0.5 }).provisional).toBe(true);
+    clearPricingSnapshot();
+  });
+
   it("si el proveedor informa su coste real, ese manda", () => {
     const c = computeCost({ provider: "openai", model: "gpt-4o", inputTokens: 1, outputTokens: 1, providerReportedCostUsd: 0.42 });
     expect(c.basis).toBe("provider_reported");

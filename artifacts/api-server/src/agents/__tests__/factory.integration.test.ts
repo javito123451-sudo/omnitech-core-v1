@@ -153,7 +153,7 @@ describe.skipIf(!hasRealDb)("Fábrica — flujo completo", () => {
 
     // El "modelo" pide crear la tarea y luego responde: dos respuestas guionizadas por ejecución.
     const result = (over: Partial<GatewayResult>): GatewayResult => ({
-      text: "", requestId: "r", provider: "fake", model: "gpt-4o-mini", costUsd: 0, credits: 0, estimatedCredits: 0,
+      text: "", requestId: "r", provider: "fake", model: "gpt-4o-mini", costUsd: 0, credits: 0, estimatedCredits: 0, provisional: false,
       cached: false, attempts: 1, fallbackUsed: false, durationMs: 1, ...over,
     });
     const scriptedRunner = () => {

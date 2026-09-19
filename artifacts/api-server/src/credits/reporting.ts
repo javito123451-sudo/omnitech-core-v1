@@ -24,7 +24,7 @@ export async function getDashboard(orgId: number, at: Date = new Date()) {
   const consumption = and(eq(creditLedgerTable.orgId, orgId), eq(creditLedgerTable.entryType, "consumption"));
   const inMonth = and(consumption, gte(creditLedgerTable.createdAt, month.start));
 
-  const [balances, used, usedToday, byAgent, byModel, byFeature, daily, monthly, alerts] = await Promise.all([
+  const [balances, used, usedToday, byAgent, byModel, byFeature, daily, monthly, alerts, [prov]] = await Promise.all([
     getAvailable(orgId),
     consumedBetween(db, orgId, month.start, month.end),
     consumedBetween(db, orgId, day.start, day.end),
@@ -41,6 +41,9 @@ export async function getDashboard(orgId: number, at: Date = new Date()) {
       .from(creditLedgerTable).where(and(consumption, gte(creditLedgerTable.createdAt, new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() - 5, 1)))))
       .groupBy(sql`1`).orderBy(sql`1`),
     listAlerts(orgId, { since: month.start }),
+    // Consumo del periodo calculado con un precio no configurado (legacy/fallback): no es un coste definitivo.
+    db.select({ credits: sql<string>`coalesce(sum(-${creditLedgerTable.credits}), 0)`, runs: sql<string>`count(*)` })
+      .from(creditLedgerTable).where(and(inMonth, sql`${creditLedgerTable.metadata}->>'provisional' = 'true'`)),
   ]);
 
   const base = cfg?.includedCredits ?? cfg?.monthlyLimit ?? null;
@@ -55,6 +58,7 @@ export async function getDashboard(orgId: number, at: Date = new Date()) {
     used, usedToday,
     pctConsumed: base ? Math.round((used / base) * 1000) / 10 : null,
     limits: cfg ? { monthly: cfg.monthlyLimit, daily: cfg.dailyLimit, perAgentMonthly: cfg.perAgentMonthlyLimit, blockAtLimit: cfg.blockAtLimit } : null,
+    pricing:   { provisionalCredits: num(prov?.credits), provisionalRuns: num(prov?.runs), provisional: num(prov?.runs) > 0 },
     byAgent:   byAgent.map((r) => ({ agentId: r.agentId, credits: num(r.credits), technicalCostUsd: num(r.costUsd), runs: num(r.runs) })),
     byModel:   byModel.map((r) => ({ provider: r.provider, model: r.model, credits: num(r.credits), technicalCostUsd: num(r.costUsd), runs: num(r.runs) })),
     byFeature: byFeature.map((r) => ({ feature: r.feature, credits: num(r.credits), runs: num(r.runs) })),
