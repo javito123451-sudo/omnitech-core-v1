@@ -2,7 +2,8 @@
 // OmniCredits. Estos tests fijan (1) que no cambian los importes que ya se
 // registraban, (2) el descuento por tokens cacheados, (3) que un modelo sin
 // precio se marca en lugar de inventarse un coste, y (4) estimado ≠ final.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { clearPricingSnapshot, resolvePricing, setPricingSnapshot, type PricingRow } from "../pricingRegistry";
 import { computeCost, estimateCost, estimateTokens, usdToCredits, lookupPricing } from "../costEngine";
 import { OMNICREDITS, PRICING } from "../pricing";
 import { calculateCost } from "../../utils/aiUsageLogger";
@@ -62,6 +63,7 @@ describe("Cost Engine — coste técnico", () => {
 
   it("todos los precios viven en pricing.ts", () => {
     expect(Object.keys(PRICING)).toEqual(expect.arrayContaining(["openai", "claude", "gemini"]));
+    expect(PRICING["claude"]).toEqual({}); // sin precios inventados para proveedores no implementados
   });
 });
 
@@ -85,5 +87,64 @@ describe("Cost Engine — OmniCredits", () => {
 
   it("estimateTokens da una cifra razonable", () => {
     expect(estimateTokens("a".repeat(400))).toBe(100);
+  });
+});
+
+const row = (over: Partial<PricingRow> = {}): PricingRow => ({
+  id: 1, provider: "openai", model: "gpt-4o-mini", inputCost: 1, outputCost: 2, cachedInputCost: null, reasoningCost: null,
+  imageCost: null, audioCost: null, videoCost: null, effectiveFrom: new Date("2026-01-01"), effectiveTo: null, active: true, ...over,
+});
+
+describe("Cost Engine — precios configurables (ai_model_pricing)", () => {
+  afterEach(() => clearPricingSnapshot());
+  const usage = { provider: "openai", model: "gpt-4o-mini", inputTokens: 1_000_000, outputTokens: 1_000_000 };
+
+  it("una fila vigente manda sobre los valores heredados, y cambiarla cambia el coste sin tocar nada más", () => {
+    expect(computeCost(usage).priceSource).toBe("legacy");
+    setPricingSnapshot([row({ inputCost: 1, outputCost: 2 })]);
+    const a = computeCost(usage);
+    expect(a.technicalCostUsd).toBe(3);
+    expect(a).toMatchObject({ priceSource: "db", pricingRowId: 1, priceKnown: true });
+
+    setPricingSnapshot([row({ id: 2, inputCost: 10, outputCost: 20 })]);
+    expect(computeCost(usage).technicalCostUsd).toBe(30); // mismo uso, otro precio configurado
+  });
+
+  it("respeta la vigencia: fuera de effective_from/effective_to la fila no aplica", () => {
+    setPricingSnapshot([row({ effectiveFrom: new Date("2026-03-01"), effectiveTo: new Date("2026-06-01") })]);
+    expect(computeCost(usage, "final", new Date("2026-02-01")).priceSource).toBe("legacy");
+    expect(computeCost(usage, "final", new Date("2026-04-01")).priceSource).toBe("db");
+    expect(computeCost(usage, "final", new Date("2026-06-01")).priceSource).toBe("legacy"); // effective_to es exclusivo
+  });
+
+  it("con dos filas vigentes usa la más reciente, y una inactiva nunca aplica", () => {
+    setPricingSnapshot([
+      row({ id: 1, inputCost: 1, outputCost: 1, effectiveFrom: new Date("2026-01-01") }),
+      row({ id: 2, inputCost: 5, outputCost: 5, effectiveFrom: new Date("2026-02-01") }),
+      row({ id: 3, inputCost: 99, outputCost: 99, effectiveFrom: new Date("2026-03-01"), active: false }),
+    ]);
+    const c = computeCost(usage, "final", new Date("2026-04-01"));
+    expect(c.pricingRowId).toBe(2);
+    expect(c.technicalCostUsd).toBe(10);
+  });
+
+  it("soporta imagen, audio y vídeo, y tokens cacheados/razonamiento desde la fila", () => {
+    setPricingSnapshot([row({ imageCost: 0.5, audioCost: 6, videoCost: 12, cachedInputCost: 0.25, reasoningCost: 4 })]);
+    const c = computeCost({ ...usage, inputTokens: 1_000_000, outputTokens: 0, cachedTokens: 1_000_000, reasoningTokens: 1_000_000, images: 4, audioSeconds: 30, videoSeconds: 60 });
+    expect(c.lines).toMatchObject({ input: 0, cachedInput: 0.25, reasoning: 4, images: 2, audio: 3, video: 12 });
+    expect(c.technicalCostUsd).toBeCloseTo(21.25, 6);
+  });
+
+  it("no inventa precios: un proveedor sin fila ni valores heredados se marca como tarifa de referencia", () => {
+    const r = resolvePricing("claude", "algo");
+    expect(r).toMatchObject({ known: false, source: "fallback", rowId: null });
+    expect(computeCost({ provider: "claude", model: "algo", inputTokens: 1000, outputTokens: 1000 }).priceKnown).toBe(false);
+  });
+
+  it("el estimado también usa el precio configurado", () => {
+    setPricingSnapshot([row({ inputCost: 2, outputCost: 4 })]);
+    const est = estimateCost("openai", "gpt-4o-mini", { inputTokens: 1_000_000, maxOutputTokens: 1_000_000 });
+    expect(est.technicalCostUsd).toBe(6);
+    expect(est.priceSource).toBe("db");
   });
 });

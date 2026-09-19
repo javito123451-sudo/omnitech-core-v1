@@ -32,3 +32,4 @@ export * from "./fleet";
 export * from "./taller";
 export * from "./ai-agents";
 export * from "./omnicredits";
+export * from "./ai-pricing";

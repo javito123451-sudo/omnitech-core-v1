@@ -19,9 +19,11 @@ import { loadKnowledge } from "../agents/knowledge";
 import { simulateAgent, SIMULATION_SCENARIOS } from "../agents/simulator";
 import { confirmAgentAction, defaultRunnerDeps, runAgent, type RunActor } from "../agents/agentRunner";
 import { clearDefaultAgent, isDefaultKey, listDefaults, setDefaultAgent } from "../agents/defaultAgents";
-import { CreditError, getSummary, listLedger, InsufficientCreditsError } from "../credits/creditService";
-import { AgentCreditLimitError, AiBudgetBlockedError, AiProviderError } from "../ai-gateway/gateway";
-import { NoProviderAvailableError } from "../ai-gateway/providerRouter";
+import { listLedger, getAvailable } from "../credits/creditService";
+import { getDashboard } from "../credits/reporting";
+import { getAgentUsage } from "../agents/usageService";
+import { toApiError } from "../ai-gateway/apiErrors";
+import { ensurePricingLoaded } from "../ai-gateway/pricingService";
 
 export const agentsRouter = Router();
 
@@ -42,17 +44,10 @@ function fail(res: Response, err: unknown) {
     res.status(err.status).json({ error: err.message, problems: err.problems });
     return;
   }
-  // Controlled failures of a paid operation: no charge was made.
-  if (err instanceof InsufficientCreditsError || err instanceof AgentCreditLimitError) {
-    res.status(402).json({ error: err.message, code: err.name });
-    return;
-  }
-  if (err instanceof AiBudgetBlockedError) { res.status(429).json({ error: err.reason, code: err.name }); return; }
-  if (err instanceof NoProviderAvailableError || err instanceof AiProviderError) {
-    res.status(503).json({ error: err.message, code: err.name });
-    return;
-  }
-  if (err instanceof CreditError) { res.status(400).json({ error: err.message }); return; }
+  // Controlled failures of a paid operation (INSUFFICIENT_CREDITS, limits, budget,
+  // provider…): a structured status, never a generic 500, and nothing was charged.
+  const structured = toApiError(err);
+  if (structured) { res.status(structured.http).json(structured.body); return; }
   if (err && typeof err === "object" && "issues" in err) {
     res.status(400).json({ error: "Configuración no válida.", issues: (err as { issues: unknown }).issues });
     return;
@@ -91,8 +86,13 @@ agentsRouter.post("/", requirePermission("agents.write"), async (req, res) => {
 
 agentsRouter.get("/scenarios", requirePermission("agents.read"), (_req, res) => { res.json(SIMULATION_SCENARIOS); });
 
+// Panel de créditos del workspace: saldo, incluidos, consumo, por agente/modelo/funcionalidad, series y alertas.
 agentsRouter.get("/credits", requirePermission("agents.read"), async (req, res) => {
-  try { res.json(await getSummary(req.orgId!)); } catch (err) { fail(res, err); }
+  try { res.json(await getDashboard(req.orgId!)); } catch (err) { fail(res, err); }
+});
+
+agentsRouter.get("/credits/balance", requirePermission("agents.read"), async (req, res) => {
+  try { res.json(await getAvailable(req.orgId!)); } catch (err) { fail(res, err); }
 });
 
 agentsRouter.get("/credits/ledger", requirePermission("agents.read"), async (req, res) => {
@@ -135,6 +135,16 @@ agentsRouter.get("/:id", requirePermission("agents.read"), async (req, res) => {
     const id = agentId(req);
     if (!id) { res.status(400).json({ error: "id no válido" }); return; }
     res.json(await getAgentDetail(req.orgId!, id));
+  } catch (err) { fail(res, err); }
+});
+
+// Coste estimado por ejecución, consumo acumulado y del periodo, ejecuciones y coste por modelo.
+agentsRouter.get("/:id/usage", requirePermission("agents.read"), async (req, res) => {
+  try {
+    const id = agentId(req);
+    if (!id) { res.status(400).json({ error: "id no válido" }); return; }
+    await ensurePricingLoaded();
+    res.json(await getAgentUsage(req.orgId!, id));
   } catch (err) { fail(res, err); }
 });
 
@@ -214,6 +224,7 @@ agentsRouter.post("/:id/simulate", requirePermission("agents.read"), async (req,
     if (!message) { res.status(400).json({ error: "Indica un message o un scenarioId válido." }); return; }
 
     const actor = actorOf(req);
+    await ensurePricingLoaded(); // el coste estimado usa los precios vigentes
     const { agent, version } = await resolveRunTarget(actor.orgId, id, "testing", typeof b.versionId === "number" ? b.versionId : undefined);
     const config = readConfig(version);
     const access = await resolveToolAccess({ config, orgId: actor.orgId, orgRole: actor.orgRole, platformRole: actor.platformRole });

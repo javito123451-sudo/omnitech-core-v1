@@ -1,14 +1,17 @@
 // El AI Gateway mantiene bajo control el gasto de IA real de cualquier llamador.
 // Se prueban las garantías: la simulación nunca llega a un proveedor, una org
-// bloqueada o sin créditos nunca llega a un proveedor, hay reintento y
-// fallback ante fallos, el caché no cruza workspaces, y todo intento se
-// registra. Los proveedores y el ledger son falsos e inyectados: sin llamadas
-// a OpenAI y sin base de datos.
+// sin saldo/límite o bloqueada nunca llega a un proveedor, hay reintento y
+// fallback ante fallos, una llamada fallida no cobra, el caché no cruza
+// workspaces, y todo intento se registra. Proveedores y ledger son falsos e
+// inyectados: sin llamadas a OpenAI y sin base de datos. (La atomicidad real de
+// la reserva se prueba contra Postgres en reservations.integration.test.ts.)
 import { describe, it, expect, vi } from "vitest";
 import {
-  callAI, AiBudgetBlockedError, AiSimulationModeError, AiProviderError, AgentCreditLimitError,
-  InsufficientCreditsError, type GatewayDeps,
+  callAI, AiBudgetBlockedError, AiSimulationModeError, AiProviderError, InsufficientCreditsError,
+  CreditLimitReachedError, DuplicateRequestError, type GatewayDeps,
 } from "../gateway";
+import { HOLD_SAFETY_FACTOR } from "../pricing";
+import { estimateCost, estimateTokens } from "../costEngine";
 import { ResponseCache } from "../responseCache";
 import type { AIProvider, GenerateResult } from "../../ai/types";
 import type { ResolvedRoute } from "../providerRouter";
@@ -23,69 +26,84 @@ function fakeRoute(id: string, generate: () => Promise<GenerateResult>, model = 
 
 function makeDeps(routes: ResolvedRoute[], o: {
   budget?: { blocked: boolean; reason: string | null; pct: number };
-  balance?: number; agentUsage?: number; recordUsage?: CreditsPort["recordUsage"];
+  reserve?: CreditsPort["reserve"]; settle?: CreditsPort["settle"];
 } = {}) {
   const logAiCall = vi.fn(async (_p: unknown) => 77 as number | null);
   const checkBudgetBlocked = vi.fn(async () => o.budget ?? { blocked: false, reason: null, pct: 10 });
-  const recordUsage = vi.fn(o.recordUsage ?? (async () => {}));
-  const credits: CreditsPort = {
-    getBalance: vi.fn(async () => o.balance ?? 1_000_000),
-    getAgentMonthUsage: vi.fn(async () => o.agentUsage ?? 0),
-    recordUsage,
-  };
+  const reserve = vi.fn(o.reserve ?? (async (i) => ({ holdId: 1, credits: i.credits, available: 100 })));
+  const settle = vi.fn(o.settle ?? (async () => ({ entry: null, overrun: false, duplicate: false })));
+  const release = vi.fn(async () => true);
   const sleep = vi.fn(async () => {});
-  const deps: GatewayDeps = { resolveRoutes: () => routes, checkBudgetBlocked, logAiCall: logAiCall as unknown as GatewayDeps["logAiCall"], credits, cache: new ResponseCache(), sleep };
-  return { deps, logAiCall, checkBudgetBlocked, credits, recordUsage, sleep };
+  const ensurePricingLoaded = vi.fn(async () => {});
+  const auditBlock = vi.fn(async () => {});
+  const deps: GatewayDeps = {
+    resolveRoutes: () => routes, checkBudgetBlocked, logAiCall: logAiCall as unknown as GatewayDeps["logAiCall"],
+    credits: { reserve, settle, release } as CreditsPort, cache: new ResponseCache(), sleep, ensurePricingLoaded, auditBlock,
+  };
+  return { deps, logAiCall, checkBudgetBlocked, reserve, settle, release, sleep, ensurePricingLoaded, auditBlock };
 }
 
 const base = { mode: "live" as const, orgId: 7, functionName: "test_fn", messages: [{ role: "user" as const, content: "hola" }] };
+const billed = { ...base, agentId: 9, billing: { ledger: true } };
 const lastLog = (m: ReturnType<typeof vi.fn>) => m.mock.calls[m.mock.calls.length - 1]![0] as Record<string, any>;
 
 describe("AI Gateway — guardas", () => {
-  it("rechaza SIMULATION sin tocar proveedor, presupuesto ni log", async () => {
+  it("rechaza SIMULATION sin tocar proveedor, presupuesto, créditos ni log", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps, logAiCall, checkBudgetBlocked } = makeDeps([a.route]);
-    await expect(callAI({ ...base, mode: "simulation" }, deps)).rejects.toThrow(AiSimulationModeError);
+    const d = makeDeps([a.route]);
+    await expect(callAI({ ...billed, mode: "simulation" }, d.deps)).rejects.toThrow(AiSimulationModeError);
     expect(a.generate).not.toHaveBeenCalled();
-    expect(checkBudgetBlocked).not.toHaveBeenCalled();
-    expect(logAiCall).not.toHaveBeenCalled();
+    expect(d.checkBudgetBlocked).not.toHaveBeenCalled();
+    expect(d.reserve).not.toHaveBeenCalled();
+    expect(d.settle).not.toHaveBeenCalled();
+    expect(d.logAiCall).not.toHaveBeenCalled();
   });
 
-  it("no llama al proveedor si el presupuesto de la org está bloqueado, y lo registra", async () => {
+  it("no llama al proveedor si el presupuesto USD de la org está bloqueado, y lo registra y audita", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps, logAiCall } = makeDeps([a.route], { budget: { blocked: true, reason: "Presupuesto agotado", pct: 100 } });
-    await expect(callAI(base, deps)).rejects.toThrow(AiBudgetBlockedError);
+    const d = makeDeps([a.route], { budget: { blocked: true, reason: "Presupuesto agotado", pct: 100 } });
+    await expect(callAI(billed, d.deps)).rejects.toThrow(AiBudgetBlockedError);
     expect(a.generate).not.toHaveBeenCalled();
-    expect(lastLog(logAiCall)).toMatchObject({ orgId: 7, status: "blocked", errorMsg: "Presupuesto agotado" });
+    expect(d.reserve).not.toHaveBeenCalled();
+    expect(lastLog(d.logAiCall)).toMatchObject({ orgId: 7, status: "blocked", errorMsg: "Presupuesto agotado" });
+    expect(d.auditBlock).toHaveBeenCalledWith(7, "Presupuesto agotado", expect.objectContaining({ code: "BUDGET_BLOCKED" }));
   });
 
   it("uso de plataforma (orgId null) no pasa por presupuesto y se registra sin org", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps, checkBudgetBlocked, logAiCall } = makeDeps([a.route], { budget: { blocked: true, reason: "x", pct: 100 } });
-    const r = await callAI({ ...base, orgId: null }, deps);
+    const d = makeDeps([a.route], { budget: { blocked: true, reason: "x", pct: 100 } });
+    const r = await callAI({ ...base, orgId: null }, d.deps);
     expect(r.text).toBe("ok");
-    expect(checkBudgetBlocked).not.toHaveBeenCalled();
-    expect(lastLog(logAiCall)).toMatchObject({ orgId: null, status: "ok" });
+    expect(d.checkBudgetBlocked).not.toHaveBeenCalled();
+    expect(lastLog(d.logAiCall)).toMatchObject({ orgId: null, status: "ok" });
   });
 
   it("billing.ledger sin orgId es un error de configuración", async () => {
-    const a = fakeRoute("fake", async () => OK);
-    const { deps } = makeDeps([a.route]);
-    await expect(callAI({ ...base, orgId: null, billing: { ledger: true } }, deps)).rejects.toThrow(/orgId/);
+    const d = makeDeps([fakeRoute("fake", async () => OK).route]);
+    await expect(callAI({ ...base, orgId: null, billing: { ledger: true } }, d.deps)).rejects.toThrow(/orgId/);
+  });
+
+  it("carga los precios vigentes antes de calcular nada", async () => {
+    const d = makeDeps([fakeRoute("fake", async () => OK).route]);
+    await callAI(base, d.deps);
+    expect(d.ensurePricingLoaded).toHaveBeenCalled();
   });
 });
 
-describe("AI Gateway — registro de coste", () => {
-  it("registra proveedor, agente, request id, tokens cacheados y coste del Cost Engine", async () => {
+describe("AI Gateway — registro de coste (AI Usage Log)", () => {
+  it("registra proveedor, agente, request id, cacheados, coste y de dónde salió el precio", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps, logAiCall } = makeDeps([a.route]);
-    const r = await callAI({ ...base, agentId: 42, agentVersionId: 5, userClerkId: "user_x", requestId: "req-1" }, deps);
+    const d = makeDeps([a.route]);
+    const r = await callAI({ ...base, agentId: 42, agentVersionId: 5, userClerkId: "user_x", requestId: "req-1" }, d.deps);
     expect(r.requestId).toBe("req-1");
     expect(r.costUsd).toBeGreaterThan(0);
     expect(r.credits).toBeGreaterThan(0);
-    const log = lastLog(logAiCall);
+    const log = lastLog(d.logAiCall);
     expect(log).toMatchObject({ orgId: 7, userClerkId: "user_x", functionName: "test_fn", model: "gpt-4o-mini", tokensInput: 1000, tokensOutput: 500, status: "ok", costUsd: r.costUsd });
-    expect(log["metadata"]).toMatchObject({ provider: "fake", mode: "live", agentId: 42, agentVersionId: 5, requestId: "req-1", cachedTokens: 200, cache: false, credits: r.credits });
+    expect(log["metadata"]).toMatchObject({
+      provider: "fake", mode: "live", agentId: 42, agentVersionId: 5, requestId: "req-1", cachedTokens: 200, cache: false,
+      credits: r.credits, priceSource: "fallback", pricingRowId: null,
+    });
   });
 });
 
@@ -93,129 +111,167 @@ describe("AI Gateway — timeout, reintento y fallback", () => {
   it("reintenta un error transitorio y termina sirviendo", async () => {
     let n = 0;
     const a = fakeRoute("fake", async () => { if (n++ === 0) throw Object.assign(new Error("rate limited"), { status: 429 }); return OK; });
-    const { deps, sleep } = makeDeps([a.route]);
-    const r = await callAI(base, deps);
+    const d = makeDeps([a.route]);
+    const r = await callAI(base, d.deps);
     expect(r.attempts).toBe(2);
     expect(a.generate).toHaveBeenCalledTimes(2);
-    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(d.sleep).toHaveBeenCalledTimes(1);
   });
 
   it("no reintenta un error no transitorio en el mismo proveedor y lo registra", async () => {
     const a = fakeRoute("fake", async () => { throw Object.assign(new Error("bad request"), { status: 400 }); });
-    const { deps, logAiCall, sleep } = makeDeps([a.route]);
-    await expect(callAI(base, deps)).rejects.toThrow(AiProviderError);
+    const d = makeDeps([a.route]);
+    await expect(callAI(base, d.deps)).rejects.toThrow(AiProviderError);
     expect(a.generate).toHaveBeenCalledTimes(1);
-    expect(sleep).not.toHaveBeenCalled();
-    expect(lastLog(logAiCall)).toMatchObject({ status: "error", errorMsg: "bad request" });
+    expect(d.sleep).not.toHaveBeenCalled();
+    expect(lastLog(d.logAiCall)).toMatchObject({ status: "error", errorMsg: "bad request" });
   });
 
   it("cae al proveedor de fallback cuando el primero falla", async () => {
     const a = fakeRoute("primary", async () => { throw Object.assign(new Error("boom"), { status: 401 }); });
     const b = fakeRoute("backup", async () => OK, "other-model");
-    const { deps, logAiCall } = makeDeps([a.route, b.route]);
-    const r = await callAI(base, deps);
+    const d = makeDeps([a.route, b.route]);
+    const r = await callAI(base, d.deps);
     expect(r.provider).toBe("backup");
     expect(r.model).toBe("other-model");
     expect(r.fallbackUsed).toBe(true);
-    expect(lastLog(logAiCall)["metadata"]).toMatchObject({ provider: "backup", fallbackFrom: "primary/gpt-4o-mini" });
+    expect(lastLog(d.logAiCall)["metadata"]).toMatchObject({ provider: "backup", fallbackFrom: "primary/gpt-4o-mini" });
   });
 
   it("aplica timeout: un proveedor colgado acaba en error controlado", async () => {
     const a = fakeRoute("slow", () => new Promise<GenerateResult>(() => {}));
-    const { deps } = makeDeps([a.route]);
-    await expect(callAI({ ...base, timeoutMs: 20, maxRetries: 0 }, deps)).rejects.toThrow(/no respondió/);
+    const d = makeDeps([a.route]);
+    await expect(callAI({ ...base, timeoutMs: 20, maxRetries: 0 }, d.deps)).rejects.toThrow(/no respondió/);
   });
 
   it("si todos los proveedores fallan, lanza AiProviderError con el detalle de intentos", async () => {
     const a = fakeRoute("p1", async () => { throw Object.assign(new Error("e1"), { status: 400 }); });
     const b = fakeRoute("p2", async () => { throw Object.assign(new Error("e2"), { status: 400 }); });
-    const { deps } = makeDeps([a.route, b.route]);
-    const err = await callAI(base, deps).catch((e) => e);
+    const d = makeDeps([a.route, b.route]);
+    const err = await callAI(base, d.deps).catch((e) => e);
     expect(err).toBeInstanceOf(AiProviderError);
     expect(err.attempts.map((x: { provider: string }) => x.provider)).toEqual(["p1", "p2"]);
   });
 });
 
-describe("AI Gateway — OmniCredits", () => {
-  const billed = { ...base, agentId: 9, billing: { ledger: true } };
+describe("AI Gateway — OmniCredits: reserva → llamada → liquidación", () => {
+  it("reserva antes de llamar, con la referencia de la petición y un margen sobre la estimación", async () => {
+    const order: string[] = [];
+    const a = fakeRoute("fake", async () => { order.push("provider"); return OK; });
+    const d = makeDeps([a.route], { reserve: async (i) => { order.push("reserve"); return { holdId: 1, credits: i.credits, available: 1 }; } });
+    await callAI({ ...billed, requestId: "req-7", userClerkId: "u1", billing: { ledger: true, monthlyCreditLimit: 50 } }, d.deps);
+    expect(order).toEqual(["reserve", "provider"]);
 
-  it("sin créditos suficientes NO llama al proveedor y devuelve un error controlado", async () => {
-    const a = fakeRoute("fake", async () => OK);
-    const { deps, logAiCall, recordUsage } = makeDeps([a.route], { balance: 0 });
-    await expect(callAI(billed, deps)).rejects.toThrow(InsufficientCreditsError);
-    expect(a.generate).not.toHaveBeenCalled();
-    expect(recordUsage).not.toHaveBeenCalled();
-    expect(lastLog(logAiCall)).toMatchObject({ status: "blocked" });
+    const estimate = estimateCost("fake", "gpt-4o-mini", {
+      inputTokens: estimateTokens(JSON.stringify(base.messages)), maxOutputTokens: 1024,
+    }).credits;
+    const held = d.reserve.mock.calls[0]![0];
+    expect(held).toMatchObject({ orgId: 7, reference: "req-7", agentId: 9, userClerkId: "u1", agentCap: 50 });
+    expect(held.credits).toBeGreaterThanOrEqual(estimate * HOLD_SAFETY_FACTOR - 1e-4);
   });
 
-  it("respeta el límite mensual de créditos del agente", async () => {
+  it("al terminar liquida el consumo real, enlazado al registro técnico", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps } = makeDeps([a.route], { agentUsage: 99.99 });
-    await expect(callAI({ ...billed, billing: { ledger: true, monthlyCreditLimit: 100 } }, deps)).rejects.toThrow(AgentCreditLimitError);
-    expect(a.generate).not.toHaveBeenCalled();
-  });
-
-  it("con créditos, ejecuta y carga el ledger enlazado al registro técnico", async () => {
-    const a = fakeRoute("fake", async () => OK);
-    const { deps, recordUsage } = makeDeps([a.route]);
-    const r = await callAI({ ...billed, userClerkId: "u1", requestId: "req-9" }, deps);
-    expect(r.estimatedCredits).toBeGreaterThan(0);
-    expect(recordUsage).toHaveBeenCalledTimes(1);
-    expect(recordUsage.mock.calls[0]![0]).toMatchObject({
+    const d = makeDeps([a.route]);
+    const r = await callAI({ ...billed, requestId: "req-9" }, d.deps);
+    expect(d.release).not.toHaveBeenCalled();
+    expect(d.settle).toHaveBeenCalledTimes(1);
+    expect(d.settle.mock.calls[0]![0]).toMatchObject({
       orgId: 7, agentId: 9, credits: r.credits, technicalCostUsd: r.costUsd, provider: "fake", model: "gpt-4o-mini",
       usageLogId: 77, reference: "req-9", estimatedCredits: r.estimatedCredits,
     });
+    expect(r.estimatedCredits).toBeGreaterThan(0);
   });
 
-  it("un fallo al escribir el ledger no rompe la respuesta ya producida", async () => {
+  it("el agente/feature nunca calcula créditos: los da el Cost Engine del gateway", async () => {
+    const a = fakeRoute("fake", async () => OK);
+    const d = makeDeps([a.route]);
+    const r = await callAI(billed, d.deps);
+    expect(d.settle.mock.calls[0]![0].credits).toBe(r.credits);
+    expect(r.credits).toBeGreaterThan(0);
+  });
+
+  it("INSUFFICIENT_CREDITS: no llama al proveedor, no liquida, registra el intento y lo audita", async () => {
+    const a = fakeRoute("fake", async () => OK);
+    const d = makeDeps([a.route], { reserve: async () => { throw new InsufficientCreditsError(3, 1, 5); } });
+    const err = await callAI(billed, d.deps).catch((e) => e);
+    expect(err).toBeInstanceOf(InsufficientCreditsError);
+    expect(err.code).toBe("INSUFFICIENT_CREDITS");
+    expect(a.generate).not.toHaveBeenCalled();
+    expect(d.settle).not.toHaveBeenCalled();
+    expect(lastLog(d.logAiCall)).toMatchObject({ status: "blocked" });
+    expect(lastLog(d.logAiCall)["metadata"]).toMatchObject({ code: "INSUFFICIENT_CREDITS" });
+    expect(d.auditBlock).toHaveBeenCalledWith(7, expect.any(String), expect.objectContaining({ code: "INSUFFICIENT_CREDITS", available: 1, required: 5 }));
+  });
+
+  it("CREDIT_LIMIT_REACHED y DUPLICATE_REQUEST tampoco llegan al proveedor", async () => {
+    for (const thrown of [new CreditLimitReachedError("agent_monthly", 99, 100, 5), new DuplicateRequestError("req-x")]) {
+      const a = fakeRoute("fake", async () => OK);
+      const d = makeDeps([a.route], { reserve: async () => { throw thrown; } });
+      await expect(callAI(billed, d.deps)).rejects.toBe(thrown);
+      expect(a.generate).not.toHaveBeenCalled();
+      expect(d.settle).not.toHaveBeenCalled();
+    }
+  });
+
+  it("si la llamada falla del todo, libera la reserva y no cobra nada", async () => {
+    const a = fakeRoute("fake", async () => { throw Object.assign(new Error("bad"), { status: 400 }); });
+    const d = makeDeps([a.route]);
+    await expect(callAI({ ...billed, requestId: "req-f" }, d.deps)).rejects.toThrow(AiProviderError);
+    expect(d.release).toHaveBeenCalledWith(7, "req-f");
+    expect(d.settle).not.toHaveBeenCalled();
+  });
+
+  it("un fallo al liquidar no rompe la respuesta ya producida", async () => {
     const a = fakeRoute("fake", async () => OK);
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { deps } = makeDeps([a.route], { recordUsage: async () => { throw new Error("db down"); } });
-    const r = await callAI(billed, deps);
+    const d = makeDeps([a.route], { settle: async () => { throw new Error("db down"); } });
+    const r = await callAI(billed, d.deps);
     expect(r.text).toBe("ok");
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it("los callers que no piden ledger no consumen créditos", async () => {
+  it("los callers que no piden ledger no reservan ni consumen créditos", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps, recordUsage, credits } = makeDeps([a.route], { balance: 0 });
-    await callAI(base, deps);
-    expect(recordUsage).not.toHaveBeenCalled();
-    expect(credits.getBalance).not.toHaveBeenCalled();
+    const d = makeDeps([a.route]);
+    await callAI(base, d.deps);
+    expect(d.reserve).not.toHaveBeenCalled();
+    expect(d.settle).not.toHaveBeenCalled();
   });
 });
 
 describe("AI Gateway — caché", () => {
   const cached = { ...base, agentId: 3, agentVersionId: 1, cache: { ttlSeconds: 60 }, billing: { ledger: true } };
 
-  it("una respuesta cacheada no llama al proveedor, no consume créditos y se registra como caché", async () => {
+  it("una respuesta cacheada no llama al proveedor, no reserva ni consume créditos y se registra como caché", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps, recordUsage, logAiCall } = makeDeps([a.route]);
-    const first = await callAI(cached, deps);
-    const second = await callAI(cached, deps);
+    const d = makeDeps([a.route]);
+    const first = await callAI(cached, d.deps);
+    const second = await callAI(cached, d.deps);
     expect(first.cached).toBe(false);
     expect(second.cached).toBe(true);
     expect(second.credits).toBe(0);
     expect(a.generate).toHaveBeenCalledTimes(1);
-    expect(recordUsage).toHaveBeenCalledTimes(1);
-    expect(lastLog(logAiCall)["metadata"]).toMatchObject({ cache: true });
+    expect(d.reserve).toHaveBeenCalledTimes(1);
+    expect(d.settle).toHaveBeenCalledTimes(1);
+    expect(lastLog(d.logAiCall)["metadata"]).toMatchObject({ cache: true });
   });
 
   it("el caché nunca cruza workspaces", async () => {
     const a = fakeRoute("fake", async () => OK);
-    const { deps } = makeDeps([a.route]);
-    await callAI({ ...cached, orgId: 1 }, deps);
-    const other = await callAI({ ...cached, orgId: 2 }, deps);
+    const d = makeDeps([a.route]);
+    await callAI({ ...cached, orgId: 1 }, d.deps);
+    const other = await callAI({ ...cached, orgId: 2 }, d.deps);
     expect(other.cached).toBe(false);
     expect(a.generate).toHaveBeenCalledTimes(2);
   });
 
   it("no se cachean las respuestas con llamadas a herramientas", async () => {
     const withTools = fakeRoute("fake", async () => ({ text: "", toolCalls: [{ id: "1", type: "function" as const, function: { name: "x", arguments: "{}" } }] }));
-    const { deps } = makeDeps([withTools.route]);
-    await callAI(cached, deps);
-    await callAI(cached, deps);
+    const d = makeDeps([withTools.route]);
+    await callAI(cached, d.deps);
+    await callAI(cached, d.deps);
     expect(withTools.generate).toHaveBeenCalledTimes(2);
   });
 });

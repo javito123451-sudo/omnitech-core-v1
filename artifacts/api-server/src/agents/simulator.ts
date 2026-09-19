@@ -15,9 +15,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { AgentConfig } from "@workspace/db";
-import { computeCost, estimateTokens } from "../ai-gateway/costEngine";
-import { previewRoute, type RoutingContext } from "../ai-gateway/providerRouter";
-import { buildSystemPrompt } from "./promptBuilder";
+import type { RoutingContext } from "../ai-gateway/providerRouter";
+import { estimateRunCost } from "./runEstimate";
 import type { AgentTool } from "./toolRegistry";
 
 export const SIMULATION_SCENARIOS = [
@@ -49,12 +48,12 @@ export interface SimulationResult {
   route:        { provider: string; model: string };
   toolsSelected: string[];
   proposedAction: { toolId: string; params: Record<string, unknown>; requiresConfirmation: true } | null;
-  estimate: { typicalCostUsd: number; typicalCredits: number; maxCostUsd: number; maxCredits: number; priceKnown: boolean };
+  /** Tokens estimados (no reales): entrada, salida típica y tope de salida. */
+  tokensEstimated: { input: number; outputTypical: number; outputMax: number };
+  estimate: { typicalCostUsd: number; typicalCredits: number; maxCostUsd: number; maxCredits: number; priceKnown: boolean; priceSource: "db" | "legacy" | "fallback" };
   reply:        string;
   notes:        string[];
 }
-
-const TYPICAL_OUTPUT_TOKENS = 150;
 
 function matches(message: string, tool: AgentTool): boolean {
   const text = message.toLowerCase();
@@ -63,8 +62,6 @@ function matches(message: string, tool: AgentTool): boolean {
 
 export function simulateAgent(input: SimulationInput): SimulationResult {
   const { agent, config, message } = input;
-  const route = previewRoute({ agent: config.model, workspace: input.routing?.workspace, plan: input.routing?.plan });
-
   const toolsSelected = [
     ...input.readTools.filter((t) => matches(message, t)),
     ...input.actionTools.filter((t) => matches(message, t)),
@@ -78,10 +75,11 @@ export function simulateAgent(input: SimulationInput): SimulationResult {
       }
     : null;
 
-  const prompt = buildSystemPrompt(agent, config, input.knowledge ?? "", [...input.readTools, ...input.actionTools].map((t) => t.id));
-  const inputTokens = estimateTokens(prompt) + estimateTokens(message);
-  const typical = computeCost({ provider: route.provider, model: route.model, inputTokens, outputTokens: TYPICAL_OUTPUT_TOKENS }, "estimated");
-  const max = computeCost({ provider: route.provider, model: route.model, inputTokens, outputTokens: config.parameters.maxOutputTokens }, "estimated");
+  const est = estimateRunCost({
+    agent, config, message, knowledge: input.knowledge, routing: input.routing,
+    toolIds: [...input.readTools, ...input.actionTools].map((t) => t.id),
+  });
+  const route = est.route;
 
   const readNames = toolsSelected.filter((t) => t.kind === "read").map((t) => t.id);
   const reply = proposedAction
@@ -91,7 +89,7 @@ export function simulateAgent(input: SimulationInput): SimulationResult {
       : `[SIMULACIÓN] ${agent.name} respondería con sus instrucciones y su conocimiento, sin usar herramientas (tono: ${config.personality.tone}).`;
 
   const notes = ["Simulación: no se ha llamado a ningún proveedor de IA, no se han consumido créditos y no se ha ejecutado ninguna acción."];
-  if (!typical.priceKnown) notes.push(`No hay precio registrado para ${route.provider}/${route.model}; el coste usa una tarifa de referencia.`);
+  if (!est.priceKnown) notes.push(`No hay precio registrado para ${route.provider}/${route.model}; el coste usa una tarifa de referencia.`);
   if (config.tools.read.length + config.tools.write.length > input.readTools.length + input.actionTools.length) {
     notes.push("Algunas herramientas configuradas no están disponibles para este usuario o workspace y se han excluido.");
   }
@@ -102,9 +100,10 @@ export function simulateAgent(input: SimulationInput): SimulationResult {
     route,
     toolsSelected: toolsSelected.map((t) => t.id),
     proposedAction,
+    tokensEstimated: est.tokens,
     estimate: {
-      typicalCostUsd: typical.technicalCostUsd, typicalCredits: typical.credits,
-      maxCostUsd: max.technicalCostUsd, maxCredits: max.credits, priceKnown: typical.priceKnown,
+      typicalCostUsd: est.typical.costUsd, typicalCredits: est.typical.credits,
+      maxCostUsd: est.max.costUsd, maxCredits: est.max.credits, priceKnown: est.priceKnown, priceSource: est.priceSource,
     },
     reply,
     notes,

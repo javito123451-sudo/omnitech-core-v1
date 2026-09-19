@@ -43,6 +43,13 @@
       "when": 1789820008529,
       "tag": "0005_omnicredits_and_agent_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789829932491,
+      "tag": "0006_omnicredits_commercial_layer",
+      "breakpoints": true
     }
   ]
 }

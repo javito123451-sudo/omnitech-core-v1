@@ -1,33 +1,38 @@
 // ═══════════════════════════════════════════════════════════════════════════
-//  AI pricing — the ONLY place provider prices and the OmniCredit conversion
-//  live. Nothing else in the codebase should hard-code a price.
+//  AI pricing — defaults heredados + parámetros de conversión a OmniCredits.
 //
-//  Prices are USD per 1M tokens (per unit for images, per minute for audio),
-//  keyed by provider id (the `id` each AIProvider reports) and model. The
-//  values for OpenAI are the ones that previously lived in aiUsageLogger.ts,
-//  so existing cost figures don't change.
+//  Los precios REALES viven en la tabla ai_model_pricing (configurable, con
+//  vigencia, sin filas iniciales) y se resuelven en pricingRegistry.ts. Este
+//  archivo solo contiene:
 //
-//  Adding a provider = adding a key here. Providers don't share one token
-//  shape (cached / reasoning tokens are reported differently), so
-//  normalizing a provider's usage into UsageInput is that provider adapter's
-//  job — see the notes in costEngine.ts.
+//   1. LEGACY_PRICING: los valores que la app ya usaba antes de existir la
+//      tabla (estaban en aiUsageLogger.ts). Se usan ÚNICAMENTE cuando no hay
+//      una fila vigente en la base de datos, y el desglose lo marca
+//      (priceSource: "legacy"). No se han verificado contra los precios
+//      actuales de ningún proveedor: sustitúyelos configurando ai_model_pricing.
+//
+//   2. Los parámetros de conversión a OmniCredits y de reserva.
+//
+//  Unidades: USD por 1M de tokens; por unidad (imagen); por minuto (audio, vídeo).
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface ModelPricing {
   inputPer1M:        number;
   outputPer1M:       number;
-  /** Price of cached prompt tokens; falls back to inputPer1M when absent. */
+  /** Precio de los tokens de entrada cacheados; si falta, se cobran como entrada normal. */
   cachedInputPer1M?: number;
-  /** Price of reasoning tokens; falls back to outputPer1M when absent. */
+  /** Precio de los tokens de razonamiento; si falta, se cobran como salida. */
   reasoningPer1M?:   number;
   imagePerUnit?:     number;
   audioPerMinute?:   number;
+  videoPerMinute?:   number;
 }
 
 const GPT_4O:      ModelPricing = { inputPer1M: 5,    outputPer1M: 15,  cachedInputPer1M: 2.5 };
 const GPT_4O_MINI: ModelPricing = { inputPer1M: 0.15, outputPer1M: 0.6, cachedInputPer1M: 0.075 };
 
-export const PRICING: Record<string, Record<string, ModelPricing>> = {
+/** Valores heredados. Ver la nota de cabecera: son un respaldo, no una fuente de verdad. */
+export const LEGACY_PRICING: Record<string, Record<string, ModelPricing>> = {
   openai: {
     "gpt-4o":                 GPT_4O,
     "gpt-4o-2024-11-20":      GPT_4O,
@@ -36,20 +41,30 @@ export const PRICING: Record<string, Record<string, ModelPricing>> = {
     "text-embedding-3-small": { inputPer1M: 0.02, outputPer1M: 0 },
     "text-embedding-3-large": { inputPer1M: 0.13, outputPer1M: 0 },
   },
-  // Slots for providers that exist as stubs. No prices are invented here:
-  // they get real entries when the provider is implemented.
+  // Proveedores que existen como stub: sin precios inventados.
   claude: {},
   gemini: {},
 };
 
-/** Used for an unknown provider/model, flagged priceKnown:false in the breakdown. */
+/** Alias de compatibilidad para código y tests que ya importaban PRICING. */
+export const PRICING = LEGACY_PRICING;
+
+/** Se usa para un proveedor/modelo sin precio: el desglose lo marca priceKnown:false. */
 export const FALLBACK_PRICING: ModelPricing = GPT_4O_MINI;
 
-// ── OmniCredits conversion ───────────────────────────────────────────────────
-// A commercial parameter, not a technical one: 1 OmniCredit is NOT 1 token.
-// creditsPerUsd converts technical cost to credits; markup is the margin
-// applied on top. Overridable by env until the commercial values are decided.
+// ── Conversión a OmniCredits ─────────────────────────────────────────────────
+// Parámetro comercial, no técnico: 1 OmniCredit NO es 1 token. creditsPerUsd
+// convierte coste técnico a créditos y markup es el margen. Sobrescribibles por
+// entorno hasta que negocio fije los valores definitivos.
 export const OMNICREDITS = {
   creditsPerUsd: Number(process.env["OMNICREDITS_PER_USD"] ?? 1000),
   markup:        Number(process.env["OMNICREDITS_MARKUP"] ?? 1),
 } as const;
+
+// ── Reserva de créditos ──────────────────────────────────────────────────────
+// Antes de llamar al proveedor se reserva el coste ESTIMADO por este factor, que
+// cubre que la estimación de tokens de entrada es aproximada. Si el coste real
+// supera igualmente la reserva, se registra el real y se marca el desvío.
+export const HOLD_SAFETY_FACTOR = 1.2;
+/** Una reserva que nadie liquida (proceso caído) deja de contar pasado este tiempo. */
+export const HOLD_TTL_MS = 5 * 60 * 1000;

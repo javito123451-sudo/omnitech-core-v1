@@ -2,6 +2,10 @@
 //  AI Cost Engine — turns a usage record into a technical cost (USD) and a
 //  commercial cost (OmniCredits), with enough detail to audit it.
 //
+//  Prices are NOT here: they come from the pricing registry (ai_model_pricing,
+//  configurable and dated). Changing a model's price therefore never touches
+//  agents, plans, the frontend, workflows, tools or channels.
+//
 //  Two moments, deliberately separate (estimate and real cost are not
 //  assumed equal):
 //    estimateCost()  before the call, from an input-size guess and the
@@ -17,7 +21,8 @@
 //    reasoningTokens  billed separately, so it must not also be in outputTokens
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { FALLBACK_PRICING, OMNICREDITS, PRICING, type ModelPricing } from "./pricing";
+import { OMNICREDITS, type ModelPricing } from "./pricing";
+import { resolvePricing, type PriceSource } from "./pricingRegistry";
 
 export interface UsageInput {
   provider:                 string;
@@ -28,6 +33,7 @@ export interface UsageInput {
   reasoningTokens?:         number;
   images?:                  number;
   audioSeconds?:            number;
+  videoSeconds?:            number;
   durationMs?:              number;
   toolCalls?:               string[];
   providerReportedCostUsd?: number;
@@ -40,14 +46,16 @@ export interface CostBreakdown {
   credits:          number;
   basis:            CostBasis;
   priceKnown:       boolean;
+  /** De dónde salió el precio: fila de ai_model_pricing, valores heredados, o tarifa de referencia. */
+  priceSource:      PriceSource;
+  pricingRowId:     number | null;
   lines: {
-    input: number; cachedInput: number; output: number; reasoning: number; images: number; audio: number;
+    input: number; cachedInput: number; output: number; reasoning: number; images: number; audio: number; video: number;
   };
 }
 
-export function lookupPricing(provider: string, model: string): { pricing: ModelPricing; known: boolean } {
-  const found = PRICING[provider]?.[model];
-  return found ? { pricing: found, known: true } : { pricing: FALLBACK_PRICING, known: false };
+export function lookupPricing(provider: string, model: string, at?: Date): { pricing: ModelPricing; known: boolean; source: PriceSource; rowId: number | null } {
+  return resolvePricing(provider, model, at);
 }
 
 export function usdToCredits(costUsd: number): number {
@@ -58,20 +66,21 @@ export function usdToCredits(costUsd: number): number {
 
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const perMillion = (tokens: number, price: number) => (Math.max(0, tokens) / 1_000_000) * price;
+const ZERO_LINES = { input: 0, cachedInput: 0, output: 0, reasoning: 0, images: 0, audio: 0, video: 0 };
 
-export function computeCost(usage: UsageInput, basis: "estimated" | "final" = "final"): CostBreakdown {
-  const { pricing, known } = lookupPricing(usage.provider, usage.model);
+export function computeCost(usage: UsageInput, basis: "estimated" | "final" = "final", at?: Date): CostBreakdown {
+  const { pricing, known, source, rowId } = resolvePricing(usage.provider, usage.model, at);
 
   if (usage.providerReportedCostUsd !== undefined && usage.providerReportedCostUsd >= 0) {
     const cost = round6(usage.providerReportedCostUsd);
     return {
-      technicalCostUsd: cost, credits: usdToCredits(cost), basis: "provider_reported", priceKnown: known,
-      lines: { input: 0, cachedInput: 0, output: 0, reasoning: 0, images: 0, audio: 0 },
+      technicalCostUsd: cost, credits: usdToCredits(cost), basis: "provider_reported",
+      priceKnown: known, priceSource: source, pricingRowId: rowId, lines: { ...ZERO_LINES },
     };
   }
 
-  const cached    = Math.min(Math.max(0, usage.cachedTokens ?? 0), Math.max(0, usage.inputTokens));
-  const uncached  = Math.max(0, usage.inputTokens) - cached;
+  const cached   = Math.min(Math.max(0, usage.cachedTokens ?? 0), Math.max(0, usage.inputTokens));
+  const uncached = Math.max(0, usage.inputTokens) - cached;
   const lines = {
     input:       perMillion(uncached, pricing.inputPer1M),
     cachedInput: perMillion(cached, pricing.cachedInputPer1M ?? pricing.inputPer1M),
@@ -79,9 +88,12 @@ export function computeCost(usage: UsageInput, basis: "estimated" | "final" = "f
     reasoning:   perMillion(usage.reasoningTokens ?? 0, pricing.reasoningPer1M ?? pricing.outputPer1M),
     images:      (usage.images ?? 0) * (pricing.imagePerUnit ?? 0),
     audio:       ((usage.audioSeconds ?? 0) / 60) * (pricing.audioPerMinute ?? 0),
+    video:       ((usage.videoSeconds ?? 0) / 60) * (pricing.videoPerMinute ?? 0),
   };
-  const technicalCostUsd = round6(lines.input + lines.cachedInput + lines.output + lines.reasoning + lines.images + lines.audio);
-  return { technicalCostUsd, credits: usdToCredits(technicalCostUsd), basis, priceKnown: known, lines };
+  const technicalCostUsd = round6(
+    lines.input + lines.cachedInput + lines.output + lines.reasoning + lines.images + lines.audio + lines.video,
+  );
+  return { technicalCostUsd, credits: usdToCredits(technicalCostUsd), basis, priceKnown: known, priceSource: source, pricingRowId: rowId, lines };
 }
 
 /** Pre-call estimate: assumes the worst case for output (the cap) and no cache hits. */

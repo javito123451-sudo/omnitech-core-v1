@@ -3,7 +3,7 @@
 // agente por defecto, conocimiento aislado por workspace, y una acción real
 // confirmada (crea una tarea de verdad, pero solo tras la confirmación).
 //
-// Requiere ci-test con las migraciones 0004 y 0005. Se omite limpiamente si no hay.
+// Requiere ci-test con las migraciones 0004, 0005 y 0006. Se omite limpiamente si no hay.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { and, desc, eq, inArray, like } from "drizzle-orm";
 import {
@@ -64,6 +64,7 @@ describe.skipIf(!hasRealDb)("Fábrica — flujo completo", () => {
     const deps: GatewayDeps = {
       resolveRoutes: () => [fakeRoute(generate)], checkBudgetBlocked, logAiCall, credits: creditsPort,
       cache: new ResponseCache(), sleep: async () => {},
+      ensurePricingLoaded: async () => {}, auditBlock: async () => {},
     };
 
     const r = await callAI({
@@ -77,7 +78,7 @@ describe.skipIf(!hasRealDb)("Fábrica — flujo completo", () => {
     expect(log!.metadata).toMatchObject({ provider: "fake", requestId: `${FN}-ok`, agentId, cachedTokens: 400, credits: r.credits });
 
     const [entry] = await db.select().from(creditLedgerTable).where(eq(creditLedgerTable.reference, `${FN}-ok`));
-    expect(entry).toMatchObject({ orgId: orgA, entryType: "usage", agentId, provider: "fake", model: "gpt-4o-mini", usageLogId: log!.id });
+    expect(entry).toMatchObject({ orgId: orgA, entryType: "consumption", agentId, provider: "fake", model: "gpt-4o-mini", usageLogId: log!.id });
     expect(Number(entry!.credits)).toBeCloseTo(-r.credits, 4);
     expect(Number(entry!.technicalCostUsd)).toBeCloseTo(r.costUsd, 6);
     expect(Number(entry!.estimatedCredits)).toBeCloseTo(r.estimatedCredits!, 4);
@@ -89,6 +90,7 @@ describe.skipIf(!hasRealDb)("Fábrica — flujo completo", () => {
     const deps: GatewayDeps = {
       resolveRoutes: () => [fakeRoute(generate)], checkBudgetBlocked, logAiCall, credits: creditsPort,
       cache: new ResponseCache(), sleep: async () => {},
+      ensurePricingLoaded: async () => {}, auditBlock: async () => {},
     };
     await expect(callAI({
       mode: "live", orgId: orgB, functionName: FN, requestId: `${FN}-none`,

@@ -113,7 +113,7 @@ describe("runAgent", () => {
 
   it("sin créditos el error del gateway se propaga sin ejecutar nada", async () => {
     const d = makeDeps(config(["list_tasks"], []), []);
-    d.callAI.mockRejectedValueOnce(new InsufficientCreditsError(0, 5));
+    d.callAI.mockRejectedValueOnce(new InsufficientCreditsError(0, 0, 5));
     await expect(runAgent(req("live"), d.runner)).rejects.toBeInstanceOf(InsufficientCreditsError);
     expect(d.executeSkill).not.toHaveBeenCalled();
   });

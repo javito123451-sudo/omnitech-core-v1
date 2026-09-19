@@ -14,10 +14,7 @@ import { bumpOrgModuleVersion } from "../lib/moduleVersion";
 import { logAudit as _logAudit } from "../utils/auditLogger";
 import { sendInvitationEmail } from "../lib/email";
 import { randomUUID } from "crypto";
-import {
-  adjustCredits, CreditError, getSummary as getCreditSummary, grantCredits, listLedger as listCreditLedger,
-  refundCredits, topUpCredits,
-} from "../credits/creditService";
+import { creditsAdminRouter } from "./credits-admin";
 
 export const controlCenterRouter = Router();
 
@@ -727,40 +724,8 @@ controlCenterRouter.post("/licenses", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ── OmniCredits (Agent Factory): saldo y movimientos de un workspace ─────────
-controlCenterRouter.get("/credits/:orgId", async (req, res) => {
-  const orgId = Number(req.params["orgId"]);
-  if (!Number.isInteger(orgId) || orgId <= 0) { res.status(400).json({ error: "orgId no válido" }); return; }
-  res.json({ summary: await getCreditSummary(orgId), ledger: await listCreditLedger(orgId, { limit: 50 }) });
-});
-
-// Movimientos manuales de créditos (dinero comercial): solo SUPER_ADMIN real,
-// no STAFF_OMNITECH — mismo criterio que suspender usuarios. Siempre auditado.
-controlCenterRouter.post("/credits/:orgId/entries", async (req, res) => {
-  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN puede mover créditos" }); return; }
-  const orgId = Number(req.params["orgId"]);
-  const { type, credits, reason, reference } = req.body as { type?: string; credits?: number; reason?: string; reference?: string };
-  const amount = Number(credits);
-  if (!Number.isInteger(orgId) || orgId <= 0 || !Number.isFinite(amount)) { res.status(400).json({ error: "orgId o credits no válidos" }); return; }
-  const opts = { userClerkId: req.clerkUserId!, reference: reference ?? null, reason, source: "manual" };
-  try {
-    const result =
-      type === "grant"      ? await grantCredits(orgId, amount, opts) :
-      type === "topup"      ? await topUpCredits(orgId, amount, opts) :
-      type === "adjustment" ? await adjustCredits(orgId, amount, { ...opts, reason: reason ?? "" }) :
-      type === "refund"     ? await refundCredits(orgId, amount, { ...opts, reason: reason ?? "" }) :
-      null;
-    if (!result) { res.status(400).json({ error: "type debe ser grant, topup, adjustment o refund" }); return; }
-    await logAudit({
-      actorClerkId: req.clerkUserId!, action: `credits_${type}`, resource: "credit_ledger", resourceId: result.entry.id,
-      orgId, details: { credits: amount, reason: reason ?? null, reference: reference ?? null, balanceAfter: result.balance, duplicate: result.duplicate },
-      severity: "warning", req,
-    });
-    res.status(result.duplicate ? 200 : 201).json({ entry: result.entry, balance: result.balance, duplicate: result.duplicate });
-  } catch (err) {
-    res.status(err instanceof CreditError ? 400 : 500).json({ error: String(err instanceof Error ? err.message : err) });
-  }
-});
+// ── OmniCredits: administración (consumo global, planes, precios, movimientos) ─
+controlCenterRouter.use("/credits", creditsAdminRouter);
 
 // ── GET /audit ────────────────────────────────────────────────────────────────
 export interface AuditLogsFilter {
