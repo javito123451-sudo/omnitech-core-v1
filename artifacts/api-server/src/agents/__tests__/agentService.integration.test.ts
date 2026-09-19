@@ -4,7 +4,7 @@
 // Requiere una base desechable en DATABASE_URL (rama ci-test de Neon con la
 // migración 0004 aplicada). Se omite limpiamente si no hay.
 import { describe, it, expect, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, notLike } from "drizzle-orm";
 import { db, aiAgentsTable, organizationsTable } from "@workspace/db";
 import {
   AgentError, createAgent, getAgentDetail, listAgents, publishAgent, restoreVersion,
@@ -16,7 +16,7 @@ const known = new Set(["list_clients", "list_tasks", "create_task"]);
 const cleanupIds: number[] = [];
 
 async function twoOrgIds(): Promise<[number, number]> {
-  const orgs = await db.select({ id: organizationsTable.id }).from(organizationsTable).limit(2);
+  const orgs = await db.select({ id: organizationsTable.id }).from(organizationsTable).where(notLike(organizationsTable.slug, "smoke-%")).orderBy(organizationsTable.id).limit(2); // orgs reales: las temporales (smoke-*) de otros tests se crean y borran en paralelo
   if (orgs.length < 2) throw new Error("La base de pruebas necesita al menos 2 organizaciones.");
   return [orgs[0]!.id, orgs[1]!.id];
 }
