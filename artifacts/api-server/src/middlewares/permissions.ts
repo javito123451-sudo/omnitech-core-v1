@@ -88,6 +88,10 @@ export type Permission =
   // Omni Taller (órdenes de reparación — vehículo + fase, sobre CRM genérico)
   | "taller.read"
   | "taller.write"
+  // Fábrica de Agentes IA (leer / editar borradores / publicar y pausar)
+  | "agents.read"
+  | "agents.write"
+  | "agents.publish"
   // Analytics / Executive / Diagnostics
   | "analytics.read"
   | "executive.read"
@@ -113,6 +117,7 @@ export type Permission =
 const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
   owner: [
     "workspace.view", "workspace.edit", "workspace.manage", "workspace.delete",
+    "agents.write", "agents.publish",
     "crm.read", "crm.write", "crm.delete", "crm.assign",
     "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
     "accounting.read", "accounting.write", "accounting.delete", "accounting.approve",
@@ -127,7 +132,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write",
+    "taller.read", "taller.write", "agents.read",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -138,6 +143,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "crm.read", "crm.write", "crm.delete", "crm.assign",
     "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
     "accounting.read", "accounting.write", "accounting.delete",
+    "agents.write", "agents.publish",
     "calendar.read", "calendar.write", "calendar.delete",
     "messages.read", "messages.write",
     "whatsapp.read", "whatsapp.write",
@@ -148,7 +154,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write",
+    "taller.read", "taller.write", "agents.read",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -160,6 +166,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "crm.read", "crm.write", "crm.delete", "crm.assign",
     "quotes.read", "quotes.write", "quotes.delete", "quotes.approve",
     "accounting.read", "accounting.write",
+    "agents.write",
     "calendar.read", "calendar.write", "calendar.delete",
     "messages.read", "messages.write",
     "whatsapp.read", "whatsapp.write",
@@ -170,7 +177,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write",
+    "taller.read", "taller.write", "agents.read",
     "analytics.read", "executive.read",
     "settings.read",
     "users.read",
@@ -191,7 +198,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write",
+    "taller.read", "taller.write", "agents.read",
     "analytics.read",
     "settings.read",
     "users.read",
@@ -229,6 +236,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "a_medida.read",
     "fleet.read",
     "taller.read",
+    "agents.read",
     "analytics.read",
     "settings.read",
     "users.read",

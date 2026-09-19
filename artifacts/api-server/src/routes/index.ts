@@ -44,6 +44,7 @@ import { fleetRouter, fleetWebhookRouter } from "./fleet";
 import { tallerRouter } from "./taller";
 import { aceRouter } from "./ace";
 import { avaCoreRouter } from "./ava-core";
+import { agentsRouter } from "./agents";
 import { tasksRouter } from "./tasks";
 import { internalCronRouter } from "./internalCron";
 
@@ -143,6 +144,7 @@ router.use("/time",           requireModule("omni_time"),      timeRouter);
 router.use("/fleet",          requireModule("omni_fleet"),     fleetRouter);
 router.use("/taller",         requireModule("omni_taller"),    tallerRouter);
 router.use("/tasks",          requireModule("crm"),            tasksRouter);
+router.use("/agents",         requireModule("ai_agents"),      agentsRouter);
 
 // ── Ava Context Engine — lightweight context sync, no module gate ─────────
 router.use("/ace", aceRouter);
