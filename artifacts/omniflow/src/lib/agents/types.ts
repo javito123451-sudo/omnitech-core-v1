@@ -158,3 +158,38 @@ export interface DefaultAgent {
   updatedAt: string;
 }
 export type DefaultAgentsResponse = DefaultAgent[];
+
+/** POST /api/agents/:id/publish (agents.publish) → agentService.publishAgent. Los fallos llevan `{ error, problems? }` (404/409/422). */
+export interface PublishAgentResponse {
+  agent:                  Agent;
+  publishedVersionNumber: number;
+}
+
+/** POST /api/agents/:id/simulate (agents.read). Body: un `message` (o un scenarioId, no usado por esta UI). */
+export interface SimulateAgentInput {
+  message:    string;
+  versionId?: number;
+}
+
+/**
+ * Respuesta de POST /api/agents/:id/simulate en la vista de CLIENTE (sin ?technical=1): el backend quita
+ * `tokensEstimated` y los importes en dinero de `estimate` (stripTechnical), y añade `denied` (herramientas
+ * excluidas). Es una simulación: `simulated` es siempre true, no llama a ningún proveedor, no gasta créditos.
+ */
+export interface SimulationResult {
+  simulated:      true;
+  agent:          { id: number; name: string; versionNumber: number | null };
+  route:          { provider: string; model: string };
+  toolsSelected:  string[];
+  proposedAction: { toolId: string; params: Record<string, unknown>; requiresConfirmation: true } | null;
+  estimate: {
+    typicalCredits: number;
+    maxCredits:     number;
+    priceKnown:     boolean;
+    priceSource:    "db" | "legacy" | "fallback";
+    provisional:    boolean;
+  };
+  reply:  string;
+  notes:  string[];
+  denied: Array<{ toolId: string; reason: string }>;
+}

@@ -3,7 +3,7 @@ import { Bot, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { AgentStatusBadge } from "@/components/agents/AgentStatusBadge";
-import { budgetSummary, channelLabel } from "@/lib/agents/format";
+import { budgetSummary, channelLabel, formatDateTime } from "@/lib/agents/format";
 import type { AgentListItem } from "@/lib/agents/types";
 
 /**
@@ -39,6 +39,10 @@ export function AgentCard({ agent, defaultChannels }: { agent: AgentListItem; de
             <div>
               <dt className="sr-only">Presupuesto</dt>
               <dd data-testid={`agent-budget-${agent.id}`}>{budget ? `Presupuesto: ${budget}` : "Sin presupuesto propio"}</dd>
+            </div>
+            <div>
+              <dt className="sr-only">Última actualización</dt>
+              <dd data-testid={`agent-updated-${agent.id}`}>Actualizado {formatDateTime(agent.updatedAt)}</dd>
             </div>
           </dl>
 

@@ -1,7 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { describeAgentError, type AgentErrorInfo } from "@/lib/agents/agentErrors";
+import { describeAgentError, errorProblems, type AgentErrorInfo } from "@/lib/agents/agentErrors";
 
 /**
  * Muestra un error de la API de agentes con un mensaje comprensible Y su código técnico (nunca se oculta):
@@ -9,6 +9,7 @@ import { describeAgentError, type AgentErrorInfo } from "@/lib/agents/agentError
  */
 export function ApiErrorAlert({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const info: AgentErrorInfo = describeAgentError(error);
+  const problems = errorProblems(error);
   return (
     <Alert variant="destructive" role="alert" data-error-kind={info.kind}>
       <AlertTriangle className="h-4 w-4" />
@@ -16,6 +17,11 @@ export function ApiErrorAlert({ error, onRetry }: { error: unknown; onRetry?: ()
       <AlertDescription className="space-y-2">
         <p>{info.message}</p>
         {info.detail && <p className="text-xs opacity-80">{info.detail}</p>}
+        {problems.length > 0 && (
+          <ul className="list-disc pl-5 text-xs" data-testid="error-problems">
+            {problems.map((p) => <li key={p}>{p}</li>)}
+          </ul>
+        )}
         <p className="text-xs font-mono opacity-70" data-testid="error-technical">{info.technical}</p>
         {onRetry && (
           <Button type="button" variant="outline" size="sm" onClick={onRetry}>

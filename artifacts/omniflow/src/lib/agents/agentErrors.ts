@@ -143,3 +143,10 @@ export function describeAgentError(err: unknown): AgentErrorInfo {
   if (err instanceof Error) return describeApiError({ status: null, code: null, message: err.message });
   return describeApiError({ status: null, code: null, message: typeof err === "string" ? err : null });
 }
+
+/** Lista de problemas que devuelve el backend al rechazar una publicación (422 { error, problems }). */
+export function errorProblems(err: unknown): string[] {
+  if (!(err instanceof AgentsApiError) || !err.body || typeof err.body !== "object") return [];
+  const p = (err.body as Record<string, unknown>)["problems"];
+  return Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : [];
+}

@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOrg } from "@/lib/orgContext";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { agentsApi } from "./agentsApi";
-import type { CreateAgentInput } from "./types";
+import type { CreateAgentInput, SimulateAgentInput } from "./types";
 
 export const agentKeys = {
   list:     (ws: number | null)             => ["agents", ws] as const,
@@ -75,4 +75,25 @@ export function useCreateAgent() {
     mutationFn: (input: CreateAgentInput) => agentsApi.create(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: agentKeys.list(ws) }),
   });
+}
+
+/**
+ * Publicar la versión borrador (agents.publish). Cambia el estado del agente y su versión activa, así que
+ * invalida solo la lista y el detalle de ESTE agente en este workspace. No toca créditos ni defaults.
+ */
+export function usePublishAgent(agentId: number) {
+  const ws = useActiveWorkspaceId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => agentsApi.publish(agentId),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: agentKeys.list(ws) }),
+      qc.invalidateQueries({ queryKey: agentKeys.detail(ws, agentId) }),
+    ]),
+  });
+}
+
+/** Simulación (gratis, sin proveedor, sin créditos): no modifica nada, por eso no invalida ninguna consulta. */
+export function useSimulateAgent(agentId: number) {
+  return useMutation({ mutationFn: (input: SimulateAgentInput) => agentsApi.simulate(agentId, input) });
 }
