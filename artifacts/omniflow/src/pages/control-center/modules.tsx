@@ -23,7 +23,7 @@ type View = "byOrg" | "byModule";
 const MODULE_ICONS: Record<string, string> = {
   crm: "🏢", whatsapp: "💬", omni_import_ai: "🤖", omni_docs: "📄",
   omni_security: "🔒", omni_marketing: "📣", analytics: "📊",
-  automations: "⚡", ai_agents: "🧠", integrations: "🔗", omni_leads: "🎯",
+  automations: "⚡", ai_agents: "🧠", omni_agent_factory: "🏭", integrations: "🔗", omni_leads: "🎯",
   a_medida: "🚚", omni_fleet: "🛣️", omni_taller: "🔧",
 };
 const MODULE_COLORS: Record<string, string> = {
@@ -31,7 +31,7 @@ const MODULE_COLORS: Record<string, string> = {
   omni_import_ai: "from-violet-600 to-purple-600", omni_docs: "from-amber-600 to-orange-600",
   omni_security: "from-red-600 to-pink-600", omni_marketing: "from-pink-600 to-rose-600",
   analytics: "from-indigo-600 to-blue-600", automations: "from-yellow-600 to-amber-600",
-  ai_agents: "from-fuchsia-600 to-violet-600", integrations: "from-cyan-600 to-sky-600",
+  ai_agents: "from-fuchsia-600 to-violet-600", omni_agent_factory: "from-violet-600 to-indigo-600", integrations: "from-cyan-600 to-sky-600",
   omni_leads: "from-orange-600 to-red-600", a_medida: "from-amber-500 to-yellow-600",
   omni_fleet: "from-slate-600 to-zinc-600", omni_taller: "from-orange-500 to-amber-600",
 };

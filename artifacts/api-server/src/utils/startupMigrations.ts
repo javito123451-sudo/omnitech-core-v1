@@ -866,6 +866,23 @@ export async function runStartupMigrations(): Promise<void> {
       }
     }
 
+    // ── FIX-AG: Omni Agent Factory pasa a ser un módulo propio (omni_agent_factory).
+    //    Antes colgaba de ai_agents (que sigue gobernando Memoria, Telegram y Conversaciones). Para no quitar ni dar
+    //    acceso a nadie por el cambio, cada workspace que aún no tiene fila hereda el estado actual de su fila ai_agents.
+    //    updated_by = 'system-fix-ag' (distinto de 'system-fix-ab'): FIX-AB/AF nunca lo sobrescriben, y una fila que el
+    //    administrador ya haya tocado (ON CONFLICT DO NOTHING) tampoco. Idempotente: solo inserta lo que falta.
+    {
+      const result = await db.execute(sql`
+        INSERT INTO module_configs (org_id, module_slug, is_enabled, updated_by, updated_at)
+        SELECT mc.org_id, 'omni_agent_factory', mc.is_enabled, 'system-fix-ag', NOW()
+        FROM module_configs mc
+        WHERE mc.module_slug = 'ai_agents'
+        ON CONFLICT (org_id, module_slug) DO NOTHING
+      `);
+      const inserted = (result as { rowCount?: number }).rowCount ?? 0;
+      logger.info(`[Migration] ✅ FIX-AG: omni_agent_factory heredó el estado de ai_agents en ${inserted} workspace(s)`);
+    }
+
     // ── FIX-AD: OmniTime tables — time_workers, time_entries, time_incidents, time_off_requests
     {
       await db.execute(sql`

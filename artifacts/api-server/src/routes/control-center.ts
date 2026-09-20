@@ -649,6 +649,7 @@ export async function getModulesData() {
   const CATALOG = [
     { slug: "crm",            name: "CRM",                   description: "Gestión de clientes y relaciones",       alwaysOn: true  },
     { slug: "ai_agents",      name: "AI Agents",              description: "Agentes de IA personalizados",           alwaysOn: false },
+    { slug: "omni_agent_factory", name: "Omni Agent Factory", description: "Crea, versiona y publica agentes de IA", alwaysOn: false },
     { slug: "analytics",      name: "Analytics",              description: "Análisis avanzado de datos",             alwaysOn: false },
     { slug: "whatsapp",       name: "WhatsApp Business",      description: "Mensajería y automatizaciones",          alwaysOn: false },
     { slug: "integrations",   name: "Integraciones",          description: "Conectores y webhooks externos",         alwaysOn: false },
@@ -1075,6 +1076,7 @@ controlCenterRouter.get("/module-matrix", async (_req, res) => {
   const MODULE_CATALOG = [
     { slug: "crm",            name: "CRM",                alwaysOn: true,  layers: ["menu", "route", "api", "backend"], frontendKey: "crm"           },
     { slug: "ai_agents",      name: "AI Agents",          alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "ai_agents"     },
+    { slug: "omni_agent_factory", name: "Omni Agent Factory", alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "omni_agent_factory" },
     { slug: "analytics",      name: "Analytics",          alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "analytics"     },
     { slug: "whatsapp",       name: "WhatsApp Business",  alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "whatsapp"      },
     { slug: "integrations",   name: "Integraciones",      alwaysOn: false, layers: ["menu", "route", "api", "backend"], frontendKey: "integrations"  },
@@ -1233,7 +1235,7 @@ controlCenterRouter.post("/onboard-wizard/create", async (req, res) => {
 
     // 3. Activar modulos (feature flags via module_configs)
     const MODULE_CATALOG_SLUGS = [
-      "crm", "quotes", "omni_accounting", "omni_tax", "ai_agents", "automations",
+      "crm", "quotes", "omni_accounting", "omni_tax", "ai_agents", "omni_agent_factory", "automations",
       "analytics", "integrations", "whatsapp", "omni_import_ai", "knowledge_base",
       "portal_cliente", "omni_docs", "omni_ads", "omni_marketing",
     ];

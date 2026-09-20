@@ -119,7 +119,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     // ── Plan-based module gating ───────────────────────────────────────────
     // Canonical list of all known module slugs.
     const ALL_MODULE_SLUGS = [
-      "crm", "ai_agents", "analytics", "integrations", "automations",
+      "crm", "ai_agents", "omni_agent_factory", "analytics", "integrations", "automations",
       "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
       "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
       "omni_security", "omni_docs", "quotes", "portal_cliente",
@@ -131,16 +131,16 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     const PLAN_MODULES: Record<string, readonly string[]> = {
       // ── Current plans ─────────────────────────────────────────────────────
       starter:         ["crm", "whatsapp", "omni_marketing", "knowledge_base",
-                        "omni_accounting", "ai_agents", "quotes", "portal_cliente"],
+                        "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente"],
       professional:    ["crm", "whatsapp", "omni_marketing", "knowledge_base",
-                        "omni_accounting", "ai_agents", "quotes", "portal_cliente",
+                        "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente",
                         "automations", "integrations", "analytics", "omni_docs"],
       business:        ALL_MODULE_SLUGS,
       enterprise:      ALL_MODULE_SLUGS,
       enterprise_plus: ALL_MODULE_SLUGS,
       // ── Legacy plan names (backward compat) ───────────────────────────────
       free:            ["crm"],
-      growth:          ["crm", "ai_agents", "analytics", "integrations", "automations", "omni_marketing"],
+      growth:          ["crm", "ai_agents", "omni_agent_factory", "analytics", "integrations", "automations", "omni_marketing"],
       scale:           ALL_MODULE_SLUGS,
     };
 

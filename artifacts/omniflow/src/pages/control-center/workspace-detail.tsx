@@ -79,11 +79,11 @@ const ACTION_LABELS: Record<string, string> = {
 const MODULE_NAMES: Record<string, string> = {
   crm: "CRM", whatsapp: "WhatsApp Business", omni_import_ai: "Omni Import AI",
   omni_docs: "Omni Docs", omni_security: "Omni Security", omni_marketing: "Omni Marketing",
-  analytics: "Analytics", automations: "Automations", ai_agents: "AI Agents",
+  analytics: "Analytics", automations: "Automations", ai_agents: "AI Agents", omni_agent_factory: "Omni Agent Factory",
 };
 const MODULE_ICONS: Record<string, string> = {
   crm: "🏢", whatsapp: "💬", omni_import_ai: "🤖", omni_docs: "📄",
-  omni_security: "🔒", omni_marketing: "📣", analytics: "📊", automations: "⚡", ai_agents: "🧠",
+  omni_security: "🔒", omni_marketing: "📣", analytics: "📊", automations: "⚡", ai_agents: "🧠", omni_agent_factory: "🏭",
 };
 
 function EditNameModal({ id, name, onClose }: { id: number; name: string; onClose: () => void }) {

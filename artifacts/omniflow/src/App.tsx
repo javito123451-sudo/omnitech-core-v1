@@ -471,7 +471,7 @@ function AppRoutes() {
       <Route path="/agents/:id">
         <ProtectedRoute>
           <MainLayout>
-            <ModuleGuard moduleKey="ai_agents">
+            <ModuleGuard moduleKey="omni_agent_factory">
               <AgentDetailPage />
             </ModuleGuard>
           </MainLayout>
@@ -480,7 +480,7 @@ function AppRoutes() {
       <Route path="/agents">
         <ProtectedRoute>
           <MainLayout>
-            <ModuleGuard moduleKey="ai_agents">
+            <ModuleGuard moduleKey="omni_agent_factory">
               <AgentsPage />
             </ModuleGuard>
           </MainLayout>
