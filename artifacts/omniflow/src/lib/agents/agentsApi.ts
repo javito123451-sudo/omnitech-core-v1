@@ -9,6 +9,8 @@
 //   GET  /api/agents/credits/balance  agents.read   → CreditsBalance
 //   GET  /api/agents/credits          agents.read   → CreditsDashboard (vista de cliente: sin tokens ni USD)
 //   GET  /api/agents/defaults         agents.read   → DefaultAgentsResponse
+//   PUT  /api/agents/:id/draft        agents.write  → AgentVersion (guarda el borrador; ver SaveDraftInput)
+//   PATCH /api/agents/:id             agents.write  → Agent (nombre, descripción, avatar)
 //   POST /api/agents/:id/publish      agents.publish→ PublishAgentResponse
 //   POST /api/agents/:id/simulate     agents.read   → SimulationResult (gratis: no llama a ningún proveedor)
 // Nunca se envía `?technical=1`: es un modo técnico para administradores.
@@ -18,6 +20,7 @@ import { AgentsApiError } from "./agentErrors";
 import type {
   AgentDetailResponse, AgentListResponse, CreateAgentInput, CreateAgentResponse,
   CreditsBalance, CreditsDashboard, DefaultAgentsResponse, PublishAgentResponse, SimulateAgentInput, SimulationResult,
+  Agent, AgentVersion, SaveDraftInput, UpdateAgentMetaInput,
 } from "./types";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -84,6 +87,12 @@ export const agentsApi = {
   creditsBalance: (signal?: AbortSignal) => request<CreditsBalance>("/credits/balance", { signal }),
   credits:        (signal?: AbortSignal) => request<CreditsDashboard>("/credits", { signal }),
   defaults:       (signal?: AbortSignal) => request<DefaultAgentsResponse>("/defaults", { signal }),
+  updateDraft:    (id: number, input: SaveDraftInput) => request<AgentVersion>(`/${id}/draft`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  }),
+  updateMeta:     (id: number, input: UpdateAgentMetaInput) => request<Agent>(`/${id}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  }),
   publish:        (id: number) => request<PublishAgentResponse>(`/${id}/publish`, { method: "POST" }),
   simulate:       (id: number, input: SimulateAgentInput) => request<SimulationResult>(`/${id}/simulate`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),

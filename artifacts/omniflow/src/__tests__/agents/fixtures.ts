@@ -1,6 +1,11 @@
 // Datos de prueba con la forma real de las respuestas del backend (agentService / simulator).
 import type { Agent, AgentConfig, AgentVersion, SimulationResult } from "@/lib/agents/types";
 
+// jsdom no trae ResizeObserver y los Checkbox de Radix dentro de un <form> lo necesitan (en un navegador real existe).
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+}
+
 export const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 

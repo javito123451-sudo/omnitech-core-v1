@@ -9,6 +9,8 @@
 // y los generales de la API (permission_denied, module_disabled, 404 de agente, validación…).
 // Ninguno de los estructurados significa que se haya cobrado algo.
 
+import type { ValidationIssue } from "./types";
+
 export type AgentErrorKind =
   | "credits" | "limit" | "duplicate" | "reference" | "budget" | "provider"
   | "permission" | "module" | "not_found" | "validation" | "conflict" | "auth" | "network" | "server" | "unknown";
@@ -149,4 +151,18 @@ export function errorProblems(err: unknown): string[] {
   if (!(err instanceof AgentsApiError) || !err.body || typeof err.body !== "object") return [];
   const p = (err.body as Record<string, unknown>)["problems"];
   return Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : [];
+}
+
+/** Incidencias por campo de un 400 de validación (zod): `{ issues: [{ path, message }] }`. */
+export function errorIssues(err: unknown): ValidationIssue[] {
+  if (!(err instanceof AgentsApiError) || !err.body || typeof err.body !== "object") return [];
+  const raw = (err.body as Record<string, unknown>)["issues"];
+  if (!Array.isArray(raw)) return [];
+  const out: ValidationIssue[] = [];
+  for (const i of raw) {
+    if (!i || typeof i !== "object") continue;
+    const { path, message } = i as Record<string, unknown>;
+    if (Array.isArray(path) && typeof message === "string") out.push({ path: path.filter((p): p is string | number => typeof p === "string" || typeof p === "number"), message });
+  }
+  return out;
 }

@@ -193,3 +193,28 @@ export interface SimulationResult {
   notes:  string[];
   denied: Array<{ toolId: string; reason: string }>;
 }
+
+/**
+ * PUT /api/agents/:id/draft (agents.write) → agentService.saveDraft. Devuelve la versión guardada (AgentVersion).
+ * `config` es PARCIAL: se valida con agentConfigSchema.partial() y se mezcla a nivel de SECCIÓN (`{...base, ...patch}`),
+ * es decir, cada sección enviada sustituye a la anterior completa y las no enviadas se conservan.
+ * Con borrador: se actualiza ese borrador. Sin borrador: se crea una versión nueva (nº + 1) a partir de la última.
+ * Un agente archivado responde 409; published/paused sí se pueden editar (siempre sobre un borrador).
+ */
+export interface SaveDraftInput {
+  config: Partial<AgentConfig>;
+  notes?: string | null;
+}
+
+/** PATCH /api/agents/:id (agents.write) → devuelve el Agent actualizado. Solo estos campos los usa el Builder. */
+export interface UpdateAgentMetaInput {
+  name?:        string;
+  description?: string | null;
+  avatarUrl?:   string | null;
+}
+
+/** Incidencia de validación de zod que el backend devuelve en un 400: `{ error: "Configuración no válida.", issues }`. */
+export interface ValidationIssue {
+  path:    Array<string | number>;
+  message: string;
+}

@@ -8,7 +8,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOrg } from "@/lib/orgContext";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { agentsApi } from "./agentsApi";
-import type { CreateAgentInput, SimulateAgentInput } from "./types";
+import { AgentsApiError } from "./agentErrors";
+import type { AgentVersion, CreateAgentInput, SimulateAgentInput, SaveDraftInput, UpdateAgentMetaInput } from "./types";
 
 export const agentKeys = {
   list:     (ws: number | null)             => ["agents", ws] as const,
@@ -96,4 +97,47 @@ export function usePublishAgent(agentId: number) {
 /** Simulación (gratis, sin proveedor, sin créditos): no modifica nada, por eso no invalida ninguna consulta. */
 export function useSimulateAgent(agentId: number) {
   return useMutation({ mutationFn: (input: SimulateAgentInput) => agentsApi.simulate(agentId, input) });
+}
+
+export interface SaveAgentInput {
+  /** PATCH /:id — null si no cambió nada de nombre/descripción/avatar. */
+  meta:   UpdateAgentMetaInput | null;
+  /** PUT /:id/draft — null si no cambió ninguna sección de la configuración. */
+  config: SaveDraftInput | null;
+}
+
+/** El primer paso se guardó y el segundo falló: se dice qué quedó guardado para no perder información. */
+export class PartialSaveError extends Error {
+  constructor(readonly saved: "config", readonly cause: AgentsApiError) {
+    super(cause.message);
+    this.name = "PartialSaveError";
+  }
+}
+
+/**
+ * Guardar el Builder. Usa solo los endpoints confirmados: PUT /:id/draft (configuración) y PATCH /:id (nombre,
+ * descripción, avatar), en ese orden y solo si hay algo que enviar. Devuelve la versión guardada (o null). Tanto si
+ * sale bien como mal se invalida el detalle de ESTE agente y la lista de ESTE workspace: no se toca nada más.
+ */
+export function useSaveAgent(agentId: number) {
+  const ws = useActiveWorkspaceId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: SaveAgentInput): Promise<{ version: AgentVersion | null }> => {
+      let version: AgentVersion | null = null;
+      if (input.config) version = await agentsApi.updateDraft(agentId, input.config);
+      if (input.meta) {
+        try { await agentsApi.updateMeta(agentId, input.meta); }
+        catch (err) {
+          if (version && err instanceof AgentsApiError) throw new PartialSaveError("config", err);
+          throw err;
+        }
+      }
+      return { version };
+    },
+    onSettled: () => Promise.all([
+      qc.invalidateQueries({ queryKey: agentKeys.detail(ws, agentId) }),
+      qc.invalidateQueries({ queryKey: agentKeys.list(ws) }),
+    ]),
+  });
 }
