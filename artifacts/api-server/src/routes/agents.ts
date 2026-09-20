@@ -23,7 +23,10 @@ import { listLedger, getAvailable } from "../credits/creditService";
 import { getDashboard } from "../credits/reporting";
 import { getAgentUsage } from "../agents/usageService";
 import { toApiError } from "../ai-gateway/apiErrors";
-import { ensurePricingLoaded } from "../ai-gateway/pricingService";
+import { ensurePricingLoaded, getPricingReport } from "../ai-gateway/pricingService";
+import { isProviderAvailable, PROVIDER_CONFIG } from "../ai-gateway/providerRouter";
+import { buildModelCatalog, buildToolCatalog, listKnowledgeCatalog } from "../agents/catalogService";
+import { TOOL_REGISTRY } from "../agents/toolRegistry";
 import { stripTechnical } from "../credits/customerView";
 import { listPacks } from "../credits/packService";
 
@@ -92,6 +95,34 @@ agentsRouter.post("/", requirePermission("agents.write"), async (req, res) => {
 // ── Rutas fijas (van antes de /:id) ──────────────────────────────────────────
 
 agentsRouter.get("/scenarios", requirePermission("agents.read"), (_req, res) => { res.json(SIMULATION_SCENARIOS); });
+
+// ── Catálogos de solo lectura (fuentes existentes; ver agents/catalogService.ts) ─────────────────────
+// Son descriptivos: estar en el catálogo no da acceso a nada. El acceso efectivo de un agente a una tool lo calcula
+// resolveToolAccess en cada ejecución. Solo agents.read (sin exigir permisos de CRM ni de ai.*).
+
+// Tools que un agente puede declarar: TOOL_REGISTRY ∩ Skill Engine. Global (código), igual para todos los workspaces.
+agentsRouter.get("/catalog/tools", requirePermission("agents.read"), (_req, res) => {
+  try { res.json(buildToolCatalog(TOOL_REGISTRY, listSkills())); } catch (err) { fail(res, err); }
+});
+
+// Providers implementados y modelos con precio resoluble (getPricingReport: ai_model_pricing vigente + valores heredados).
+// Sin precios, claves ni variables de entorno.
+agentsRouter.get("/catalog/models", requirePermission("agents.read"), async (_req, res) => {
+  try {
+    res.json(buildModelCatalog({ providerConfig: PROVIDER_CONFIG, isAvailable: isProviderAvailable, report: await getPricingReport() }));
+  } catch (err) { fail(res, err); }
+});
+
+// Knowledge del workspace activo, solo id/título/categoría (nunca el contenido). No reutiliza GET /api/knowledge-base porque
+// ese endpoint exige el módulo knowledge_base y el permiso ai.read (el runtime del agente no exige ninguno de los dos) y
+// devuelve los documentos completos.
+agentsRouter.get("/catalog/knowledge", requirePermission("agents.read"), async (req, res) => {
+  try {
+    // SUPER_ADMIN pasa el permiso pero NO obtiene datos de otros workspaces: sin workspace activo no hay catálogo.
+    if (!req.orgId) { res.status(400).json({ error: "no_org_context", message: "Selecciona un workspace para ver su conocimiento." }); return; }
+    res.json(await listKnowledgeCatalog(req.orgId));
+  } catch (err) { fail(res, err); }
+});
 
 // Panel de créditos del workspace: saldo, incluidos, consumo, por agente/modelo/funcionalidad, series y alertas.
 agentsRouter.get("/credits", requirePermission("agents.read"), async (req, res) => {
