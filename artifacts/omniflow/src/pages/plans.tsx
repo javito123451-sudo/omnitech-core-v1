@@ -34,7 +34,7 @@ export const PLANS: PlanInfo[] = [
     icon: Zap,
     color: "blue",
     users: 3,
-    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente"],
   },
   {
     key: "professional",
@@ -44,7 +44,7 @@ export const PLANS: PlanInfo[] = [
     icon: Rocket,
     color: "violet",
     users: 10,
-    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs"],
   },
   {
     key: "business",
@@ -54,7 +54,7 @@ export const PLANS: PlanInfo[] = [
     icon: Crown,
     color: "amber",
     users: 25,
-    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
   },
   {
     key: "enterprise",
@@ -64,7 +64,7 @@ export const PLANS: PlanInfo[] = [
     icon: Building2,
     color: "rose",
     users: 999,
-    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
   },
 ];
 
@@ -72,6 +72,7 @@ const ALL_MODULES = [
   { key: "crm",            label: "CRM & Clientes",    icon: Users },
   { key: "quotes",         label: "Presupuestos",       icon: Sparkles },
   { key: "ai_agents",      label: "AI Agents",          icon: Brain },
+  { key: "omni_agent_factory", label: "Omni Agent Factory", icon: Brain },
   { key: "whatsapp",       label: "WhatsApp Business",  icon: MessageSquare },
   { key: "omni_marketing", label: "Marketing Hub",      icon: Shield },
   { key: "omni_accounting",label: "Contabilidad",       icon: Receipt },

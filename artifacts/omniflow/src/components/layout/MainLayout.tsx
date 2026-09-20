@@ -92,7 +92,7 @@ const sidebarGroups: NavGroup[] = [
     items: [
       { icon: Zap,      label: "Ava Autopilot",  href: "/automations",   moduleKey: "automations" },
       { icon: Sparkles, label: "Omni Import AI", href: "/import",        moduleKey: "omni_import_ai" },
-      { icon: Bot,      label: "Agentes",        href: "/agents",        moduleKey: "ai_agents" },
+      { icon: Bot,      label: "Agentes",        href: "/agents",        moduleKey: "omni_agent_factory" },
       { icon: Brain,    label: "Memoria",        href: "/memory",        moduleKey: "ai_agents" },
       { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base", moduleKey: "ai_agents" },
       { icon: Library,  label: "Manual",         href: "/manual" },
@@ -132,7 +132,7 @@ const moreItems: MoreItem[] = [
   { icon: Zap,             label: "Intelligence",    href: "/executive",      group: "Análisis",   moduleKey: "analytics" },
   { icon: BarChart3,       label: "Estadísticas",    href: "/statistics",     group: "Análisis",   moduleKey: "analytics" },
   { icon: Sparkles,        label: "Omni Import AI",  href: "/import",         group: "Sistema",    moduleKey: "omni_import_ai" },
-  { icon: Bot,             label: "Agentes",         href: "/agents",         group: "Sistema",    moduleKey: "ai_agents" },
+  { icon: Bot,             label: "Agentes",         href: "/agents",         group: "Sistema",    moduleKey: "omni_agent_factory" },
   { icon: Brain,           label: "Memoria",         href: "/memory",         group: "Sistema",    moduleKey: "ai_agents" },
   { icon: Library,         label: "Manual",          href: "/manual",         group: "Sistema" },
   { icon: Puzzle,          label: "Integraciones",   href: "/integrations",   group: "Sistema",    moduleKey: "integrations" },
