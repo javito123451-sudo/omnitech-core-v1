@@ -17,11 +17,11 @@
  */
 import { Router } from "express";
 import { randomBytes } from "crypto";
-import { db, orgIntegrationsTable, integrationEventsTable } from "@workspace/db";
+import { db, orgIntegrationsTable, integrationEventsTable, clientsTable } from "@workspace/db";
 import {
   fleetDriversTable, fleetVehiclesTable, fleetRoutesTable, fleetDeliveriesTable,
 } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { requirePermission } from "../middlewares/permissions";
 import { DeliveryProviderRegistry } from "../hub/deliveryProviderRegistry";
 import type { DeliveryStatusUpdate } from "../hub/deliveryStatusTypes";
@@ -30,6 +30,32 @@ export const fleetRouter = Router();
 export const fleetWebhookRouter = Router();
 
 const INTEGRATION_SLUG = "fleet-delivery-status";
+
+// Estados válidos por entidad (la columna es text libre: se validan aquí).
+export const DRIVER_STATUSES   = ["available", "on_route", "leave", "inactive"] as const;
+export const VEHICLE_STATUSES  = ["available", "on_route", "maintenance", "inactive"] as const;
+export const ROUTE_STATUSES    = ["pending", "in_progress", "completed", "cancelled"] as const;
+export const DELIVERY_STATUSES = ["pending", "en_route", "delivered", "failed", "incident"] as const;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const isOneOf = <T extends readonly string[]>(list: T, v: unknown): v is T[number] => typeof v === "string" && (list as readonly string[]).includes(v);
+
+/**
+ * Las referencias (conductor, vehículo, cliente) deben ser de ESTE workspace: sin esto un usuario podría enlazar una ruta
+ * con el conductor o el cliente de otro workspace. null/undefined = sin referencia (válido).
+ */
+async function badRef(orgId: number, refs: { driverId?: unknown; vehicleId?: unknown; clientId?: unknown }): Promise<string | null> {
+  const check = async (id: unknown, table: typeof fleetDriversTable | typeof fleetVehiclesTable | typeof clientsTable, code: string) => {
+    if (id === null || id === undefined) return null;
+    if (typeof id !== "number" || !Number.isInteger(id)) return code;
+    const t = table as typeof fleetDriversTable;
+    const [row] = await db.select({ id: t.id }).from(t).where(and(eq(t.id, id), eq(t.orgId, orgId)));
+    return row ? null : code;
+  };
+  return (await check(refs.driverId, fleetDriversTable, "driver_not_found"))
+    ?? (await check(refs.vehicleId, fleetVehiclesTable, "vehicle_not_found"))
+    ?? (await check(refs.clientId, clientsTable, "client_not_found"));
+}
 
 function publicBaseUrl(): string {
   return process.env.PUBLIC_URL || "https://www.omnitech-core.com";
@@ -90,6 +116,7 @@ fleetRouter.post("/drivers", requirePermission("fleet.write"), async (req, res) 
     name?: string; phone?: string; licenseNumber?: string; status?: string;
   };
   if (!name?.trim()) { res.status(400).json({ error: "name_required" }); return; }
+  if (status !== undefined && !isOneOf(DRIVER_STATUSES, status)) { res.status(400).json({ error: "invalid_status", allowed: DRIVER_STATUSES }); return; }
 
   const [row] = await db.insert(fleetDriversTable).values({
     orgId: req.orgId!, name: name.trim(), phone: phone ?? null,
@@ -101,6 +128,9 @@ fleetRouter.post("/drivers", requirePermission("fleet.write"), async (req, res) 
 fleetRouter.patch("/drivers/:id", requirePermission("fleet.write"), async (req, res) => {
   const id = Number(req.params["id"]);
   const { name, phone, licenseNumber, status, notes } = req.body as Record<string, unknown>;
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "invalid_id" }); return; }
+  if (status !== undefined && !isOneOf(DRIVER_STATUSES, status)) { res.status(400).json({ error: "invalid_status", allowed: DRIVER_STATUSES }); return; }
+  if (typeof name === "string" && !name.trim()) { res.status(400).json({ error: "name_required" }); return; }
 
   const [row] = await db.update(fleetDriversTable)
     .set({
@@ -135,6 +165,9 @@ fleetRouter.post("/vehicles", requirePermission("fleet.write"), async (req, res)
     itvExpiresAt?: string; insuranceExpiresAt?: string; status?: string;
   };
   if (!plate?.trim()) { res.status(400).json({ error: "plate_required" }); return; }
+  if (status !== undefined && !isOneOf(VEHICLE_STATUSES, status)) { res.status(400).json({ error: "invalid_status", allowed: VEHICLE_STATUSES }); return; }
+  const refError = await badRef(req.orgId!, { driverId });
+  if (refError) { res.status(400).json({ error: refError }); return; }
 
   try {
     const [row] = await db.insert(fleetVehiclesTable).values({
@@ -156,6 +189,10 @@ fleetRouter.post("/vehicles", requirePermission("fleet.write"), async (req, res)
 fleetRouter.patch("/vehicles/:id", requirePermission("fleet.write"), async (req, res) => {
   const id = Number(req.params["id"]);
   const { model, driverId, odometerKm, itvExpiresAt, insuranceExpiresAt, status, notes } = req.body as Record<string, unknown>;
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "invalid_id" }); return; }
+  if (status !== undefined && !isOneOf(VEHICLE_STATUSES, status)) { res.status(400).json({ error: "invalid_status", allowed: VEHICLE_STATUSES }); return; }
+  const refError = await badRef(req.orgId!, { driverId });
+  if (refError) { res.status(400).json({ error: refError }); return; }
 
   const [row] = await db.update(fleetVehiclesTable)
     .set({
@@ -194,6 +231,9 @@ fleetRouter.post("/routes", requirePermission("fleet.write"), async (req, res) =
     name?: string; date?: string; driverId?: number; vehicleId?: number; externalRouteId?: string;
   };
   if (!name?.trim() || !date) { res.status(400).json({ error: "name_and_date_required" }); return; }
+  if (!DATE_RE.test(date)) { res.status(400).json({ error: "invalid_date", expected: "YYYY-MM-DD" }); return; }
+  const refError = await badRef(req.orgId!, { driverId, vehicleId });
+  if (refError) { res.status(400).json({ error: refError }); return; }
 
   const [row] = await db.insert(fleetRoutesTable).values({
     orgId: req.orgId!, name: name.trim(), date,
@@ -206,6 +246,10 @@ fleetRouter.post("/routes", requirePermission("fleet.write"), async (req, res) =
 fleetRouter.patch("/routes/:id", requirePermission("fleet.write"), async (req, res) => {
   const id = Number(req.params["id"]);
   const { driverId, vehicleId, status, externalRouteId } = req.body as Record<string, unknown>;
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "invalid_id" }); return; }
+  if (status !== undefined && !isOneOf(ROUTE_STATUSES, status)) { res.status(400).json({ error: "invalid_status", allowed: ROUTE_STATUSES }); return; }
+  const refError = await badRef(req.orgId!, { driverId, vehicleId });
+  if (refError) { res.status(400).json({ error: refError }); return; }
 
   const [row] = await db.update(fleetRoutesTable)
     .set({
@@ -243,6 +287,9 @@ fleetRouter.post("/routes/:id/deliveries", requirePermission("fleet.write"), asy
   const [route] = await db.select().from(fleetRoutesTable)
     .where(and(eq(fleetRoutesTable.id, routeId), eq(fleetRoutesTable.orgId, orgId)));
   if (!route) { res.status(404).json({ error: "route_not_found" }); return; }
+  if (!address?.trim() && !externalDeliveryId?.trim()) { res.status(400).json({ error: "address_or_external_id_required" }); return; }
+  const refError = await badRef(orgId, { clientId });
+  if (refError) { res.status(400).json({ error: refError }); return; }
 
   const [row] = await db.insert(fleetDeliveriesTable).values({
     orgId, routeId, clientId: clientId ?? null,
@@ -308,46 +355,79 @@ fleetRouter.post("/provider", requirePermission("fleet.write"), async (req, res)
   res.json({ connected: true, providerSlug, webhookUrl: `${publicBaseUrl()}/api/fleet/webhook/${webhookSecret}` });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// WEBHOOK — público, recibe actualizaciones de estado desde la app de reparto
-// ═══════════════════════════════════════════════════════════════════════════
+type DeliveryRow = typeof fleetDeliveriesTable.$inferSelect;
 
-export async function applyDeliveryUpdate(orgId: number, update: DeliveryStatusUpdate): Promise<boolean> {
-  const [delivery] = await db.select().from(fleetDeliveriesTable)
-    .where(and(eq(fleetDeliveriesTable.orgId, orgId), eq(fleetDeliveriesTable.externalDeliveryId, update.externalDeliveryId)));
-
-  if (!delivery) return false;
-
+/**
+ * Cambia el estado de una entrega y mantiene los agregados de su ruta (completedStops / incidentStops). Solo ajusta la
+ * ruta si el estado realmente cambió (un evento reenviado no cuenta dos veces) y lo hace con incrementos en SQL, no con
+ * lectura-modificación-escritura, para que dos actualizaciones simultáneas no se pisen.
+ */
+async function setDeliveryStatus(delivery: DeliveryRow, status: string, opts: { occurredAt?: string | Date | null; note?: string | null } = {}) {
   const previousStatus = delivery.status;
   await db.update(fleetDeliveriesTable)
     .set({
-      status: update.status,
-      statusUpdatedAt: update.occurredAt ? new Date(update.occurredAt) : new Date(),
-      lastStatusNote: update.note ?? delivery.lastStatusNote,
+      status,
+      statusUpdatedAt: opts.occurredAt ? new Date(opts.occurredAt) : new Date(),
+      lastStatusNote: opts.note ?? delivery.lastStatusNote,
       updatedAt: new Date(),
     })
     .where(eq(fleetDeliveriesTable.id, delivery.id));
 
-  // Reajusta los agregados de la ruta solo si el estado realmente cambió,
-  // para no contar dos veces si el proveedor reenvía el mismo evento.
-  if (previousStatus !== update.status) {
-    const [route] = await db.select().from(fleetRoutesTable).where(eq(fleetRoutesTable.id, delivery.routeId));
-    if (route) {
-      const wasDelivered = previousStatus === "delivered";
-      const wasIncident  = previousStatus === "failed" || previousStatus === "incident";
-      const isDelivered  = update.status === "delivered";
-      const isIncident   = update.status === "failed" || update.status === "incident";
-
+  if (previousStatus !== status) {
+    const wasDelivered = previousStatus === "delivered";
+    const wasIncident  = previousStatus === "failed" || previousStatus === "incident";
+    const isDelivered  = status === "delivered";
+    const isIncident   = status === "failed" || status === "incident";
+    const dDelivered = (isDelivered ? 1 : 0) - (wasDelivered ? 1 : 0);
+    const dIncident  = (isIncident ? 1 : 0) - (wasIncident ? 1 : 0);
+    if (dDelivered !== 0 || dIncident !== 0) {
       await db.update(fleetRoutesTable).set({
-        completedStops: route.completedStops + (isDelivered ? 1 : 0) - (wasDelivered ? 1 : 0),
-        incidentStops:  route.incidentStops + (isIncident ? 1 : 0) - (wasIncident ? 1 : 0),
+        completedStops: sql`${fleetRoutesTable.completedStops} + ${dDelivered}`,
+        incidentStops:  sql`${fleetRoutesTable.incidentStops} + ${dIncident}`,
         updatedAt: new Date(),
-      }).where(eq(fleetRoutesTable.id, route.id));
+      }).where(and(eq(fleetRoutesTable.id, delivery.routeId), eq(fleetRoutesTable.orgId, delivery.orgId)));
     }
   }
+}
 
+export async function applyDeliveryUpdate(orgId: number, update: DeliveryStatusUpdate): Promise<boolean> {
+  const [delivery] = await db.select().from(fleetDeliveriesTable)
+    .where(and(eq(fleetDeliveriesTable.orgId, orgId), eq(fleetDeliveriesTable.externalDeliveryId, update.externalDeliveryId)));
+  if (!delivery) return false;
+  await setDeliveryStatus(delivery, update.status, { occurredAt: update.occurredAt, note: update.note });
   return true;
 }
+
+// Cambio manual de estado / datos de una entrega (sin app de reparto conectada, o para corregir una incidencia).
+fleetRouter.patch("/routes/:id/deliveries/:deliveryId", requirePermission("fleet.write"), async (req, res) => {
+  const routeId = Number(req.params["id"]);
+  const deliveryId = Number(req.params["deliveryId"]);
+  const orgId = req.orgId!;
+  if (!Number.isInteger(routeId) || !Number.isInteger(deliveryId)) { res.status(400).json({ error: "invalid_id" }); return; }
+  const { status, note, address, recipientName, recipientPhone } = req.body as Record<string, unknown>;
+  if (status !== undefined && !isOneOf(DELIVERY_STATUSES, status)) { res.status(400).json({ error: "invalid_status", allowed: DELIVERY_STATUSES }); return; }
+
+  const [delivery] = await db.select().from(fleetDeliveriesTable)
+    .where(and(eq(fleetDeliveriesTable.id, deliveryId), eq(fleetDeliveriesTable.routeId, routeId), eq(fleetDeliveriesTable.orgId, orgId)));
+  if (!delivery) { res.status(404).json({ error: "not_found" }); return; }
+
+  const fields = {
+    ...(typeof address === "string" ? { address } : {}),
+    ...(typeof recipientName === "string" ? { recipientName } : {}),
+    ...(typeof recipientPhone === "string" ? { recipientPhone } : {}),
+  };
+  if (Object.keys(fields).length > 0) {
+    await db.update(fleetDeliveriesTable).set({ ...fields, updatedAt: new Date() }).where(eq(fleetDeliveriesTable.id, delivery.id));
+  }
+  if (status !== undefined) await setDeliveryStatus(delivery, status, { note: typeof note === "string" ? note : null });
+
+  const [row] = await db.select().from(fleetDeliveriesTable).where(eq(fleetDeliveriesTable.id, delivery.id));
+  res.json(row);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEBHOOK — público, recibe actualizaciones de estado desde la app de reparto
+// ═══════════════════════════════════════════════════════════════════════════
 
 fleetWebhookRouter.post("/webhook/:secret", (req, res) => {
   // Respuesta inmediata — mismo contrato que /telegram/webhook: la app de
