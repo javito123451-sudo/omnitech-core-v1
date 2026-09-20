@@ -18,7 +18,8 @@ import { db, organizationsTable, type AgentConfig } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { Message, ToolDefinition } from "../ai/types";
 import { callAI, type GatewayResult } from "../ai-gateway/gateway";
-import { createProposal, consumeProposal } from "../ava-core/actions/confirmationStore";
+import { dbProposalStore, type ProposalStore } from "./proposalStore";
+import { argKeys, fingerprint, noopAudit, type AuditFn, type LiveAuditActor } from "./liveAudit";
 import { executeSkill, getOpenAIFunctions } from "../skills";
 import { AgentError, readConfig, resolveRunTarget, type RunTargetMode } from "./agentService";
 import { resolveToolAccess } from "./authorization";
@@ -41,6 +42,8 @@ export interface RunRequest {
   versionId?: number;
   message:   string;
   history?:  Array<{ role: "user" | "assistant"; content: string }>;
+  /** Identidad INTERNA de la ejecución (la genera el servidor). Enlaza auditoría y propuestas. */
+  runId?:    string;
 }
 
 export interface AgentProposal {
@@ -71,7 +74,13 @@ export interface RunnerDeps {
   getOrgPlan:     (orgId: number) => Promise<string | null>;
   toolSchemas:    () => ToolDefinition[];
   moduleEnabled?: (orgId: number, slug: string) => Promise<boolean>;
+  /** Propuestas de acción pendientes de confirmación (persistentes y atómicas). */
+  proposals:      ProposalStore;
+  /** Auditoría LIVE. Por defecto no hace nada: las rutas inyectan el sumidero real. */
+  audit?:         AuditFn;
 }
+
+const auditActor = (a: RunActor): LiveAuditActor => ({ clerkId: a.userClerkId, userId: a.userId, orgId: a.orgId, role: a.orgRole });
 
 async function getOrgPlan(orgId: number): Promise<string | null> {
   const [org] = await db.select({ plan: organizationsTable.plan }).from(organizationsTable).where(eq(organizationsTable.id, orgId));
@@ -81,9 +90,9 @@ async function getOrgPlan(orgId: number): Promise<string | null> {
 export const defaultRunnerDeps: RunnerDeps = {
   callAI, executeSkill, resolveTarget: resolveRunTarget, loadKnowledge, getOrgPlan,
   toolSchemas: () => getOpenAIFunctions() as ToolDefinition[],
+  proposals: dbProposalStore,
 };
 
-const PENDING_PREFIX = "agent_tool:";
 
 function parseArgs(json: string): Record<string, unknown> {
   try { const v = JSON.parse(json); return v && typeof v === "object" ? v as Record<string, unknown> : {}; } catch { return {}; }
@@ -93,6 +102,9 @@ export async function runAgent(req: RunRequest, deps: RunnerDeps = defaultRunner
   const { actor } = req;
   const { agent, version } = await deps.resolveTarget(actor.orgId, req.agentId, req.mode, req.versionId);
   const config: AgentConfig = readConfig(version);
+  const audit = deps.audit ?? noopAudit;
+  const who = auditActor(actor);
+  await audit({ action: "agent_run_started", actor: who, agentId: agent.id, mode: req.mode, versionNumber: version.versionNumber, runId: req.runId, success: true });
 
   const access = await resolveToolAccess({ config, orgId: actor.orgId, orgRole: actor.orgRole, platformRole: actor.platformRole, moduleEnabled: deps.moduleEnabled });
   const allowed = new Map([...access.read, ...access.action].map((t) => [t.id, t]));
@@ -164,17 +176,23 @@ export async function runAgent(req: RunRequest, deps: RunnerDeps = defaultRunner
           meta: { source: "agent_factory", agentId: agent.id },
         });
         toolsUsed.push(toolId);
+        await audit({
+          action: "tool_read_executed", actor: who, agentId: agent.id, mode: req.mode, versionNumber: version.versionNumber, runId: req.runId,
+          toolId, success: out.success, reason: out.success ? undefined : "skill_error", details: { argKeys: argKeys(args), argsHash: fingerprint(args) },
+        });
         respond(out.success ? safeJson(out.result) : { error: out.error ?? "Error al ejecutar la herramienta." });
         continue;
       }
 
       // Action tools never execute on the model's say-so: a human confirms first.
       const testOnly = req.mode === "testing";
-      const { token, expiresAt } = createProposal(
-        `${PENDING_PREFIX}${agent.id}:${toolId}`,
-        { toolId, args, agentId: agent.id, agentVersionId: version.id, testOnly },
-        actor.orgId, actor.userId,
-      );
+      const { token, expiresAt } = await deps.proposals.create({
+        orgId: actor.orgId, userId: actor.userId, agentId: agent.id, agentVersionId: version.id, toolId, args, testOnly, runId: req.runId ?? null,
+      });
+      await audit({
+        action: "tool_proposed", actor: who, agentId: agent.id, mode: req.mode, versionNumber: version.versionNumber, runId: req.runId,
+        toolId, success: true, details: { argKeys: argKeys(args), argsHash: fingerprint(args), testOnly, expiresAt },
+      });
       proposals.push({ toolId, params: args, summary: `${toolId}(${JSON.stringify(args)})`, confirmToken: token, expiresAt, testOnly });
       respond({ proposed: true, requiresConfirmation: true, note: testOnly ? "Prueba: no se ejecutará." : "Pendiente de confirmación del usuario." });
     }
@@ -196,39 +214,57 @@ export interface ConfirmDeps {
   executeSkill:  typeof executeSkill;
   resolveTarget: typeof resolveRunTarget;
   moduleEnabled?: (orgId: number, slug: string) => Promise<boolean>;
+  proposals:     ProposalStore;
+  audit?:        AuditFn;
 }
 
-export const defaultConfirmDeps: ConfirmDeps = { executeSkill, resolveTarget: resolveRunTarget };
+export const defaultConfirmDeps: ConfirmDeps = { executeSkill, resolveTarget: resolveRunTarget, proposals: dbProposalStore };
 
 /**
- * Executes a proposal the model made — only if the token is valid (single-use,
- * scoped to this exact org + user, not expired), the agent is STILL published,
- * and authorization passes AGAIN right now. A manipulated or borrowed token,
- * a TESTING proposal, or a proposal for an agent that was paused meanwhile,
- * never executes.
+ * Ejecuta una propuesta del modelo — solo si el token es válido: de un solo uso (consumo atómico en la base de datos),
+ * del mismo workspace + usuario + agente, y sin caducar (5 min) — y solo si el agente SIGUE publicado y la autorización
+ * (herramienta declarada ∩ rol actual del usuario ∩ módulo) se cumple AHORA. Un token ajeno, manipulado, de una prueba o de
+ * un agente pausado nunca ejecuta. El cliente no envía parámetros: se usan los que guardó el servidor al proponer.
  */
 export async function confirmAgentAction(
   actor: RunActor, agentId: number, confirmToken: string, deps: ConfirmDeps = defaultConfirmDeps,
 ) {
-  const entry = consumeProposal(confirmToken, actor.orgId, actor.userId);
-  if (!entry || !entry.actionId.startsWith(`${PENDING_PREFIX}${agentId}:`)) {
+  const audit = deps.audit ?? noopAudit;
+  const who = auditActor(actor);
+
+  const entry = await deps.proposals.consume(confirmToken, { orgId: actor.orgId, userId: actor.userId, agentId });
+  if (!entry) {
+    await audit({ action: "tool_action_failed", actor: who, agentId, mode: "live", success: false, reason: "confirmation_invalid" });
     throw new AgentError(409, "La confirmación no es válida, ya se usó o ha caducado.");
   }
-  const { toolId, args, testOnly } = entry.params as { toolId: string; args: Record<string, unknown>; testOnly: boolean };
-  if (testOnly) throw new AgentError(409, "Las propuestas de una prueba no se ejecutan.");
+  const { toolId, args, testOnly } = entry;
+  const fail = async (reason: string, err: AgentError, versionNumber?: number): Promise<never> => {
+    await audit({ action: "tool_action_failed", actor: who, agentId, mode: "live", versionNumber, runId: entry.runId, toolId, success: false, reason, details: { argKeys: argKeys(args), argsHash: fingerprint(args) } });
+    throw err;
+  };
+  if (testOnly) return fail("test_only", new AgentError(409, "Las propuestas de una prueba no se ejecutan."));
 
-  const { agent, version } = await deps.resolveTarget(actor.orgId, agentId, "live"); // 409 if paused/archived/unpublished
+  let target: Awaited<ReturnType<typeof resolveRunTarget>>;
+  try { target = await deps.resolveTarget(actor.orgId, agentId, "live"); }   // 409 if paused/archived/unpublished
+  catch (err) { return fail("agent_state", err instanceof AgentError ? err : new AgentError(409, String(err))); }
+  const { agent, version } = target;
+
   const config = readConfig(version);
   const access = await resolveToolAccess({ config, orgId: actor.orgId, orgRole: actor.orgRole, platformRole: actor.platformRole, moduleEnabled: deps.moduleEnabled });
   const tool = access.action.find((t) => t.id === toolId);
   if (!tool || getAgentTool(toolId)?.kind !== "action") {
-    throw new AgentError(409, `La acción '${toolId}' ya no está autorizada para este agente o usuario.`);
+    return fail("not_authorized", new AgentError(409, `La acción '${toolId}' ya no está autorizada para este agente o usuario.`), version.versionNumber);
   }
 
   const out = await deps.executeSkill(toolId, args, actor.orgId, {
     channel: "internal", user: { id: actor.userClerkId, name: actor.userClerkId },
     meta: { source: "agent_factory_confirmed", agentId: agent.id },
   });
-  if (!out.success) throw new AgentError(422, out.error ?? "No se pudo ejecutar la acción.");
+  if (!out.success) return fail("skill_error", new AgentError(422, out.error ?? "No se pudo ejecutar la acción."), version.versionNumber);
+
+  await audit({
+    action: "tool_action_executed", actor: who, agentId: agent.id, mode: "live", versionNumber: version.versionNumber, runId: entry.runId,
+    toolId, success: true, details: { argKeys: argKeys(args), argsHash: fingerprint(args) },
+  });
   return { agentId: agent.id, versionNumber: version.versionNumber, toolId, args, result: safeJson(out.result) };
 }

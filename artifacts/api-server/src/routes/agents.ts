@@ -17,7 +17,9 @@ import {
 import { resolveToolAccess } from "../agents/authorization";
 import { loadKnowledge } from "../agents/knowledge";
 import { simulateAgent, SIMULATION_SCENARIOS } from "../agents/simulator";
-import { confirmAgentAction, defaultRunnerDeps, runAgent, type RunActor } from "../agents/agentRunner";
+import { confirmAgentAction, defaultConfirmDeps, defaultRunnerDeps, type RunActor } from "../agents/agentRunner";
+import { defaultLiveRunDeps, executeRun, IDEMPOTENCY_KEY_PATTERN, LiveRunRejection } from "../agents/liveRunService";
+import { makeAudit, type LiveAuditActor } from "../agents/liveAudit";
 import { clearDefaultAgent, isDefaultKey, listDefaults, setDefaultAgent } from "../agents/defaultAgents";
 import { listLedger, getAvailable } from "../credits/creditService";
 import { getDashboard } from "../credits/reporting";
@@ -49,20 +51,51 @@ function agentId(req: Request): number | null {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-function fail(res: Response, err: unknown) {
+/** Estado HTTP y cuerpo de un error de la Fábrica. Una sola traducción para las rutas y para el registro de auditoría. */
+function errorToHttp(err: unknown): { status: number; body: Record<string, unknown> } {
+  if (err instanceof LiveRunRejection) return { status: err.status, body: { status: err.code, message: err.message, ...err.extra } };
   if (err instanceof AgentError) {
-    res.status(err.status).json({ error: err.message, problems: err.problems, ...(err.details.length ? { problemDetails: err.details } : {}) });
-    return;
+    return { status: err.status, body: { error: err.message, problems: err.problems, ...(err.details.length ? { problemDetails: err.details } : {}) } };
   }
   // Controlled failures of a paid operation (INSUFFICIENT_CREDITS, limits, budget,
   // provider…): a structured status, never a generic 500, and nothing was charged.
   const structured = toApiError(err);
-  if (structured) { res.status(structured.http).json(structured.body); return; }
+  if (structured) return { status: structured.http, body: structured.body as Record<string, unknown> };
   if (err && typeof err === "object" && "issues" in err) {
-    res.status(400).json({ error: "Configuración no válida.", issues: (err as { issues: unknown }).issues });
-    return;
+    return { status: 400, body: { error: "Configuración no válida.", issues: (err as { issues: unknown }).issues } };
   }
-  res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
+  return { status: 500, body: { error: String(err instanceof Error ? err.message : err) } };
+}
+
+function fail(res: Response, err: unknown) {
+  const { status, body } = errorToHttp(err);
+  if (err instanceof LiveRunRejection && typeof err.extra["retryAfterSeconds"] === "number") res.setHeader("Retry-After", String(err.extra["retryAfterSeconds"]));
+  res.status(status).json(body);
+}
+
+/** Motivo estable de un error de ejecución para la auditoría. */
+function failureReason(err: unknown): { status: number; reason: string } {
+  const { status, body } = errorToHttp(err);
+  const code = typeof body["status"] === "string" ? String(body["status"]).toLowerCase() : null;
+  const reason = code ?? (err instanceof AgentError ? (status === 404 ? "agent_not_found" : status === 409 ? "agent_state" : "invalid_agent") : "internal_error");
+  return { status, reason };
+}
+
+const auditActorOf = (req: Request): LiveAuditActor => ({
+  clerkId: req.clerkUserId!, userId: req.userId!, orgId: req.orgId!, role: req.effectiveRole ?? req.orgRole ?? "none",
+});
+const auditSink = (req: Request) => makeAudit({ ip: req.ip, userAgent: req.headers["user-agent"] as string | undefined });
+
+/** LIVE exige agents.execute (agents.read solo ve y simula; agents.write edita y prueba). Deja constancia del rechazo. */
+async function denyIfCannotExecute(req: Request, res: Response, agent: number | null, mode: "live"): Promise<boolean> {
+  if (hasPermission(req, "agents.execute")) return false;
+  await auditSink(req)({ action: "agent_run_denied", actor: auditActorOf(req), agentId: agent, mode, success: false, reason: "permission_denied", details: { permission: "agents.execute", endpoint: `${req.method} ${req.path}` } });
+  res.status(403).json({
+    error: "permission_denied",
+    message: "Ejecutar agentes en LIVE requiere el permiso agents.execute. Contacta con tu administrador.",
+    permission: "agents.execute",
+  });
+  return true;
 }
 
 function audit(req: Request, action: string, id: number | string, extra: Record<string, unknown> = {}) {
@@ -318,6 +351,9 @@ agentsRouter.post("/:id/simulate", requirePermission("agents.read"), async (req,
 });
 
 // TESTING / LIVE: IA real a través del AI Gateway (consume créditos).
+//   simulate → agents.read · testing → agents.write · LIVE → agents.execute (permiso propio).
+// Idempotency-Key (opcional): un reintento con la misma clave y el mismo contenido devuelve el resultado ya calculado sin volver
+// a llamar al proveedor ni cobrar (ver agents/liveRunService.ts). LIVE tiene además límite de uso por usuario y por workspace.
 agentsRouter.post("/:id/run", requirePermission("agents.read"), async (req, res) => {
   try {
     const id = agentId(req);
@@ -326,9 +362,18 @@ agentsRouter.post("/:id/run", requirePermission("agents.read"), async (req, res)
     const mode = b.mode === "live" ? "live" : b.mode === "testing" ? "testing" : null;
     if (!mode) { res.status(400).json({ error: "mode debe ser 'testing' o 'live'." }); return; }
     if (typeof b.message !== "string" || !b.message.trim()) { res.status(400).json({ error: "message es requerido" }); return; }
+    if (mode === "live" && await denyIfCannotExecute(req, res, id, "live")) return;
     // Probar borradores con IA real es trabajo de quien edita agentes.
     if (mode === "testing" && !hasPermission(req, "agents.write")) {
+      await auditSink(req)({ action: "agent_run_denied", actor: auditActorOf(req), agentId: id, mode: "testing", success: false, reason: "permission_denied", details: { permission: "agents.write" } });
       res.status(403).json({ error: "permission_denied", message: "Probar un agente con IA real requiere el permiso agents.write." });
+      return;
+    }
+
+    const rawKey = req.header("idempotency-key");
+    const idempotencyKey = rawKey === undefined ? null : rawKey.trim();
+    if (idempotencyKey !== null && !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+      res.status(400).json({ error: "invalid_idempotency_key", message: "Idempotency-Key debe tener entre 8 y 128 caracteres: letras, números, . _ : -" });
       return;
     }
 
@@ -337,35 +382,30 @@ agentsRouter.post("/:id/run", requirePermission("agents.read"), async (req, res)
           .filter((m): m is { role: "user" | "assistant"; content: string } => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
       : [];
 
-    const result = await runAgent({
+    const outcome = await executeRun({
       actor: actorOf(req), agentId: id, mode, message: b.message.trim(), history,
-      versionId: typeof b.versionId === "number" ? b.versionId : undefined,
-    });
+      versionId: typeof b.versionId === "number" ? b.versionId : undefined, idempotencyKey,
+    }, defaultLiveRunDeps(auditSink(req), failureReason));
 
-    audit(req, "ai_agent_run", id, {
-      mode, versionNumber: result.agent.versionNumber, provider: result.usage.provider, model: result.usage.model,
-      credits: result.usage.credits, costUsd: result.usage.costUsd, requestIds: result.usage.requestIds,
-      toolsUsed: result.toolsUsed, proposals: result.proposals.map((p) => p.toolId),
-    });
+    if (outcome.replayed) res.setHeader("Idempotent-Replayed", "true");
+    const result = outcome.result;
     res.json(technicalView(req) ? result : { ...result, usage: stripTechnical(result.usage) });
   } catch (err) { fail(res, err); }
 });
 
-// Ejecuta una acción propuesta por el agente, solo con confirmación explícita y válida.
+// Ejecuta una acción propuesta por el agente, solo con confirmación explícita y válida (agents.execute).
+// La confirmación es persistente, atómica y de un solo uso; ver agents/proposalStore.ts.
 agentsRouter.post("/:id/confirm", requirePermission("agents.read"), async (req, res) => {
   try {
     const id = agentId(req);
     if (!id) { res.status(400).json({ error: "id no válido" }); return; }
+    if (await denyIfCannotExecute(req, res, id, "live")) return;
     const { confirmToken, confirm } = req.body as { confirmToken?: unknown; confirm?: unknown };
     if (typeof confirmToken !== "string" || confirm !== true) {
       res.status(400).json({ error: "Se requiere confirmToken y confirm:true explícito." });
       return;
     }
-    const done = await confirmAgentAction(actorOf(req), id, confirmToken);
-    audit(req, "ai_agent_action_executed", id, { toolId: done.toolId, versionNumber: done.versionNumber, args: done.args, result: done.result });
+    const done = await confirmAgentAction(actorOf(req), id, confirmToken, { ...defaultConfirmDeps, audit: auditSink(req) });
     res.json({ ok: true, ...done });
-  } catch (err) {
-    audit(req, "ai_agent_action_failed", agentId(req) ?? "unknown", { error: String(err instanceof Error ? err.message : err) });
-    fail(res, err);
-  }
+  } catch (err) { fail(res, err); }
 });
