@@ -24,6 +24,9 @@ import { getDashboard } from "../credits/reporting";
 import { getAgentUsage } from "../agents/usageService";
 import { toApiError } from "../ai-gateway/apiErrors";
 import { ensurePricingLoaded } from "../ai-gateway/pricingService";
+import { buildToolCatalog, listKnowledgeCatalog, loadModelCatalog } from "../agents/catalogService";
+import { TOOL_REGISTRY } from "../agents/toolRegistry";
+import { previewEffectiveAccess } from "../agents/effectiveAccess";
 import { stripTechnical } from "../credits/customerView";
 import { listPacks } from "../credits/packService";
 
@@ -48,7 +51,7 @@ function agentId(req: Request): number | null {
 
 function fail(res: Response, err: unknown) {
   if (err instanceof AgentError) {
-    res.status(err.status).json({ error: err.message, problems: err.problems });
+    res.status(err.status).json({ error: err.message, problems: err.problems, ...(err.details.length ? { problemDetails: err.details } : {}) });
     return;
   }
   // Controlled failures of a paid operation (INSUFFICIENT_CREDITS, limits, budget,
@@ -92,6 +95,34 @@ agentsRouter.post("/", requirePermission("agents.write"), async (req, res) => {
 // ── Rutas fijas (van antes de /:id) ──────────────────────────────────────────
 
 agentsRouter.get("/scenarios", requirePermission("agents.read"), (_req, res) => { res.json(SIMULATION_SCENARIOS); });
+
+// ── Catálogos de solo lectura (fuentes existentes; ver agents/catalogService.ts) ─────────────────────
+// Son descriptivos: estar en el catálogo no da acceso a nada. El acceso efectivo de un agente a una tool lo calcula
+// resolveToolAccess en cada ejecución. Solo agents.read (sin exigir permisos de CRM ni de ai.*).
+
+// Tools que un agente puede declarar: TOOL_REGISTRY ∩ Skill Engine. Global (código), igual para todos los workspaces.
+agentsRouter.get("/catalog/tools", requirePermission("agents.read"), (_req, res) => {
+  try { res.json(buildToolCatalog(TOOL_REGISTRY, listSkills())); } catch (err) { fail(res, err); }
+});
+
+// Providers implementados y modelos con precio resoluble (getPricingReport: ai_model_pricing vigente + valores heredados).
+// Sin precios, claves ni variables de entorno.
+agentsRouter.get("/catalog/models", requirePermission("agents.read"), async (_req, res) => {
+  try {
+    res.json(await loadModelCatalog());
+  } catch (err) { fail(res, err); }
+});
+
+// Knowledge del workspace activo, solo id/título/categoría (nunca el contenido). No reutiliza GET /api/knowledge-base porque
+// ese endpoint exige el módulo knowledge_base y el permiso ai.read (el runtime del agente no exige ninguno de los dos) y
+// devuelve los documentos completos.
+agentsRouter.get("/catalog/knowledge", requirePermission("agents.read"), async (req, res) => {
+  try {
+    // SUPER_ADMIN pasa el permiso pero NO obtiene datos de otros workspaces: sin workspace activo no hay catálogo.
+    if (!req.orgId) { res.status(400).json({ error: "no_org_context", message: "Selecciona un workspace para ver su conocimiento." }); return; }
+    res.json(await listKnowledgeCatalog(req.orgId));
+  } catch (err) { fail(res, err); }
+});
 
 // Panel de créditos del workspace: saldo, incluidos, consumo, por agente/modelo/funcionalidad, series y alertas.
 agentsRouter.get("/credits", requirePermission("agents.read"), async (req, res) => {
@@ -159,6 +190,17 @@ agentsRouter.get("/:id/usage", requirePermission("agents.read"), async (req, res
     await ensurePricingLoaded();
     const usage = await getAgentUsage(req.orgId!, id);
     res.json(technicalView(req) ? usage : stripTechnical(usage));
+  } catch (err) { fail(res, err); }
+});
+
+// Acceso efectivo (SOLO LECTURA): qué podría hacer el agente para el usuario AUTENTICADO. No ejecuta tools, no usa IA ni créditos,
+// no audita ejecuciones. No admite elegir otro usuario ni workspace: todo sale del contexto autenticado.
+agentsRouter.get("/:id/effective-access", requirePermission("agents.read"), async (req, res) => {
+  try {
+    const id = agentId(req);
+    if (!id) { res.status(400).json({ error: "id no válido" }); return; }
+    if (!req.orgId) { res.status(400).json({ error: "no_org_context", message: "Selecciona un workspace." }); return; }
+    res.json(await previewEffectiveAccess({ orgId: req.orgId, orgRole: req.effectiveRole ?? req.orgRole ?? "none", platformRole: req.platformRole ?? null }, id));
   } catch (err) { fail(res, err); }
 });
 

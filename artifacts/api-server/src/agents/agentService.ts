@@ -12,11 +12,17 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { isReadTool } from "./toolClassification";
+import { getAgentTool } from "./toolRegistry";
 import { findUnavailableKnowledgeIds } from "./knowledge";
 import { PROVIDER_CONFIG } from "../ai-gateway/providerRouter";
+import { loadModelCatalog, type ModelCatalog } from "./catalogService";
+import {
+  dedupeProblems, modelNeedsValidation, problemMessages, validateModelForPublish, type PublishProblem,
+} from "./publishValidation";
 
 export class AgentError extends Error {
-  constructor(public readonly status: 404 | 409 | 422, message: string, public readonly problems: string[] = []) {
+  /** `problems` son los textos (contrato histórico); `details` los mismos problemas con campo y código, para la UI. */
+  constructor(public readonly status: 404 | 409 | 422, message: string, public readonly problems: string[] = [], public readonly details: PublishProblem[] = []) {
     super(message);
     this.name = "AgentError";
   }
@@ -26,31 +32,64 @@ export function readConfig(version: Pick<AiAgentVersion, "config">): AgentConfig
   return agentConfigSchema.parse({ ...defaultAgentConfig(), ...(version.config as object) });
 }
 
-export function validateForPublish(agent: Pick<AiAgent, "name">, config: AgentConfig, knownToolIds: Set<string>): string[] {
-  const problems: string[] = [];
-  if (!agent.name.trim()) problems.push("El agente necesita un nombre.");
-  if (!config.objective.what.trim()) problems.push("Falta el objetivo: qué hace el agente.");
-  if (!config.behavior.instructions.trim()) problems.push("Faltan las instrucciones del agente.");
+/**
+ * Comprobaciones SÍNCRONAS de publicación (nombre, objetivo, instrucciones, herramientas y confirmación), con campo y código.
+ * Las herramientas se validan contra el registro real (TOOL_REGISTRY ∩ Skill Engine): permiso, módulo y tipo salen SIEMPRE
+ * del registro, la configuración solo guarda ids, así que ni el cliente ni la versión pueden cambiarlos. El modelo y el
+ * proveedor se validan aparte (validateModelForPublish) porque necesitan el catálogo real.
+ */
+export function validateForPublishDetailed(agent: Pick<AiAgent, "name">, config: AgentConfig, knownToolIds: Set<string>): PublishProblem[] {
+  const problems: PublishProblem[] = [];
+  const add = (field: string, code: PublishProblem["code"], message: string) => problems.push({ field, code, message });
 
+  if (!agent.name.trim()) add("name", "MISSING_NAME", "El agente necesita un nombre.");
+  if (!config.objective.what.trim()) add("config.objective.what", "MISSING_OBJECTIVE", "Falta el objetivo: qué hace el agente.");
+  if (!config.behavior.instructions.trim()) add("config.behavior.instructions", "MISSING_INSTRUCTIONS", "Faltan las instrucciones del agente.");
+
+  const exists = (id: string) => knownToolIds.has(id) && getAgentTool(id) !== undefined;
   for (const id of config.tools.read) {
-    if (!knownToolIds.has(id)) problems.push(`Herramienta desconocida: ${id}`);
-    else if (!isReadTool(id)) problems.push(`'${id}' modifica datos: va en "puede hacer", no en "puede leer".`);
+    if (!exists(id)) add("config.tools.read", "UNKNOWN_TOOL", `Herramienta desconocida: ${id}`);
+    else if (!isReadTool(id)) add("config.tools.read", "TOOL_KIND_MISMATCH", `'${id}' modifica datos: va en "puede hacer", no en "puede leer".`);
   }
   for (const id of config.tools.write) {
-    if (!knownToolIds.has(id)) problems.push(`Herramienta desconocida: ${id}`);
-    else if (isReadTool(id)) problems.push(`'${id}' es de solo lectura: va en "puede leer".`);
+    if (!exists(id)) add("config.tools.write", "UNKNOWN_TOOL", `Herramienta desconocida: ${id}`);
+    else if (isReadTool(id)) add("config.tools.write", "TOOL_KIND_MISMATCH", `'${id}' es de solo lectura: va en "puede leer".`);
   }
   const dup = config.tools.read.filter((id) => config.tools.write.includes(id));
-  for (const id of new Set(dup)) problems.push(`'${id}' está en lectura y en escritura a la vez.`);
+  for (const id of new Set(dup)) add("config.tools", "DUPLICATE_TOOL", `'${id}' está en lectura y en escritura a la vez.`);
 
   // Las acciones siempre pasan por confirmación humana en esta fase.
   if (!config.permissions.writesRequireConfirmation) {
-    problems.push("Ejecutar acciones sin confirmación humana todavía no está soportado.");
+    add("config.permissions.writesRequireConfirmation", "CONFIRMATION_REQUIRED", "Ejecutar acciones sin confirmación humana todavía no está soportado.");
   }
-  for (const p of [config.model.provider, ...(config.model.fallbacks ?? []).map((f) => f.provider)]) {
-    if (p && !PROVIDER_CONFIG[p]) problems.push(`Proveedor de IA desconocido: ${p}`);
+  // Un proveedor que ni siquiera existe se detecta sin catálogo; los no implementados o sin clave y los modelos, con él.
+  const providerFields: Array<[string | undefined, string]> = [
+    [config.model.provider, "config.model.provider"],
+    ...(config.model.fallbacks ?? []).map((f, i): [string | undefined, string] => [f.provider, `config.model.fallbacks[${i}].provider`]),
+  ];
+  for (const [p, field] of providerFields) {
+    if (p && !PROVIDER_CONFIG[p]) add(field, "UNKNOWN_PROVIDER", `Proveedor de IA desconocido: ${p}`);
   }
   return problems;
+}
+
+/** Mismos problemas que validateForPublishDetailed, solo los textos (contrato histórico de los tests y de la API). */
+export function validateForPublish(agent: Pick<AiAgent, "name">, config: AgentConfig, knownToolIds: Set<string>): string[] {
+  return problemMessages(validateForPublishDetailed(agent, config, knownToolIds));
+}
+
+/** Error 422 de publicación/borrador con los problemas como texto (histórico) y estructurados (campo + código). */
+function invalid(message: string, problems: PublishProblem[]): AgentError {
+  return new AgentError(422, message, problemMessages(problems), problems);
+}
+
+/** Ids de conocimiento que no son de este workspace, no existen o están inactivos (el runtime solo carga los activos). */
+async function knowledgeProblems(orgId: number, entryIds: number[]): Promise<PublishProblem[]> {
+  const bad = await findUnavailableKnowledgeIds(orgId, entryIds);
+  return bad.map((id) => ({
+    field: "config.knowledge.entryIds", code: "UNKNOWN_KNOWLEDGE_ENTRY" as const,
+    message: `El conocimiento #${id} no existe en este workspace o no está activo.`,
+  }));
 }
 
 async function requireAgent(orgId: number, agentId: number): Promise<AiAgent> {
@@ -114,9 +153,23 @@ export async function updateAgentMeta(orgId: number, agentId: number, patch: {
   return updated!;
 }
 
+export interface SaveDraftOptions {
+  /**
+   * Valida que los entryIds de conocimiento pertenezcan a ESTE workspace y estén activos (por defecto sí). Solo se
+   * desactiva al restaurar una versión propia: copiarla no introduce ids nuevos y la publicación los vuelve a validar.
+   */
+  validateKnowledge?: boolean;
+}
+
 export async function saveDraft(orgId: number, agentId: number, userClerkId: string | null,
-  patch: Partial<AgentConfig>, notes?: string | null) {
+  patch: Partial<AgentConfig>, notes?: string | null, options: SaveDraftOptions = {}) {
   const validPatch = agentConfigSchema.partial().parse(patch);
+
+  // Antes de tocar nada: si algún id no es válido no se guarda NADA (ni esa sección ni el resto del parche).
+  if (validPatch.knowledge && options.validateKnowledge !== false) {
+    const problems = await knowledgeProblems(orgId, validPatch.knowledge.entryIds);
+    if (problems.length > 0) throw invalid("El conocimiento seleccionado no es válido.", problems);
+  }
 
   return db.transaction(async (tx) => {
     const [agent] = await tx.select().from(aiAgentsTable)
@@ -154,7 +207,7 @@ export async function restoreVersion(orgId: number, agentId: number, versionId: 
   const source = versions.find((v) => v.id === versionId);
   if (!source) throw new AgentError(404, "Versión no encontrada.");
   // Restaurar nunca toca la versión origen: su contenido pasa al borrador.
-  return saveDraft(orgId, agentId, userClerkId, readConfig(source), `Restaurada desde la versión ${source.versionNumber}`);
+  return saveDraft(orgId, agentId, userClerkId, readConfig(source), `Restaurada desde la versión ${source.versionNumber}`, { validateKnowledge: false });
 }
 
 // ── Ejecución ────────────────────────────────────────────────────────────────
@@ -187,7 +240,13 @@ export async function resolveRunTarget(orgId: number, agentId: number, mode: Run
 
 // ── Estado ───────────────────────────────────────────────────────────────────
 
-export async function publishAgent(orgId: number, agentId: number, knownToolIds: Set<string>) {
+export interface PublishDeps {
+  /** El catálogo real de modelos (el mismo de GET /catalog/models). Inyectable en tests. */
+  loadModelCatalog: () => Promise<ModelCatalog>;
+}
+const defaultPublishDeps: PublishDeps = { loadModelCatalog };
+
+export async function publishAgent(orgId: number, agentId: number, knownToolIds: Set<string>, deps: PublishDeps = defaultPublishDeps) {
   return db.transaction(async (tx) => {
     const [agent] = await tx.select().from(aiAgentsTable)
       .where(and(eq(aiAgentsTable.id, agentId), eq(aiAgentsTable.orgId, orgId))).for("update");
@@ -200,10 +259,12 @@ export async function publishAgent(orgId: number, agentId: number, knownToolIds:
     if (!draft) throw new AgentError(409, "No hay ningún borrador que publicar.");
 
     const draftConfig = readConfig(draft);
-    const problems = validateForPublish(agent, draftConfig, knownToolIds);
-    const foreign = await findUnavailableKnowledgeIds(orgId, draftConfig.knowledge.entryIds);
-    for (const id of foreign) problems.push(`El conocimiento #${id} no existe en este workspace.`);
-    if (problems.length > 0) throw new AgentError(422, "El agente no está listo para publicarse.", problems);
+    const problems = validateForPublishDetailed(agent, draftConfig, knownToolIds);
+    // Modelo y proveedor contra el catálogo real; un agente sin modelo fijo ni fallbacks no consulta nada.
+    if (modelNeedsValidation(draftConfig.model)) problems.push(...validateModelForPublish(draftConfig.model, await deps.loadModelCatalog()));
+    problems.push(...await knowledgeProblems(orgId, draftConfig.knowledge.entryIds));
+    const unique = dedupeProblems(problems);
+    if (unique.length > 0) throw invalid("El agente no está listo para publicarse.", unique);
 
     await tx.update(aiAgentVersionsTable).set({ publishedAt: new Date() }).where(eq(aiAgentVersionsTable.id, draft.id));
     const [updated] = await tx.update(aiAgentsTable)

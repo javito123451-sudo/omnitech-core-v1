@@ -30,6 +30,7 @@ const ROUTE_MODULE_MAP: Array<{ pattern: RegExp; module: string }> = [
   { pattern: /^\/calendar/,          module: "crm" },
   { pattern: /^\/telegram-inbox/,    module: "ai_agents" },
   { pattern: /^\/memory/,            module: "ai_agents" },
+  { pattern: /^\/agents/,            module: "ai_agents" },
   { pattern: /^\/knowledge-base/,    module: "knowledge_base" },
   { pattern: /^\/executive/,         module: "analytics" },
   { pattern: /^\/statistics/,        module: "analytics" },

@@ -75,6 +75,8 @@ import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import ManualHome from "@/pages/manual/index";
 import ManualChapter from "@/pages/manual/chapter";
 import { ModuleGuard } from "@/components/ModuleGuard";
+import AgentsPage from "@/pages/agents";
+import AgentDetailPage from "@/pages/agent-detail";
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -462,6 +464,24 @@ function AppRoutes() {
           <MainLayout>
             <ModuleGuard moduleKey="whatsapp">
               <WhatsAppInboxPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/agents/:id">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="ai_agents">
+              <AgentDetailPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/agents">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="ai_agents">
+              <AgentsPage />
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>

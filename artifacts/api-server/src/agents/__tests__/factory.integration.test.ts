@@ -134,7 +134,10 @@ describe.skipIf(!hasRealDb)("Fábrica — flujo completo", () => {
     const [own] = await db.insert(knowledgeBaseTable).values({ orgId: orgA, title: "Horario A", content: "abrimos a las 9" }).returning();
 
     const { agent } = await createAgent(orgA, "smoke", { name: "Con conocimiento" });
-    await saveDraft(orgA, agent.id, "smoke", ready({ knowledge: { workspace: false, entryIds: [foreign!.id], categories: [] } }));
+    // Guardar un id de otro workspace ya se rechaza en el borrador (422, sin guardar nada)...
+    await expect(saveDraft(orgA, agent.id, "smoke", ready({ knowledge: { workspace: false, entryIds: [foreign!.id], categories: [] } }))).rejects.toMatchObject({ status: 422 });
+    // ...y si un borrador antiguo lo trajera (sin validar), publicar tampoco lo deja pasar.
+    await saveDraft(orgA, agent.id, "smoke", ready({ knowledge: { workspace: false, entryIds: [foreign!.id], categories: [] } }), undefined, { validateKnowledge: false });
     await expect(publishAgent(orgA, agent.id, known())).rejects.toMatchObject({ status: 422 });
 
     // aunque la configuración lo listara, la lectura filtra por org

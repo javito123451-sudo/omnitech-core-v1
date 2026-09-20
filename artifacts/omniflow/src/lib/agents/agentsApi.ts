@@ -1,0 +1,113 @@
+// Cliente de Agent Factory. Sigue el patrón del proyecto: authFetch (token de Clerk + workspace activo) y
+// TanStack Query en los hooks; sin ninguna librería HTTP nueva.
+//
+// SOLO endpoints que existen hoy (artifacts/api-server/src/routes/agents.ts, montado en /api/agents, módulo
+// `ai_agents`, permisos agents.read / agents.write):
+//   GET  /api/agents                  agents.read   → AgentListResponse
+//   POST /api/agents                  agents.write  → CreateAgentResponse (201)
+//   GET  /api/agents/:id              agents.read   → AgentDetailResponse
+//   GET  /api/agents/credits/balance  agents.read   → CreditsBalance
+//   GET  /api/agents/credits          agents.read   → CreditsDashboard (vista de cliente: sin tokens ni USD)
+//   GET  /api/agents/defaults         agents.read   → DefaultAgentsResponse
+//   PUT  /api/agents/:id/draft        agents.write  → AgentVersion (guarda el borrador; ver SaveDraftInput)
+//   PATCH /api/agents/:id             agents.write  → Agent (nombre, descripción, avatar)
+//   POST /api/agents/:id/versions/:versionId/restore  agents.write → AgentVersion (copia esa versión al BORRADOR; no publica)
+//   GET  /api/agents/catalog/tools      agents.read   → AgentToolCatalogItem[]   (catálogo global, solo lectura)
+//   GET  /api/agents/catalog/models     agents.read   → AgentModelCatalog        (providers disponibles + modelos, sin precios)
+//   GET  /api/agents/catalog/knowledge  agents.read   → AgentKnowledgeCatalogItem[] (id/título/categoría del workspace activo)
+//   GET  /api/agents/:id/effective-access agents.read → EffectiveAccessResponse (solo lectura: qué podría hacer el agente para TI)
+//   POST /api/agents/:id/publish      agents.publish→ PublishAgentResponse
+//   POST /api/agents/:id/simulate     agents.read   → SimulationResult (gratis: no llama a ningún proveedor)
+// Nunca se envía `?technical=1`: es un modo técnico para administradores.
+
+import { authFetch } from "@/lib/authFetch";
+import { AgentsApiError } from "./agentErrors";
+import type {
+  AgentDetailResponse, AgentListResponse, CreateAgentInput, CreateAgentResponse,
+  CreditsBalance, CreditsDashboard, DefaultAgentsResponse, PublishAgentResponse, SimulateAgentInput, SimulationResult,
+  Agent, AgentVersion, SaveDraftInput, UpdateAgentMetaInput,
+  AgentKnowledgeCatalogItem, AgentModelCatalog, AgentToolCatalogItem, EffectiveAccessResponse,
+} from "./types";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+export const AGENTS_API = `${BASE}/api/agents`;
+
+/** Cabeceras donde un backend o un proxy podrían dejar el id de la petición. Solo se lee lo que venga. */
+const REQUEST_ID_HEADERS = ["x-request-id", "x-render-request-id", "x-vercel-id"];
+
+function readRequestId(res: Response, body: unknown): string | null {
+  if (body && typeof body === "object") {
+    const b = body as Record<string, unknown>;
+    if (typeof b["requestId"] === "string") return b["requestId"];
+  }
+  for (const h of REQUEST_ID_HEADERS) {
+    const v = res.headers.get(h);
+    if (v) return v;
+  }
+  return null;
+}
+
+/**
+ * El backend responde JSON siempre. Errores estructurados: `{ status: "INSUFFICIENT_CREDITS", message, … }`
+ * (toApiError). Errores generales: `{ error: "permission_denied" | "…texto…", message? }`.
+ */
+function toApiError(res: Response, body: unknown): AgentsApiError {
+  let code: string | null = null;
+  let message: string | null = null;
+  if (body && typeof body === "object") {
+    const b = body as Record<string, unknown>;
+    if (typeof b["status"] === "string") code = b["status"];
+    else if (typeof b["error"] === "string" && /^[a-z_]+$/.test(b["error"])) code = b["error"]; // permission_denied, module_disabled…
+    message =
+      typeof b["message"] === "string" ? b["message"]
+      : typeof b["error"] === "string" && code !== b["error"] ? b["error"]
+      : null;
+  }
+  return new AgentsApiError({ status: res.status, code, message, requestId: readRequestId(res, body), body });
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await authFetch(`${AGENTS_API}${path}`, init);
+  } catch (err) {
+    // Fallo de red o petición cancelada: sin HTTP. Se conserva el mensaje original.
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new AgentsApiError({ status: null, code: null, message: err instanceof Error ? err.message : null });
+  }
+
+  const text = await res.text();
+  let body: unknown = null;
+  if (text) { try { body = JSON.parse(text); } catch { body = text; } }
+
+  if (!res.ok) throw toApiError(res, body);
+  return body as T;
+}
+
+export const agentsApi = {
+  list:           (signal?: AbortSignal) => request<AgentListResponse>("", { signal }),
+  get:            (id: number, signal?: AbortSignal) => request<AgentDetailResponse>(`/${id}`, { signal }),
+  create:         (input: CreateAgentInput) => request<CreateAgentResponse>("", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  }),
+  creditsBalance: (signal?: AbortSignal) => request<CreditsBalance>("/credits/balance", { signal }),
+  credits:        (signal?: AbortSignal) => request<CreditsDashboard>("/credits", { signal }),
+  defaults:       (signal?: AbortSignal) => request<DefaultAgentsResponse>("/defaults", { signal }),
+  updateDraft:    (id: number, input: SaveDraftInput) => request<AgentVersion>(`/${id}/draft`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  }),
+  updateMeta:     (id: number, input: UpdateAgentMetaInput) => request<Agent>(`/${id}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  }),
+  restoreVersion: (id: number, versionId: number) => request<AgentVersion>(`/${id}/versions/${versionId}/restore`, { method: "POST" }),
+  // Catálogos: el workspace viaja en la cabecera x-active-workspace que añade authFetch; nunca en la URL.
+  getToolCatalog:      (signal?: AbortSignal) => request<AgentToolCatalogItem[]>("/catalog/tools", { signal }),
+  getModelCatalog:     (signal?: AbortSignal) => request<AgentModelCatalog>("/catalog/models", { signal }),
+  getKnowledgeCatalog: (signal?: AbortSignal) => request<AgentKnowledgeCatalogItem[]>("/catalog/knowledge", { signal }),
+  // Solo lectura: evalúa al usuario autenticado. No admite elegir otro usuario ni workspace.
+  getEffectiveAccess: (id: number, signal?: AbortSignal) => request<EffectiveAccessResponse>(`/${id}/effective-access`, { signal }),
+  publish:        (id: number) => request<PublishAgentResponse>(`/${id}/publish`, { method: "POST" }),
+  simulate:       (id: number, input: SimulateAgentInput) => request<SimulationResult>(`/${id}/simulate`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  }),
+};

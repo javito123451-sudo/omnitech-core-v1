@@ -24,11 +24,12 @@ interface PlanInfo {
   modules: string[];
 }
 
-const PLANS: PlanInfo[] = [
+/** Presentación comercial ACTIVA. Precios oficiales (fuente: credit_plans / OmniCredits). */
+export const PLANS: PlanInfo[] = [
   {
     key: "starter",
     name: "Starter",
-    price: "99€/mes",
+    price: "149€/mes",
     description: "Para freelancers y autónomos",
     icon: Zap,
     color: "blue",
@@ -38,7 +39,7 @@ const PLANS: PlanInfo[] = [
   {
     key: "professional",
     name: "Professional",
-    price: "149€/mes",
+    price: "349€/mes",
     description: "Para equipos en crecimiento",
     icon: Rocket,
     color: "violet",
@@ -48,7 +49,7 @@ const PLANS: PlanInfo[] = [
   {
     key: "business",
     name: "Business",
-    price: "299€/mes",
+    price: "699€/mes",
     description: "Para empresas consolidadas",
     icon: Crown,
     color: "amber",
@@ -58,7 +59,7 @@ const PLANS: PlanInfo[] = [
   {
     key: "enterprise",
     name: "Enterprise",
-    price: "1.000€+/mes",
+    price: "A medida",
     description: "Para grandes organizaciones",
     icon: Building2,
     color: "rose",
