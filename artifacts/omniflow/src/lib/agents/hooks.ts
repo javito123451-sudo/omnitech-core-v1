@@ -17,6 +17,9 @@ export const agentKeys = {
   credits:  (ws: number | null)             => ["credits", ws] as const,
   balance:  (ws: number | null)             => ["credits-balance", ws] as const,
   defaults: (ws: number | null)             => ["agent-defaults", ws] as const,
+  catalogTools:     (ws: number | null)     => ["agent-catalog-tools", ws] as const,
+  catalogModels:    (ws: number | null)     => ["agent-catalog-models", ws] as const,
+  catalogKnowledge: (ws: number | null)     => ["agent-catalog-knowledge", ws] as const,
 };
 
 /** Workspace activo (el que ya usa el resto de la app vía OrgProvider). */
@@ -157,4 +160,25 @@ export function useRestoreVersion(agentId: number) {
       qc.invalidateQueries({ queryKey: agentKeys.list(ws) }),
     ]),
   });
+}
+
+// ── Catálogos read-only ──────────────────────────────────────────────────────────────────────────────
+// Claves con el workspace (nunca una consulta global). Son datos casi estáticos: staleTime largo, sin polling y sin
+// invalidarlos al guardar, simular ni publicar. `enabled` permite pedirlos solo cuando el editor se abre.
+
+const CATALOG_STALE_MS = 10 * 60 * 1000;
+
+export function useAgentToolCatalog(enabled = true) {
+  const ws = useActiveWorkspaceId();
+  return useQuery({ queryKey: agentKeys.catalogTools(ws), queryFn: ({ signal }) => agentsApi.getToolCatalog(signal), enabled: enabled && ws !== null, staleTime: CATALOG_STALE_MS });
+}
+
+export function useAgentModelCatalog(enabled = true) {
+  const ws = useActiveWorkspaceId();
+  return useQuery({ queryKey: agentKeys.catalogModels(ws), queryFn: ({ signal }) => agentsApi.getModelCatalog(signal), enabled: enabled && ws !== null, staleTime: CATALOG_STALE_MS });
+}
+
+export function useAgentKnowledgeCatalog(enabled = true) {
+  const ws = useActiveWorkspaceId();
+  return useQuery({ queryKey: agentKeys.catalogKnowledge(ws), queryFn: ({ signal }) => agentsApi.getKnowledgeCatalog(signal), enabled: enabled && ws !== null, staleTime: CATALOG_STALE_MS });
 }

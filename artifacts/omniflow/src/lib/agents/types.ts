@@ -218,3 +218,57 @@ export interface ValidationIssue {
   path:    Array<string | number>;
   message: string;
 }
+
+// ── Catálogos read-only (artifacts/api-server/src/agents/catalogService.ts) ─────────────────────────
+
+/** Un parámetro de una tool, tal como lo describe el Skill Engine. `default` solo viene si es serializable. */
+export interface AgentToolParamCatalogItem {
+  name:        string;
+  type:        "string" | "number" | "boolean" | "date" | "time" | "object" | "array";
+  description: string;
+  required:    boolean;
+  default?:    unknown;
+}
+
+/** GET /api/agents/catalog/tools → AgentToolCatalogItem[] (global: TOOL_REGISTRY ∩ Skill Engine). */
+export interface AgentToolCatalogItem {
+  id:          string;
+  kind:        "read" | "action";
+  name:        string;
+  description: string;
+  /** Permiso RBAC que debe tener quien ejecuta. Informativo: el acceso efectivo lo calcula el backend. */
+  permission:  string;
+  /** Módulo del workspace que debe estar habilitado. */
+  module:      string;
+  params:      AgentToolParamCatalogItem[];
+  keywords:    string[];
+}
+
+/** Providers IMPLEMENTADOS. `available:false` = falta la clave en este despliegue (sus modelos no se ofrecen). */
+export interface AgentProviderCatalogItem {
+  id:        string;
+  available: boolean;
+}
+
+/** Sin precios: solo si el precio es provisional y de dónde sale (fila de la BD o valor heredado). */
+export interface AgentModelCatalogItem {
+  provider:    string;
+  model:       string;
+  provisional: boolean;
+  priceKnown:  boolean;
+  priceSource: "db" | "legacy";
+  source:      string | null;
+}
+
+/** GET /api/agents/catalog/models */
+export interface AgentModelCatalog {
+  providers: AgentProviderCatalogItem[];
+  models:    AgentModelCatalogItem[];
+}
+
+/** GET /api/agents/catalog/knowledge → AgentKnowledgeCatalogItem[] (solo entradas activas del workspace; nunca `content`). */
+export interface AgentKnowledgeCatalogItem {
+  id:       number;
+  title:    string;
+  category: string;
+}

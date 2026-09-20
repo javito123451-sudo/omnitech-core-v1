@@ -47,3 +47,27 @@ export const simulation = (over: Partial<SimulationResult> = {}): SimulationResu
   denied: [],
   ...over,
 });
+
+// ── Catálogos (forma real de GET /api/agents/catalog/*) ─────────────────────────────────────────────
+import type { AgentKnowledgeCatalogItem, AgentModelCatalog, AgentToolCatalogItem } from "@/lib/agents/types";
+
+export const toolCatalog = (): AgentToolCatalogItem[] => [
+  { id: "list_tasks", kind: "read", name: "Listar tareas", description: "Devuelve las tareas pendientes.", permission: "crm.read", module: "crm",
+    params: [{ name: "status", type: "string", description: "Estado a filtrar", required: false }], keywords: ["mis tareas"] },
+  { id: "create_task", kind: "action", name: "Crear tarea", description: "Crea una tarea nueva.", permission: "crm.write", module: "crm",
+    params: [{ name: "title", type: "string", description: "Título de la tarea", required: true }], keywords: ["crear tarea"] },
+  { id: "get_invoice", kind: "read", name: "Ver factura", description: "Consulta una factura.", permission: "accounting.read", module: "omni_accounting", params: [], keywords: [] },
+];
+
+export const modelCatalog = (): AgentModelCatalog => ({
+  providers: [{ id: "openai", available: true }],
+  models: [
+    { provider: "openai", model: "gpt-5.6-luna", provisional: false, priceKnown: true, priceSource: "db", source: "https://docs.example/luna" },
+    { provider: "openai", model: "gpt-4o-mini", provisional: true, priceKnown: true, priceSource: "legacy", source: null },
+  ],
+});
+
+export const knowledgeCatalog = (): AgentKnowledgeCatalogItem[] => [
+  { id: 1, title: "Horarios de apertura", category: "general" },
+  { id: 2, title: "Tarifas 2026", category: "ventas" },
+];

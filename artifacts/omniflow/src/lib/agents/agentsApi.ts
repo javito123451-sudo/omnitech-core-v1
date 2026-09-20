@@ -12,6 +12,9 @@
 //   PUT  /api/agents/:id/draft        agents.write  → AgentVersion (guarda el borrador; ver SaveDraftInput)
 //   PATCH /api/agents/:id             agents.write  → Agent (nombre, descripción, avatar)
 //   POST /api/agents/:id/versions/:versionId/restore  agents.write → AgentVersion (copia esa versión al BORRADOR; no publica)
+//   GET  /api/agents/catalog/tools      agents.read   → AgentToolCatalogItem[]   (catálogo global, solo lectura)
+//   GET  /api/agents/catalog/models     agents.read   → AgentModelCatalog        (providers disponibles + modelos, sin precios)
+//   GET  /api/agents/catalog/knowledge  agents.read   → AgentKnowledgeCatalogItem[] (id/título/categoría del workspace activo)
 //   POST /api/agents/:id/publish      agents.publish→ PublishAgentResponse
 //   POST /api/agents/:id/simulate     agents.read   → SimulationResult (gratis: no llama a ningún proveedor)
 // Nunca se envía `?technical=1`: es un modo técnico para administradores.
@@ -22,6 +25,7 @@ import type {
   AgentDetailResponse, AgentListResponse, CreateAgentInput, CreateAgentResponse,
   CreditsBalance, CreditsDashboard, DefaultAgentsResponse, PublishAgentResponse, SimulateAgentInput, SimulationResult,
   Agent, AgentVersion, SaveDraftInput, UpdateAgentMetaInput,
+  AgentKnowledgeCatalogItem, AgentModelCatalog, AgentToolCatalogItem,
 } from "./types";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -95,6 +99,10 @@ export const agentsApi = {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
   }),
   restoreVersion: (id: number, versionId: number) => request<AgentVersion>(`/${id}/versions/${versionId}/restore`, { method: "POST" }),
+  // Catálogos: el workspace viaja en la cabecera x-active-workspace que añade authFetch; nunca en la URL.
+  getToolCatalog:      (signal?: AbortSignal) => request<AgentToolCatalogItem[]>("/catalog/tools", { signal }),
+  getModelCatalog:     (signal?: AbortSignal) => request<AgentModelCatalog>("/catalog/models", { signal }),
+  getKnowledgeCatalog: (signal?: AbortSignal) => request<AgentKnowledgeCatalogItem[]>("/catalog/knowledge", { signal }),
   publish:        (id: number) => request<PublishAgentResponse>(`/${id}/publish`, { method: "POST" }),
   simulate:       (id: number, input: SimulateAgentInput) => request<SimulationResult>(`/${id}/simulate`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),

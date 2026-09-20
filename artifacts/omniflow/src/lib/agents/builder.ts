@@ -4,8 +4,10 @@
 //   PATCH /:id        → name, description, avatarUrl
 //   PUT   /:id/draft  → secciones de AgentConfig: identity, objective, personality, behavior, businessContext,
 //                       parameters, channels. El backend sustituye la SECCIÓN entera, por eso se envía completa.
-// SOLO LECTURA en el Builder (sin catálogo/UI soportados en esta fase): model, knowledge, tools, permissions.
-// Nunca se envían: notes, limits, presupuestos, ni ninguna sección de solo lectura.
+//                       model (elegido del catálogo) y knowledge.entryIds (elegidos del catálogo).
+// SOLO LECTURA en el Builder: tools y permissions (se muestran con el catálogo, sin editor). De model solo se cambia
+// provider+model (los fallbacks se conservan tal cual) y de knowledge solo entryIds (workspace y categories se conservan).
+// Nunca se envían: notes, limits, presupuestos, ni las secciones tools/permissions.
 
 import { AGENT_CHANNELS, type AgentChannel, type AgentConfig, type SaveDraftInput, type UpdateAgentMetaInput, type ValidationIssue } from "./types";
 
@@ -32,8 +34,19 @@ export interface BuilderValues {
   paramMaxToolRounds: string;
   paramMaxHistoryMessages: string;
   channels: AgentChannel[];
+  /** Modelo elegido del catálogo (el provider se DERIVA del modelo). "" = sin modelo fijo. */
+  modelProvider: string;
+  modelName: string;
+  /** Se conservan tal cual: el Builder no los edita. */
+  modelFallbacks: Array<{ provider?: string; model?: string }>;
+  knowledgeEntryIds: number[];
+  /** Se conservan tal cual: el Builder no los edita. */
+  knowledgeWorkspace: boolean;
+  knowledgeCategories: string[];
 }
-export type BuilderField = Exclude<keyof BuilderValues, "channels"> | "channels";
+export type BuilderField = keyof BuilderValues;
+/** Campos de texto del formulario (los que se editan con un input/textarea). */
+export type BuilderStringField = { [K in keyof BuilderValues]: BuilderValues[K] extends string ? K : never }[keyof BuilderValues];
 
 /** Límites de agentConfigSchema.parameters (lib/db/src/schema/ai-agents.ts). */
 export const PARAM_LIMITS = {
@@ -78,6 +91,12 @@ export function toBuilderValues(
     paramMaxToolRounds: String(c.parameters?.maxToolRounds ?? D.parameters.maxToolRounds),
     paramMaxHistoryMessages: String(c.parameters?.maxHistoryMessages ?? D.parameters.maxHistoryMessages),
     channels: [...(c.channels ?? [])],
+    modelProvider: c.model?.provider ?? "",
+    modelName: c.model?.model ?? "",
+    modelFallbacks: (c.model?.fallbacks ?? []).map((f) => ({ ...f })),
+    knowledgeEntryIds: [...(c.knowledge?.entryIds ?? [])],
+    knowledgeWorkspace: c.knowledge?.workspace ?? false,
+    knowledgeCategories: [...(c.knowledge?.categories ?? [])],
   };
 }
 
@@ -93,6 +112,8 @@ const SECTIONS = {
   businessContext: ["businessContext"],
   parameters:      ["paramTemperature", "paramMaxOutputTokens", "paramMaxToolRounds", "paramMaxHistoryMessages"],
   channels:        ["channels"],
+  model:           ["modelProvider", "modelName", "modelFallbacks"],
+  knowledge:       ["knowledgeEntryIds", "knowledgeWorkspace", "knowledgeCategories"],
 } as const satisfies Record<string, readonly (keyof BuilderValues)[]>;
 type SectionKey = keyof typeof SECTIONS;
 
@@ -103,6 +124,8 @@ function normalized(v: BuilderValues): Record<keyof BuilderValues, unknown> {
     name: v.name.trim(), description: v.description.trim(), avatarUrl: v.avatarUrl.trim(),
     behaviorRules: list(v.behaviorRules), behaviorRestrictions: list(v.behaviorRestrictions), behaviorAvoid: list(v.behaviorAvoid),
     channels: [...v.channels].sort(),
+    knowledgeEntryIds: [...v.knowledgeEntryIds].sort((a, b) => a - b),
+    knowledgeCategories: [...v.knowledgeCategories].sort(),
   };
 }
 
@@ -147,6 +170,13 @@ const SECTION_BUILDERS: { [K in SectionKey]: (v: BuilderValues) => Partial<Agent
     maxToolRounds: Number(v.paramMaxToolRounds), maxHistoryMessages: Number(v.paramMaxHistoryMessages),
   } }),
   channels:        (v) => ({ channels: [...v.channels] }),
+  // La sección se sustituye ENTERA en el backend: se reenvía con lo que el Builder no toca (fallbacks, workspace, categories).
+  model:           (v) => ({ model: {
+    ...(v.modelProvider ? { provider: v.modelProvider } : {}),
+    ...(v.modelName ? { model: v.modelName } : {}),
+    ...(v.modelFallbacks.length ? { fallbacks: v.modelFallbacks.map((f) => ({ ...f })) } : {}),
+  } }),
+  knowledge:       (v) => ({ knowledge: { workspace: v.knowledgeWorkspace, entryIds: [...v.knowledgeEntryIds], categories: [...v.knowledgeCategories] } }),
 };
 
 export interface BuilderPayload {
@@ -187,6 +217,8 @@ const ISSUE_FIELD: Record<string, BuilderField> = {
   "parameters.temperature": "paramTemperature", "parameters.maxOutputTokens": "paramMaxOutputTokens",
   "parameters.maxToolRounds": "paramMaxToolRounds", "parameters.maxHistoryMessages": "paramMaxHistoryMessages",
   channels: "channels",
+  "model.provider": "modelName", "model.model": "modelName",
+  "knowledge.entryIds": "knowledgeEntryIds",
 };
 
 /** Reparte las incidencias del backend: las que corresponden a un campo del formulario y las que no. */

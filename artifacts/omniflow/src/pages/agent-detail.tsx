@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "wouter";
 import { ArrowLeft, Lock } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -34,6 +34,9 @@ function DetailView({ data }: { data: AgentDetailResponse }) {
   const canEdit = canWrite && !archived;
 
   const [tab, setTab] = useState("current");
+  // Los catálogos del editor se piden la primera vez que se abre la pestaña de edición y después se conservan.
+  const [editorOpened, setEditorOpened] = useState(false);
+  useEffect(() => { if (tab === "edit") setEditorOpened(true); }, [tab]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [formDirty, setFormDirty] = useState(false);
   const [simulationCurrent, setSimulationCurrent] = useState(false);
@@ -94,7 +97,7 @@ function DetailView({ data }: { data: AgentDetailResponse }) {
         {canEdit && (
           // forceMount: el formulario sigue montado al cambiar de pestaña, así no se pierden cambios sin guardar.
           <TabsContent value="edit" forceMount>
-            <AgentConfigForm key={`${ws}-${agent.id}`} agent={agent} versions={versions} onDraftChanged={bumpEpoch} onDirtyChange={setFormDirty} />
+            <AgentConfigForm key={`${ws}-${agent.id}`} agent={agent} versions={versions} onDraftChanged={bumpEpoch} onDirtyChange={setFormDirty} catalogsEnabled={editorOpened} />
           </TabsContent>
         )}
       </Tabs>

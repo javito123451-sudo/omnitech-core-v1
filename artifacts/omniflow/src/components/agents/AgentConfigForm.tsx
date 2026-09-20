@@ -10,17 +10,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { AgentStatusBadge } from "@/components/agents/AgentStatusBadge";
 import { ApiErrorAlert } from "@/components/agents/ApiErrorAlert";
+import { KnowledgeSelector } from "@/components/agents/KnowledgeSelector";
+import { ModelSelector } from "@/components/agents/ModelSelector";
+import { ToolsCatalogPanel } from "@/components/agents/ToolsCatalogPanel";
 import { UnsavedChangesDialog } from "@/components/agents/UnsavedChangesDialog";
 import { errorIssues } from "@/lib/agents/agentErrors";
 import {
-  PARAM_LIMITS, buildPayload, isDirty, mapIssues, toBuilderValues, validate, type BuilderErrors, type BuilderValues,
+  PARAM_LIMITS, buildPayload, isDirty, mapIssues, toBuilderValues, validate, type BuilderErrors, type BuilderStringField, type BuilderValues,
 } from "@/lib/agents/builder";
 import { channelLabel } from "@/lib/agents/format";
-import { PartialSaveError, useSaveAgent } from "@/lib/agents/hooks";
+import { PartialSaveError, useAgentKnowledgeCatalog, useAgentModelCatalog, useAgentToolCatalog, useSaveAgent } from "@/lib/agents/hooks";
 import { useUnsavedChangesGuard } from "@/lib/agents/useUnsavedChangesGuard";
 import { AGENT_CHANNELS, type Agent, type AgentChannel, type AgentVersion } from "@/lib/agents/types";
 
-type StringField = Exclude<keyof BuilderValues, "channels">;
+type StringField = BuilderStringField;
 
 function Section({ title, hint, children, testId }: { title: string; hint?: string; children: ReactNode; testId: string }) {
   return (
@@ -51,12 +54,14 @@ function Field({ id, label, error, hint, wide, children }: FieldProps) {
  * Guarda con PUT /:id/draft (secciones de configuración) y PATCH /:id (nombre, descripción, avatar), enviando solo
  * lo que cambió. Nunca publica ni ejecuta nada.
  */
-export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange }: {
+export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange, catalogsEnabled = false }: {
   agent: Agent;
   versions: AgentVersion[];
   /** El borrador cambió en el servidor por un guardado de esta pantalla (para invalidar simulaciones anteriores). */
   onDraftChanged?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Los catálogos (herramientas, modelos, conocimiento) se piden cuando se abre el editor, no antes. */
+  catalogsEnabled?: boolean;
 }) {
   // Misma base que usa el backend (saveDraft): el borrador si existe; si no, la última versión.
   const draft = versions.find((v) => v.publishedAt === null) ?? null;
@@ -76,6 +81,9 @@ export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange
   const submitting = useRef(false);
   const { toast } = useToast();
   const save = useSaveAgent(agent.id);
+  const modelCatalog = useAgentModelCatalog(catalogsEnabled);
+  const knowledgeCatalog = useAgentKnowledgeCatalog(catalogsEnabled);
+  const toolCatalog = useAgentToolCatalog(catalogsEnabled);
 
   const dirty = isDirty(values, baseline);
   const guard = useUnsavedChangesGuard(dirty);
@@ -251,6 +259,29 @@ export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange
         {num("f-history", "paramMaxHistoryMessages", "Mensajes de historial", PARAM_LIMITS.maxHistoryMessages)}
       </Section>
 
+      <Section title="Modelo" hint="Solo se pueden elegir los modelos que el sistema tiene disponibles. El proveedor se deduce del modelo." testId="form-model">
+        <ModelSelector
+          value={{ provider: values.modelProvider, model: values.modelName }}
+          baseline={{ provider: baseline.modelProvider, model: baseline.modelName }}
+          catalog={modelCatalog}
+          onChange={(m) => { set("modelProvider", m.provider); set("modelName", m.model); }}
+        />
+      </Section>
+
+      <Section title="Conocimiento" hint="Entradas de la base de conocimiento de este workspace que el agente puede usar." testId="form-knowledge">
+        <KnowledgeSelector
+          selectedIds={values.knowledgeEntryIds}
+          baselineIds={baseline.knowledgeEntryIds}
+          workspaceAll={values.knowledgeWorkspace}
+          catalog={knowledgeCatalog}
+          onChange={(ids) => set("knowledgeEntryIds", ids)}
+        />
+      </Section>
+
+      <Section title="Herramientas" testId="form-tools">
+        <ToolsCatalogPanel tools={base?.config.tools ?? { read: [], write: [] }} catalog={toolCatalog} />
+      </Section>
+
       <Section title="Canales" hint="Solo declara en qué canales debe poder usarse la versión. Los bots actuales de Telegram y WhatsApp todavía no usan estos agentes." testId="form-channels">
         <div className="sm:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2" role="group" aria-label="Canales">
           {AGENT_CHANNELS.map((c) => (
@@ -264,7 +295,7 @@ export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange
       </Section>
 
       <p className="text-xs text-muted-foreground" data-testid="readonly-note">
-        Modelo, conocimiento, herramientas y permisos de acciones no se pueden editar todavía: se muestran en «Configuración actual».
+        Las herramientas y los permisos de acciones no se pueden editar todavía: se muestran en «Configuración actual».
       </p>
 
       {dirty && (

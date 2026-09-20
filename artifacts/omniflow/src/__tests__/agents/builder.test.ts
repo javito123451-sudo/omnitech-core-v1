@@ -69,7 +69,7 @@ describe("builder — payload exacto", () => {
     expect(p).toEqual({ meta: { name: "Nuevo", description: null, avatarUrl: "https://x/y.png" }, config: null });
   });
 
-  it("no envía nunca campos desconocidos ni de solo lectura (model, knowledge, tools, permissions, notes, limits)", () => {
+  it("no envía nunca campos desconocidos ni de solo lectura (tools, permissions, notes, limits) ni model/knowledge si no cambiaron", () => {
     const everything = {
       ...base(), name: "N", description: "D", avatarUrl: "u", identityRole: "r", objectiveWhat: "w", objectiveAudience: "a", objectiveExpectedOutcome: "e",
       personalityTone: "t", personalityStyle: "s", personalityLanguage: "l", personalityFormality: "f", behaviorInstructions: "i",
@@ -126,13 +126,13 @@ describe("builder — errores del backend por campo", () => {
       body: { error: "Configuración no válida.", issues: [
         { path: ["parameters", "temperature"], message: "Too big" },
         { path: ["channels", 1], message: "Invalid option" },
-        { path: ["model", "provider"], message: "raro" },
+        { path: ["tools", "read"], message: "raro" },
       ] },
     });
     const { fields, other } = mapIssues(errorIssues(err));
     expect(fields.paramTemperature).toBe("Too big");
     expect(fields.channels).toBe("Invalid option");
-    expect(other).toEqual(["model.provider: raro"]);
+    expect(other).toEqual(["tools.read: raro"]);
   });
 
   it("sin incidencias no inventa nada", () => {
