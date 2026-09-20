@@ -4,7 +4,8 @@
 // Cubre los errores estructurados que el backend ya devuelve (ai-gateway/apiErrors.ts):
 //   402  INSUFFICIENT_CREDITS · CREDIT_LIMIT_REACHED · AGENT_CREDIT_LIMIT_REACHED
 //   409  DUPLICATE_REQUEST · REFERENCE_CONFLICT
-//   429  BUDGET_BLOCKED
+//   429  BUDGET_BLOCKED · RATE_LIMITED (límite de ejecuciones LIVE por minuto)
+//   409  IDEMPOTENCY_KEY_REUSED · IDEMPOTENCY_IN_PROGRESS (cabecera Idempotency-Key de /run)
 //   503  PROVIDER_UNAVAILABLE
 // y los generales de la API (permission_denied, module_disabled, 404 de agente, validación…).
 // Ninguno de los estructurados significa que se haya cobrado algo.
@@ -75,6 +76,20 @@ const BY_CODE: Record<string, Known> = {
   REFERENCE_CONFLICT: {
     kind: "reference", title: "Referencia ya utilizada",
     message: "Esa referencia ya se usó para otra operación distinta. Usa una referencia nueva.",
+  },
+  RATE_LIMITED: {
+    kind: "limit", title: "Demasiadas ejecuciones",
+    message: "Has alcanzado el límite de ejecuciones por minuto. No se ha ejecutado nada ni se ha cobrado. Espera un momento y vuelve a intentarlo.",
+    retryable: true,
+  },
+  IDEMPOTENCY_KEY_REUSED: {
+    kind: "conflict", title: "Clave de idempotencia ya usada",
+    message: "Esa clave de idempotencia ya se usó con una petición distinta. Genera una clave nueva para cada petición nueva.",
+  },
+  IDEMPOTENCY_IN_PROGRESS: {
+    kind: "conflict", title: "Petición en curso",
+    message: "La petición original con esa clave sigue ejecutándose. Espera unos segundos y reintenta con la misma clave.",
+    retryable: true,
   },
   BUDGET_BLOCKED: {
     kind: "budget", title: "Presupuesto de IA bloqueado",

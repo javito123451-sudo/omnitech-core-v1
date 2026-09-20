@@ -71,6 +71,13 @@
       "when": 1789850455896,
       "tag": "0009_official_openai_gpt56_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789932762568,
+      "tag": "0010_agent_live_hardening",
+      "breakpoints": true
     }
   ]
 }

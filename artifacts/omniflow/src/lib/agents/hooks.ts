@@ -41,6 +41,8 @@ export function useAgentPermissions() {
     canRead:    isSuperAdmin || hasPermission("agents.read"),
     canWrite:   isSuperAdmin || hasPermission("agents.write"),
     canPublish: isSuperAdmin || hasPermission("agents.publish"),
+    /** LIVE (ejecutar y confirmar acciones). Permiso propio: agents.read solo ve y simula, agents.write edita y prueba. El backend lo exige siempre. */
+    canExecute: isSuperAdmin || hasPermission("agents.execute"),
   };
 }
 

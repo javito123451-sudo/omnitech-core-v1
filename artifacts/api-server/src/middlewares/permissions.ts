@@ -88,10 +88,11 @@ export type Permission =
   // Omni Taller (órdenes de reparación — vehículo + fase, sobre CRM genérico)
   | "taller.read"
   | "taller.write"
-  // Fábrica de Agentes IA (leer / editar borradores / publicar y pausar)
+  // Fábrica de Agentes IA (leer y simular / editar borradores y probar / publicar y pausar / ejecutar en LIVE)
   | "agents.read"
   | "agents.write"
   | "agents.publish"
+  | "agents.execute"
   // Analytics / Executive / Diagnostics
   | "analytics.read"
   | "executive.read"
@@ -132,7 +133,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write", "agents.read",
+    "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -154,7 +155,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write", "agents.read",
+    "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read", "executive.read", "diagnostics.read",
     "settings.read", "settings.write",
     "users.read", "users.write", "users.invite", "users.manage_roles",
@@ -177,7 +178,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write", "agents.read",
+    "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read", "executive.read",
     "settings.read",
     "users.read",
@@ -198,7 +199,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write",
     "a_medida.read", "a_medida.write",
     "fleet.read", "fleet.write",
-    "taller.read", "taller.write", "agents.read",
+    "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read",
     "settings.read",
     "users.read",

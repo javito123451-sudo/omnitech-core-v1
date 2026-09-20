@@ -8,7 +8,7 @@ import {
 } from "../agentRunner";
 import { AgentError } from "../agentService";
 import { InsufficientCreditsError } from "../../credits/creditService";
-import { createProposal } from "../../ava-core/actions/confirmationStore";
+import { createMemoryProposalStore } from "../proposalStore";
 import type { GatewayResult } from "../../ai-gateway/gateway";
 import type { ToolDefinition } from "../../ai/types";
 
@@ -30,6 +30,7 @@ const answer = (text: string, toolCalls?: ReturnType<typeof call>[]): GatewayRes
 });
 
 function makeDeps(cfg: AgentConfig, script: GatewayResult[], o: { status?: "live" | "paused" } = {}) {
+  const proposals = createMemoryProposalStore();
   const queue = [...script];
   const callAI = vi.fn(async () => queue.shift() ?? answer("fin"));
   const executeSkill = vi.fn(async (id: string) => ({ success: true, skillId: id, result: JSON.stringify({ ok: true, id }) }));
@@ -48,9 +49,10 @@ function makeDeps(cfg: AgentConfig, script: GatewayResult[], o: { status?: "live
     getOrgPlan: async () => "starter",
     toolSchemas: () => ["list_tasks", "create_task", "get_repair_status"].map(schema),
     moduleEnabled: async () => true,
+    proposals,
   };
-  const confirm: ConfirmDeps = { executeSkill: executeSkill as unknown as ConfirmDeps["executeSkill"], resolveTarget: resolveTarget as unknown as ConfirmDeps["resolveTarget"], moduleEnabled: async () => true };
-  return { runner, confirm, callAI, executeSkill, resolveTarget };
+  const confirm: ConfirmDeps = { executeSkill: executeSkill as unknown as ConfirmDeps["executeSkill"], resolveTarget: resolveTarget as unknown as ConfirmDeps["resolveTarget"], moduleEnabled: async () => true, proposals };
+  return { runner, confirm, callAI, executeSkill, resolveTarget, proposals };
 }
 
 const req = (mode: "testing" | "live", over: object = {}) => ({ actor: actor(), agentId: 5, mode, message: "hola", ...over });
@@ -175,8 +177,9 @@ describe("confirmAgentAction", () => {
     await expect(confirmAgentAction(actor(), 5, "token-inventado", d.confirm)).rejects.toBeInstanceOf(AgentError);
     await expect(confirmAgentAction(actor({ userId: 99 }), 5, p.confirmToken, d.confirm)).rejects.toBeInstanceOf(AgentError);
     expect(d.executeSkill).not.toHaveBeenCalled();
-    // el intento ajeno consumió el token: tampoco sirve ya para su dueño
-    await expect(confirmAgentAction(actor(), 5, p.confirmToken, d.confirm)).rejects.toBeInstanceOf(AgentError);
+    // el intento ajeno NO consume la propuesta (el consumo es condicional): su dueño sigue pudiendo confirmarla
+    await expect(confirmAgentAction(actor(), 5, p.confirmToken, d.confirm)).resolves.toMatchObject({ toolId: "create_task" });
+    expect(d.executeSkill).toHaveBeenCalledTimes(1);
   });
 
   it("un token de otra org no ejecuta", async () => {
@@ -224,7 +227,7 @@ describe("confirmAgentAction", () => {
 
   it("un token creado a mano para una herramienta ajena al agente no pasa", async () => {
     const d = withProposal();
-    const { token } = createProposal("agent_tool:5:register_payment", { toolId: "register_payment", args: {}, testOnly: false }, 1, 10);
+    const { token } = await d.proposals.create({ orgId: 1, userId: 10, agentId: 5, agentVersionId: 50, toolId: "register_payment", args: {}, testOnly: false });
     await expect(confirmAgentAction(actor(), 5, token, d.confirm)).rejects.toMatchObject({ status: 409 });
     expect(d.executeSkill).not.toHaveBeenCalled();
   });
