@@ -8,14 +8,21 @@ import { useToast } from "@/hooks/use-toast";
 import { AgentStatusBadge } from "@/components/agents/AgentStatusBadge";
 import { ApiErrorAlert } from "@/components/agents/ApiErrorAlert";
 import { useAgentPermissions, usePublishAgent } from "@/lib/agents/hooks";
-import type { Agent } from "@/lib/agents/types";
+import type { Agent, AgentVersion } from "@/lib/agents/types";
 
 /**
  * Publicar (POST /api/agents/:id/publish). Publica la versión borrador: pasa a ser la versión activa y el agente
  * queda «Publicado». Exige agents.publish y una confirmación explícita; nunca se publica solo. El backend valida
  * el borrador y, si no está listo, responde 422 con la lista de problemas, que se muestra tal cual.
  */
-export function PublishAgentDialog({ agent }: { agent: Pick<Agent, "id" | "name" | "status"> }) {
+export function PublishAgentDialog({ agent, draft = null, changes = null, reviewBase = null }: {
+  agent: Pick<Agent, "id" | "name" | "status">;
+  /** Borrador que se va a publicar (para resumirlo antes de confirmar). */
+  draft?: AgentVersion | null;
+  /** Nº de cambios del borrador respecto a `reviewBase`, si se conoce. */
+  changes?: number | null;
+  reviewBase?: AgentVersion | null;
+}) {
   const { canPublish } = useAgentPermissions();
   const [open, setOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -51,6 +58,19 @@ export function PublishAgentDialog({ agent }: { agent: Pick<Agent, "id" | "name"
         </DialogHeader>
 
         <p className="flex items-center gap-2 text-sm text-muted-foreground">Estado actual: <AgentStatusBadge status={agent.status} /></p>
+
+        {draft && (
+          <div className="space-y-1 rounded-lg border border-border p-3 text-sm" data-testid="publish-summary">
+            <p className="font-medium text-foreground">Se publicará la versión v{draft.versionNumber} (estado: borrador)</p>
+            <p className="text-xs text-muted-foreground">Rol: {draft.config.identity?.role || "—"}</p>
+            <p className="text-xs text-muted-foreground">Objetivo: {draft.config.objective?.what || "—"}</p>
+            <p className="text-xs text-muted-foreground">Canales: {draft.config.channels?.length ? draft.config.channels.join(", ") : "ninguno"}</p>
+            {changes !== null && reviewBase && (
+              <p className="text-xs text-muted-foreground" data-testid="publish-changes">{changes === 0 ? `Sin cambios respecto a la v${reviewBase.versionNumber}` : `${changes} ${changes === 1 ? "cambio" : "cambios"} respecto a la v${reviewBase.versionNumber}`}</p>
+            )}
+            <p className="text-xs text-amber-400" data-testid="publish-warning">Al publicar, la v{draft.versionNumber} pasará a ser la versión publicada y activa, y quedará congelada: no se podrá modificar.</p>
+          </div>
+        )}
 
         <div className="flex items-start gap-2">
           <Checkbox id="publish-confirm" checked={confirmed} onCheckedChange={(c) => setConfirmed(c === true)} />

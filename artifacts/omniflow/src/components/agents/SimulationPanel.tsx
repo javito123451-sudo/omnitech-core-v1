@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { FlaskConical } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,24 +9,55 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApiErrorAlert } from "@/components/agents/ApiErrorAlert";
 import { formatCredits } from "@/lib/agents/format";
 import { useSimulateAgent } from "@/lib/agents/hooks";
+import type { SimulationResult } from "@/lib/agents/types";
 
 /**
  * SIMULATION MODE (POST /api/agents/:id/simulate). Es gratis: no llama a ningún proveedor de IA, no consume
  * OmniCredits, no ejecuta herramientas, no envía mensajes y no modifica datos. Lo que muestra sobre coste es una
  * ESTIMACIÓN de lo que costaría una ejecución real, nunca un consumo. No hay botón de ejecución real.
+ *
+ * `simulationKey` identifica exactamente lo que se simula (versión + contenido de su configuración + nombre del
+ * agente). Cada resultado se guarda con la clave que tenía al pedirse: si la clave cambia (se guarda el borrador, se
+ * restaura una versión…), el resultado anterior se descarta y se pide una simulación nueva. Un resultado de otra
+ * configuración nunca se muestra como el actual.
  */
-export function SimulationPanel({ agentId }: { agentId: number }) {
+export function SimulationPanel({ agentId, simulationKey, targetLabel, onCurrentChange }: {
+  agentId: number;
+  simulationKey: string;
+  /** Qué se simula, p. ej. «el borrador v3». */
+  targetLabel: string;
+  onCurrentChange?: (current: boolean) => void;
+}) {
   const [message, setMessage] = useState("");
+  const [run, setRun] = useState<{ key: string; result: SimulationResult } | null>(null);
+  const [outdated, setOutdated] = useState(false);
   const sim = useSimulateAgent(agentId);
   const trimmed = message.trim();
+
+  // La configuración simulada cambió: fuera el resultado (y cualquier petición en curso) y aviso de que hay que repetir.
+  const lastKey = useRef(simulationKey);
+  useEffect(() => {
+    if (lastKey.current === simulationKey) return;
+    lastKey.current = simulationKey;
+    sim.reset();
+    if (run) setOutdated(true);
+    setRun(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [simulationKey]);
+
+  const current = run && run.key === simulationKey ? run.result : null;
+  useEffect(() => { onCurrentChange?.(current !== null); }, [current, onCurrentChange]);
 
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!trimmed || sim.isPending) return;
-    sim.mutate({ message: trimmed });
+    const requestedKey = simulationKey;
+    sim.mutate({ message: trimmed }, {
+      onSuccess: (result) => { setRun({ key: requestedKey, result }); setOutdated(false); },
+    });
   }
 
-  const r = sim.data;
+  const r = current;
   return (
     <Card data-testid="simulation-panel" className="border-sky-500/30">
       <CardHeader className="pb-2">
@@ -36,6 +68,7 @@ export function SimulationPanel({ agentId }: { agentId: number }) {
         <p className="text-xs text-muted-foreground" data-testid="simulation-notice">
           Modo simulación: no consume OmniCredits, no llama a ninguna IA real, no ejecuta herramientas, no envía mensajes y no modifica datos de tu negocio.
         </p>
+        <p className="text-xs text-muted-foreground" data-testid="simulation-target">Se simula {targetLabel}.</p>
       </CardHeader>
       <CardContent className="space-y-4">
         <form onSubmit={submit} className="space-y-2">
@@ -46,12 +79,20 @@ export function SimulationPanel({ agentId }: { agentId: number }) {
           </Button>
         </form>
 
+        {outdated && !r && (
+          <Alert data-testid="simulation-stale">
+            <AlertTitle>Simulación obsoleta</AlertTitle>
+            <AlertDescription>La configuración ha cambiado desde la última simulación. Se requiere una nueva simulación para ver cómo responde ahora.</AlertDescription>
+          </Alert>
+        )}
+
         {sim.isError && <ApiErrorAlert error={sim.error} />}
 
         {r && (
           <div className="space-y-3 rounded-lg border border-border p-3" data-testid="simulation-result">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-300">Resultado simulado</Badge>
+              <span className="text-xs text-emerald-400" data-testid="simulation-current">Corresponde a {targetLabel}, tal como está ahora.</span>
               <span className="text-xs text-muted-foreground">
                 Versión {r.agent.versionNumber !== null ? `v${r.agent.versionNumber}` : "—"} · Modelo previsto: {r.route.provider}/{r.route.model}
               </span>

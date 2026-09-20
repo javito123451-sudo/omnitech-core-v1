@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import { Link, useParams } from "wouter";
 import { ArrowLeft, Lock } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -8,10 +9,13 @@ import { AgentConfigSummary } from "@/components/agents/AgentConfigSummary";
 import { AgentHeader } from "@/components/agents/AgentHeader";
 import { AgentVersionList } from "@/components/agents/AgentVersionList";
 import { PublishAgentDialog } from "@/components/agents/PublishAgentDialog";
+import { VersionDetailPanel } from "@/components/agents/VersionDetailPanel";
+import { DraftCard, DraftReview, VersioningFlow, draftChangeCount } from "@/components/agents/VersioningFlow";
 import { SimulationPanel } from "@/components/agents/SimulationPanel";
 import { ApiErrorAlert } from "@/components/agents/ApiErrorAlert";
 import { AgentsApiError } from "@/lib/agents/agentErrors";
 import { useActiveWorkspaceId, useAgent, useAgentPermissions } from "@/lib/agents/hooks";
+import { findActive, findDraft, findReviewBase, findSimulationTarget, simulationKey } from "@/lib/agents/versioning";
 import type { AgentDetailResponse, AgentVersion } from "@/lib/agents/types";
 import { useOrg } from "@/lib/orgContext";
 
@@ -19,25 +23,55 @@ function DetailView({ data }: { data: AgentDetailResponse }) {
   const { agent, versions } = data;
   const ws = useActiveWorkspaceId();
   const { canPublish, canWrite } = useAgentPermissions();
-  const active = versions.find((v) => v.id === agent.activeVersionId) ?? null;
+  const active = findActive(agent, versions);
   const shown: AgentVersion | null = active ?? versions[0] ?? null;
-  const hasDraft = versions.some((v) => v.publishedAt === null);
+  const draft = findDraft(versions);
+  const reviewBase = findReviewBase(agent, versions);
+  const target = findSimulationTarget(agent, versions);
+  const changes = draftChangeCount(reviewBase, draft);
   const archived = agent.status === "archived";
   // El backend permite editar (siempre sobre un borrador) en draft, published y paused; archived responde 409.
   const canEdit = canWrite && !archived;
+
+  const [tab, setTab] = useState("current");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
+  const [simulationCurrent, setSimulationCurrent] = useState(false);
+  // Sube cada vez que ESTA pantalla cambia el borrador (guardar, restaurar): invalida al instante cualquier simulación previa,
+  // sin esperar a que el detalle se vuelva a cargar.
+  const [epoch, setEpoch] = useState(0);
+  const bumpEpoch = useCallback(() => setEpoch((n) => n + 1), []);
+
+  const simKey = `${simulationKey(agent, target)}@${epoch}`;
+  const targetLabel = !target ? "el agente" : target.id === draft?.id ? `el borrador v${target.versionNumber}` : target.id === active?.id ? `la versión activa v${target.versionNumber}` : `la versión v${target.versionNumber}`;
+
+  function focusSimulation() {
+    const el = document.getElementById("simulation-message");
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    el?.focus();
+  }
+  function openInHistory(id: number) {
+    setSelectedId(id);
+    document.getElementById("version-history")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }
 
   return (
     <>
       <AgentHeader
         agent={agent}
         versions={versions}
-        actions={canPublish && !archived && hasDraft ? <PublishAgentDialog agent={agent} /> : undefined}
+        actions={canPublish && !archived && draft ? <PublishAgentDialog agent={agent} draft={draft} changes={changes} reviewBase={reviewBase} /> : undefined}
       />
       {archived && canWrite && (
         <Alert data-testid="edit-unavailable"><AlertTitle>Edición no disponible</AlertTitle><AlertDescription>Un agente archivado no se puede modificar.</AlertDescription></Alert>
       )}
 
-      <Tabs defaultValue="current" className="space-y-3">
+      <VersioningFlow draft={archived ? null : draft} simulationCurrent={simulationCurrent} changes={changes} reviewBase={reviewBase} canPublish={canPublish} />
+      {!archived && (
+        <DraftCard draft={draft} canEdit={canEdit} onOpen={() => openInHistory(draft!.id)} onEdit={() => setTab("edit")} onSimulate={focusSimulation} />
+      )}
+
+      <Tabs value={tab} onValueChange={setTab} className="space-y-3">
         <TabsList data-testid="detail-tabs">
           <TabsTrigger value="current">Configuración actual</TabsTrigger>
           {canEdit && <TabsTrigger value="edit">Editar borrador</TabsTrigger>}
@@ -60,17 +94,29 @@ function DetailView({ data }: { data: AgentDetailResponse }) {
         {canEdit && (
           // forceMount: el formulario sigue montado al cambiar de pestaña, así no se pierden cambios sin guardar.
           <TabsContent value="edit" forceMount>
-            <AgentConfigForm key={`${ws}-${agent.id}`} agent={agent} versions={versions} />
+            <AgentConfigForm key={`${ws}-${agent.id}`} agent={agent} versions={versions} onDraftChanged={bumpEpoch} onDirtyChange={setFormDirty} />
           </TabsContent>
         )}
       </Tabs>
 
-      <AgentVersionList agent={agent} versions={versions} shownVersionId={shown?.id ?? null} />
+      {draft && !archived && <DraftReview draft={draft} base={reviewBase} />}
+
+      <div id="version-history" className="space-y-4">
+        <AgentVersionList agent={agent} versions={versions} shownVersionId={shown?.id ?? null} selectedId={selectedId} onSelect={setSelectedId} />
+        {selectedId !== null && (
+          <VersionDetailPanel
+            agent={agent} versions={versions} selectedId={selectedId}
+            canRestore={canEdit} hasUnsavedEdits={formDirty}
+            onClose={() => setSelectedId(null)}
+            onRestored={(saved) => { bumpEpoch(); setSelectedId(saved.id); }}
+          />
+        )}
+      </div>
 
       {archived ? (
         <Alert data-testid="simulation-unavailable"><AlertTitle>Simulación no disponible</AlertTitle><AlertDescription>Un agente archivado no se puede simular.</AlertDescription></Alert>
       ) : (
-        <SimulationPanel key={`${ws}-${agent.id}`} agentId={agent.id} />
+        <SimulationPanel key={`${ws}-${agent.id}`} agentId={agent.id} simulationKey={simKey} targetLabel={targetLabel} onCurrentChange={setSimulationCurrent} />
       )}
     </>
   );

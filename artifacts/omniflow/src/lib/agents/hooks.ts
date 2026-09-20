@@ -141,3 +141,20 @@ export function useSaveAgent(agentId: number) {
     ]),
   });
 }
+
+/**
+ * Restaurar una versión EN EL BORRADOR (POST /:id/versions/:versionId/restore, agents.write). Operación destructiva
+ * sobre el borrador: su contenido se sustituye por el de la versión elegida; sin borrador se crea uno nuevo. Nunca
+ * modifica una versión publicada ni publica. Invalida solo el detalle de este agente y la lista de este workspace.
+ */
+export function useRestoreVersion(agentId: number) {
+  const ws = useActiveWorkspaceId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (versionId: number) => agentsApi.restoreVersion(agentId, versionId),
+    onSettled: () => Promise.all([
+      qc.invalidateQueries({ queryKey: agentKeys.detail(ws, agentId) }),
+      qc.invalidateQueries({ queryKey: agentKeys.list(ws) }),
+    ]),
+  });
+}

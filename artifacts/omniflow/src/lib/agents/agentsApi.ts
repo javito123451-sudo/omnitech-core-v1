@@ -11,6 +11,7 @@
 //   GET  /api/agents/defaults         agents.read   → DefaultAgentsResponse
 //   PUT  /api/agents/:id/draft        agents.write  → AgentVersion (guarda el borrador; ver SaveDraftInput)
 //   PATCH /api/agents/:id             agents.write  → Agent (nombre, descripción, avatar)
+//   POST /api/agents/:id/versions/:versionId/restore  agents.write → AgentVersion (copia esa versión al BORRADOR; no publica)
 //   POST /api/agents/:id/publish      agents.publish→ PublishAgentResponse
 //   POST /api/agents/:id/simulate     agents.read   → SimulationResult (gratis: no llama a ningún proveedor)
 // Nunca se envía `?technical=1`: es un modo técnico para administradores.
@@ -93,6 +94,7 @@ export const agentsApi = {
   updateMeta:     (id: number, input: UpdateAgentMetaInput) => request<Agent>(`/${id}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
   }),
+  restoreVersion: (id: number, versionId: number) => request<AgentVersion>(`/${id}/versions/${versionId}/restore`, { method: "POST" }),
   publish:        (id: number) => request<PublishAgentResponse>(`/${id}/publish`, { method: "POST" }),
   simulate:       (id: number, input: SimulateAgentInput) => request<SimulationResult>(`/${id}/simulate`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),

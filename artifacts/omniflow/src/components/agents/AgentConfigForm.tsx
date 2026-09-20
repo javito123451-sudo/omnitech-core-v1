@@ -51,7 +51,13 @@ function Field({ id, label, error, hint, wide, children }: FieldProps) {
  * Guarda con PUT /:id/draft (secciones de configuración) y PATCH /:id (nombre, descripción, avatar), enviando solo
  * lo que cambió. Nunca publica ni ejecuta nada.
  */
-export function AgentConfigForm({ agent, versions }: { agent: Agent; versions: AgentVersion[] }) {
+export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange }: {
+  agent: Agent;
+  versions: AgentVersion[];
+  /** El borrador cambió en el servidor por un guardado de esta pantalla (para invalidar simulaciones anteriores). */
+  onDraftChanged?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   // Misma base que usa el backend (saveDraft): el borrador si existe; si no, la última versión.
   const draft = versions.find((v) => v.publishedAt === null) ?? null;
   const base = draft ?? versions[0] ?? null;
@@ -73,6 +79,7 @@ export function AgentConfigForm({ agent, versions }: { agent: Agent; versions: A
 
   const dirty = isDirty(values, baseline);
   const guard = useUnsavedChangesGuard(dirty);
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
   // El servidor trae datos nuevos (tras guardar, o cambios de otra persona): se recarga el formulario solo si no hay
   // cambios sin guardar; si los hay, se avisa y nunca se pisan en silencio.
@@ -120,6 +127,7 @@ export function AgentConfigForm({ agent, versions }: { agent: Agent; versions: A
       onSuccess: ({ version }) => {
         setBaseline(snapshot);
         setStale(false);
+        if (version) onDraftChanged?.();
         const message = !version
           ? "Datos del agente guardados."
           : draft ? `Borrador v${version.versionNumber} actualizado.` : `Nueva versión v${version.versionNumber} creada como borrador.`;
