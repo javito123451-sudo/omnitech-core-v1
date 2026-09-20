@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { AgentStatusBadge } from "@/components/agents/AgentStatusBadge";
 import { ApiErrorAlert } from "@/components/agents/ApiErrorAlert";
+import { EffectiveToolAccessPanel } from "@/components/agents/EffectiveToolAccessPanel";
 import { KnowledgeSelector } from "@/components/agents/KnowledgeSelector";
 import { ModelSelector } from "@/components/agents/ModelSelector";
 import { ToolsCatalogPanel } from "@/components/agents/ToolsCatalogPanel";
@@ -19,7 +20,7 @@ import {
   PARAM_LIMITS, buildPayload, isDirty, mapIssues, toBuilderValues, validate, type BuilderErrors, type BuilderStringField, type BuilderValues,
 } from "@/lib/agents/builder";
 import { channelLabel } from "@/lib/agents/format";
-import { PartialSaveError, useAgentKnowledgeCatalog, useAgentModelCatalog, useAgentToolCatalog, useSaveAgent } from "@/lib/agents/hooks";
+import { PartialSaveError, useAgentEffectiveAccess, useAgentKnowledgeCatalog, useAgentModelCatalog, useAgentToolCatalog, useSaveAgent } from "@/lib/agents/hooks";
 import { useUnsavedChangesGuard } from "@/lib/agents/useUnsavedChangesGuard";
 import { AGENT_CHANNELS, type Agent, type AgentChannel, type AgentVersion } from "@/lib/agents/types";
 
@@ -84,6 +85,8 @@ export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange
   const modelCatalog = useAgentModelCatalog(catalogsEnabled);
   const knowledgeCatalog = useAgentKnowledgeCatalog(catalogsEnabled);
   const toolCatalog = useAgentToolCatalog(catalogsEnabled);
+  // Solo lectura y sin efectos: la clave incluye la versión y sus herramientas, así guardar otros campos no lo recalcula.
+  const effectiveAccess = useAgentEffectiveAccess(agent.id, `${base?.id ?? 0}:${JSON.stringify(base?.config.tools ?? {})}`, catalogsEnabled && base !== null);
 
   const dirty = isDirty(values, baseline);
   const guard = useUnsavedChangesGuard(dirty);
@@ -280,6 +283,7 @@ export function AgentConfigForm({ agent, versions, onDraftChanged, onDirtyChange
 
       <Section title="Herramientas" testId="form-tools">
         <ToolsCatalogPanel tools={base?.config.tools ?? { read: [], write: [] }} catalog={toolCatalog} />
+        {base && <EffectiveToolAccessPanel access={effectiveAccess} catalog={toolCatalog} />}
       </Section>
 
       <Section title="Canales" hint="Solo declara en qué canales debe poder usarse la versión. Los bots actuales de Telegram y WhatsApp todavía no usan estos agentes." testId="form-channels">

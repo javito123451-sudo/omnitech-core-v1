@@ -15,6 +15,7 @@
 //   GET  /api/agents/catalog/tools      agents.read   → AgentToolCatalogItem[]   (catálogo global, solo lectura)
 //   GET  /api/agents/catalog/models     agents.read   → AgentModelCatalog        (providers disponibles + modelos, sin precios)
 //   GET  /api/agents/catalog/knowledge  agents.read   → AgentKnowledgeCatalogItem[] (id/título/categoría del workspace activo)
+//   GET  /api/agents/:id/effective-access agents.read → EffectiveAccessResponse (solo lectura: qué podría hacer el agente para TI)
 //   POST /api/agents/:id/publish      agents.publish→ PublishAgentResponse
 //   POST /api/agents/:id/simulate     agents.read   → SimulationResult (gratis: no llama a ningún proveedor)
 // Nunca se envía `?technical=1`: es un modo técnico para administradores.
@@ -25,7 +26,7 @@ import type {
   AgentDetailResponse, AgentListResponse, CreateAgentInput, CreateAgentResponse,
   CreditsBalance, CreditsDashboard, DefaultAgentsResponse, PublishAgentResponse, SimulateAgentInput, SimulationResult,
   Agent, AgentVersion, SaveDraftInput, UpdateAgentMetaInput,
-  AgentKnowledgeCatalogItem, AgentModelCatalog, AgentToolCatalogItem,
+  AgentKnowledgeCatalogItem, AgentModelCatalog, AgentToolCatalogItem, EffectiveAccessResponse,
 } from "./types";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -103,6 +104,8 @@ export const agentsApi = {
   getToolCatalog:      (signal?: AbortSignal) => request<AgentToolCatalogItem[]>("/catalog/tools", { signal }),
   getModelCatalog:     (signal?: AbortSignal) => request<AgentModelCatalog>("/catalog/models", { signal }),
   getKnowledgeCatalog: (signal?: AbortSignal) => request<AgentKnowledgeCatalogItem[]>("/catalog/knowledge", { signal }),
+  // Solo lectura: evalúa al usuario autenticado. No admite elegir otro usuario ni workspace.
+  getEffectiveAccess: (id: number, signal?: AbortSignal) => request<EffectiveAccessResponse>(`/${id}/effective-access`, { signal }),
   publish:        (id: number) => request<PublishAgentResponse>(`/${id}/publish`, { method: "POST" }),
   simulate:       (id: number, input: SimulateAgentInput) => request<SimulationResult>(`/${id}/simulate`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),

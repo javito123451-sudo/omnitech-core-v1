@@ -23,10 +23,10 @@ import { listLedger, getAvailable } from "../credits/creditService";
 import { getDashboard } from "../credits/reporting";
 import { getAgentUsage } from "../agents/usageService";
 import { toApiError } from "../ai-gateway/apiErrors";
-import { ensurePricingLoaded, getPricingReport } from "../ai-gateway/pricingService";
-import { isProviderAvailable, PROVIDER_CONFIG } from "../ai-gateway/providerRouter";
-import { buildModelCatalog, buildToolCatalog, listKnowledgeCatalog } from "../agents/catalogService";
+import { ensurePricingLoaded } from "../ai-gateway/pricingService";
+import { buildToolCatalog, listKnowledgeCatalog, loadModelCatalog } from "../agents/catalogService";
 import { TOOL_REGISTRY } from "../agents/toolRegistry";
+import { previewEffectiveAccess } from "../agents/effectiveAccess";
 import { stripTechnical } from "../credits/customerView";
 import { listPacks } from "../credits/packService";
 
@@ -51,7 +51,7 @@ function agentId(req: Request): number | null {
 
 function fail(res: Response, err: unknown) {
   if (err instanceof AgentError) {
-    res.status(err.status).json({ error: err.message, problems: err.problems });
+    res.status(err.status).json({ error: err.message, problems: err.problems, ...(err.details.length ? { problemDetails: err.details } : {}) });
     return;
   }
   // Controlled failures of a paid operation (INSUFFICIENT_CREDITS, limits, budget,
@@ -109,7 +109,7 @@ agentsRouter.get("/catalog/tools", requirePermission("agents.read"), (_req, res)
 // Sin precios, claves ni variables de entorno.
 agentsRouter.get("/catalog/models", requirePermission("agents.read"), async (_req, res) => {
   try {
-    res.json(buildModelCatalog({ providerConfig: PROVIDER_CONFIG, isAvailable: isProviderAvailable, report: await getPricingReport() }));
+    res.json(await loadModelCatalog());
   } catch (err) { fail(res, err); }
 });
 
@@ -190,6 +190,17 @@ agentsRouter.get("/:id/usage", requirePermission("agents.read"), async (req, res
     await ensurePricingLoaded();
     const usage = await getAgentUsage(req.orgId!, id);
     res.json(technicalView(req) ? usage : stripTechnical(usage));
+  } catch (err) { fail(res, err); }
+});
+
+// Acceso efectivo (SOLO LECTURA): qué podría hacer el agente para el usuario AUTENTICADO. No ejecuta tools, no usa IA ni créditos,
+// no audita ejecuciones. No admite elegir otro usuario ni workspace: todo sale del contexto autenticado.
+agentsRouter.get("/:id/effective-access", requirePermission("agents.read"), async (req, res) => {
+  try {
+    const id = agentId(req);
+    if (!id) { res.status(400).json({ error: "id no válido" }); return; }
+    if (!req.orgId) { res.status(400).json({ error: "no_org_context", message: "Selecciona un workspace." }); return; }
+    res.json(await previewEffectiveAccess({ orgId: req.orgId, orgRole: req.effectiveRole ?? req.orgRole ?? "none", platformRole: req.platformRole ?? null }, id));
   } catch (err) { fail(res, err); }
 });
 

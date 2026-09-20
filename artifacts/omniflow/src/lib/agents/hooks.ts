@@ -20,6 +20,8 @@ export const agentKeys = {
   catalogTools:     (ws: number | null)     => ["agent-catalog-tools", ws] as const,
   catalogModels:    (ws: number | null)     => ["agent-catalog-models", ws] as const,
   catalogKnowledge: (ws: number | null)     => ["agent-catalog-knowledge", ws] as const,
+  /** `target` identifica qué versión/herramientas se evalúan, para no reutilizar un cálculo de otra configuración. */
+  effectiveAccess:  (ws: number | null, id: number, target: string) => ["agent-effective-access", ws, id, target] as const,
 };
 
 /** Workspace activo (el que ya usa el resto de la app vía OrgProvider). */
@@ -181,4 +183,19 @@ export function useAgentModelCatalog(enabled = true) {
 export function useAgentKnowledgeCatalog(enabled = true) {
   const ws = useActiveWorkspaceId();
   return useQuery({ queryKey: agentKeys.catalogKnowledge(ws), queryFn: ({ signal }) => agentsApi.getKnowledgeCatalog(signal), enabled: enabled && ws !== null, staleTime: CATALOG_STALE_MS });
+}
+
+/**
+ * Acceso efectivo del agente para el usuario autenticado (solo lectura: no ejecuta nada ni usa créditos). La clave lleva el
+ * workspace y la versión/herramientas evaluadas: si cambian, se calcula de nuevo; si no, se reutiliza. Nunca se invalida por
+ * guardar el borrador: cambia la clave cuando cambian las herramientas.
+ */
+export function useAgentEffectiveAccess(agentId: number, target: string, enabled = true) {
+  const ws = useActiveWorkspaceId();
+  return useQuery({
+    queryKey: agentKeys.effectiveAccess(ws, agentId, target),
+    queryFn: ({ signal }) => agentsApi.getEffectiveAccess(agentId, signal),
+    enabled: enabled && ws !== null,
+    staleTime: 60 * 1000,
+  });
 }

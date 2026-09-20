@@ -55,7 +55,7 @@ export function VersioningFlow({ draft, simulationCurrent, changes, reviewBase, 
             detail={!draft ? "Sin borrador" : !reviewBase ? "Primera versión: nada con lo que comparar"
               : changes === 0 ? `Sin cambios respecto a la v${reviewBase.versionNumber}` : `${changes} ${changes === 1 ? "cambio" : "cambios"} respecto a la v${reviewBase.versionNumber}`} />
           <Step id="publish" index={4} title="Publicación" state="idle"
-            detail={!draft ? "Nada que publicar" : canPublish ? "Publicar es un paso explícito" : "Requiere permiso de publicación"} />
+            detail={!draft ? "Nada que publicar" : canPublish ? "Revisión, acceso efectivo y confirmación explícita" : "Requiere permiso de publicación"} />
         </ol>
       </CardContent>
     </Card>

@@ -22,6 +22,8 @@ import { and, asc, eq } from "drizzle-orm";
 import type { SkillDefinition, SkillParam } from "../skills/types";
 import type { ToolKind, AgentTool } from "./toolRegistry";
 import type { PriceSource } from "../ai-gateway/pricingRegistry";
+import { getPricingReport } from "../ai-gateway/pricingService";
+import { PROVIDER_CONFIG, isProviderAvailable } from "../ai-gateway/providerRouter";
 
 // ── Tools ────────────────────────────────────────────────────────────────────
 
@@ -163,6 +165,14 @@ export function buildModelCatalog(src: ModelCatalogSources): ModelCatalog {
 
   const models = [...byKey.values()].sort((a, b) => a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model));
   return { providers, models };
+}
+
+/**
+ * El catálogo de modelos con sus fuentes reales. Lo usan GET /catalog/models y la validación de publicación: una sola
+ * fuente de verdad, sin listas propias.
+ */
+export async function loadModelCatalog(): Promise<ModelCatalog> {
+  return buildModelCatalog({ providerConfig: PROVIDER_CONFIG, isAvailable: isProviderAvailable, report: await getPricingReport() });
 }
 
 // ── Knowledge ────────────────────────────────────────────────────────────────

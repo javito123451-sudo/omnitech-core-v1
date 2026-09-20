@@ -28,7 +28,7 @@ import AgentDetailPage from "@/pages/agent-detail";
 import { AgentVersionList } from "@/components/agents/AgentVersionList";
 import { VersionDetailPanel } from "@/components/agents/VersionDetailPanel";
 import { Toaster } from "@/components/ui/toaster";
-import { agent, config, json, simulation, version } from "./fixtures";
+import { agent, config, defaultReadRoute, json, simulation, version } from "./fixtures";
 
 type Handler = (init?: RequestInit) => Response | Promise<Response>;
 
@@ -54,7 +54,7 @@ function serve(routes: Record<string, Handler>) {
     const path = String(url).replace(/^.*\/api\/agents/, "");
     const key = `${init?.method ?? "GET"} ${path}`;
     const h = routes[key];
-    if (!h) throw new Error(`ruta no prevista en el test: ${key}`);
+    if (!h) { const d = defaultReadRoute(key); if (d) return d; throw new Error(`ruta no prevista en el test: ${key}`); }
     return h(init);
   });
 }

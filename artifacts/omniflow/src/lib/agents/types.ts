@@ -272,3 +272,40 @@ export interface AgentKnowledgeCatalogItem {
   title:    string;
   category: string;
 }
+
+// ── Acceso efectivo (artifacts/api-server/src/agents/authorization.ts + effectiveAccess.ts) ─────────────
+
+export type EffectiveReason =
+  | "allowed" | "confirmation_required" | "missing_permission" | "module_disabled"
+  | "unknown_tool" | "duplicate_declaration" | "kind_mismatch" | "not_declared";
+
+/** Una herramienta declarada por la versión, evaluada para el usuario autenticado. Solo informativo. */
+export interface EffectiveToolAccessItem {
+  toolId:     string;
+  declaredAs: "read" | "write" | null;
+  kind:       "read" | "action" | null;
+  permission: string | null;
+  module:     string | null;
+  allowed:    boolean;
+  reason:     EffectiveReason;
+  /** true = si se ejecuta, siempre pasa antes por la confirmación de una persona. */
+  requiresConfirmation: boolean;
+  message:    string;
+}
+
+/** GET /api/agents/:id/effective-access (agents.read). Evalúa el borrador si existe; si no, la activa. */
+export interface EffectiveAccessResponse {
+  agentId:     number;
+  agentStatus: string;
+  version:     { id: number; versionNumber: number; isDraft: boolean; isActive: boolean };
+  role:        string;
+  tools:       EffectiveToolAccessItem[];
+  summary:     { declared: number; allowed: number; denied: number; requireConfirmation: number };
+}
+
+/** Problema estructurado de un 422 de publicación o de guardado del borrador (`problemDetails`). */
+export interface PublishProblemDetail {
+  field:   string;
+  code:    string;
+  message: string;
+}

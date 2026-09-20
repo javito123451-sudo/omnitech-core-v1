@@ -26,7 +26,7 @@ vi.mock("@/lib/authFetch", () => ({ authFetch: (...a: unknown[]) => authFetch(..
 
 import AgentDetailPage from "@/pages/agent-detail";
 import { Toaster } from "@/components/ui/toaster";
-import { agent, config, json, simulation, version } from "./fixtures";
+import { agent, config, defaultReadRoute, json, simulation, version } from "./fixtures";
 
 type Handler = (init?: RequestInit) => Response | Promise<Response>;
 type Routes = Record<string, Handler>;   // "GET /7", "POST /7/publish"…
@@ -46,7 +46,7 @@ function serve(routes: Routes) {
     const path = String(url).replace(/^.*\/api\/agents/, "");
     const key = `${init?.method ?? "GET"} ${path}`;
     const h = routes[key];
-    if (!h) throw new Error(`ruta no prevista en el test: ${key}`);
+    if (!h) { const d = defaultReadRoute(key); if (d) return d; throw new Error(`ruta no prevista en el test: ${key}`); }
     return h(init);
   });
 }

@@ -33,11 +33,11 @@ export async function loadKnowledge(orgId: number, cfg: AgentConfig["knowledge"]
   return out.trim();
 }
 
-/** Ids listados en la configuración que NO pertenecen a la org (o no existen). */
+/** Ids listados en la configuración que NO pertenecen a la org, no existen o están inactivas (loadKnowledge solo lee las activas). */
 export async function findUnavailableKnowledgeIds(orgId: number, entryIds: number[]): Promise<number[]> {
   if (entryIds.length === 0) return [];
   const own = await db.select({ id: knowledgeBaseTable.id }).from(knowledgeBaseTable)
-    .where(and(eq(knowledgeBaseTable.orgId, orgId), inArray(knowledgeBaseTable.id, entryIds)));
+    .where(and(eq(knowledgeBaseTable.orgId, orgId), eq(knowledgeBaseTable.isActive, true), inArray(knowledgeBaseTable.id, entryIds)));
   const ownIds = new Set(own.map((r) => r.id));
   return entryIds.filter((id) => !ownIds.has(id));
 }

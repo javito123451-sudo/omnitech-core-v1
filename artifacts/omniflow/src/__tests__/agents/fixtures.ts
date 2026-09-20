@@ -71,3 +71,22 @@ export const knowledgeCatalog = (): AgentKnowledgeCatalogItem[] => [
   { id: 1, title: "Horarios de apertura", category: "general" },
   { id: 2, title: "Tarifas 2026", category: "ventas" },
 ];
+
+// ── Acceso efectivo (GET /api/agents/:id/effective-access) y rutas de lectura por defecto ──────────
+import type { EffectiveAccessResponse } from "@/lib/agents/types";
+
+export const effectiveAccess = (over: Partial<EffectiveAccessResponse> = {}): EffectiveAccessResponse => ({
+  agentId: 7, agentStatus: "published", version: { id: 30, versionNumber: 3, isDraft: true, isActive: false }, role: "admin",
+  tools: [],
+  summary: { declared: 0, allowed: 0, denied: 0, requireConfirmation: 0 },
+  ...over,
+});
+
+/** Respuestas de solo lectura que el editor y el diálogo de publicar piden además del detalle (catálogos y acceso efectivo). */
+export function defaultReadRoute(key: string): Response | null {
+  if (key === "GET /catalog/tools") return json(200, toolCatalog());
+  if (key === "GET /catalog/models") return json(200, modelCatalog());
+  if (key === "GET /catalog/knowledge") return json(200, knowledgeCatalog());
+  if (/^GET \/\d+\/effective-access$/.test(key)) return json(200, effectiveAccess());
+  return null;
+}
