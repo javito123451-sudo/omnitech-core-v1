@@ -1,51 +1,15 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { authFetch } from "@/lib/authFetch";
-import {
-  Wrench, Package, Clock, CheckCircle2, ServerCrash, RefreshCw,
-} from "lucide-react";
+import { Wrench, Package, Clock, CheckCircle2, ServerCrash, RefreshCw, Plus, Pencil, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  REPAIR_STAGES, SERVICE_LABEL, STAGE_LABEL, useRepairOrders, useTallerDashboard, useTallerPermissions, useUpdateOrder,
+  type RepairOrder, type TallerDashboard,
+} from "@/lib/taller/tallerApi";
+import { OrderForm } from "@/components/taller/OrderForm";
+import { EmptyState, inputCls, primaryBtn } from "@/components/fleet/fleetUi";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const EMPTY_DASHBOARD: TallerDashboard = { totalActive: 0, readyForPickup: 0, inRepair: 0, waitingParts: 0, byStage: {} };
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface DashboardData {
-  totalActive: number;
-  readyForPickup: number;
-  inRepair: number;
-  waitingParts: number;
-  byStage: Record<string, number>;
-}
-
-interface RepairOrder {
-  id: number;
-  clientId: number;
-  clientName: string | null;
-  clientPhone: string | null;
-  vehiclePlate: string | null;
-  vehicleModel: string | null;
-  vehicleMileageKm: number | null;
-  serviceType: string;
-  stage: string;
-  notes: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const EMPTY_DASHBOARD: DashboardData = {
-  totalActive: 0, readyForPickup: 0, inRepair: 0, waitingParts: 0, byStage: {},
-};
-
-const STAGES = [
-  "received", "diagnosing", "quote_sent", "approved", "in_repair", "waiting_parts", "ready", "delivered", "cancelled",
-] as const;
-
-const STAGE_LABEL: Record<string, string> = {
-  received: "Recibido", diagnosing: "En diagnóstico", quote_sent: "Presupuesto enviado",
-  approved: "Aprobado", in_repair: "En reparación", waiting_parts: "Esperando piezas",
-  ready: "Listo para recoger", delivered: "Entregado", cancelled: "Cancelado",
-};
 const STAGE_STYLE: Record<string, string> = {
   received:      "bg-slate-500/20 text-slate-400 border-slate-500/30",
   diagnosing:    "bg-blue-500/20 text-blue-400 border-blue-500/30",
@@ -58,15 +22,9 @@ const STAGE_STYLE: Record<string, string> = {
   cancelled:     "bg-red-500/20 text-red-400 border-red-500/30",
 };
 
-const SERVICE_LABEL: Record<string, string> = {
-  revision: "Revisión", itv: "ITV", cambio_aceite: "Cambio de aceite",
-  neumaticos: "Neumáticos", reparacion: "Reparación", presupuesto: "Presupuesto",
-  consulta_general: "Consulta general",
-};
-
 function StageBadge({ s }: { s: string }) {
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${STAGE_STYLE[s] ?? STAGE_STYLE.received}`}>
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${STAGE_STYLE[s] ?? STAGE_STYLE["received"]}`}>
       {STAGE_LABEL[s] ?? s}
     </span>
   );
@@ -105,24 +63,15 @@ function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => vo
   );
 }
 
-// ── Fila de orden con selector de fase inline ────────────────────────────────
+// ── Fila de orden con selector de fase inline y edición ─────────────────────
 
-function OrderRow({ order }: { order: RepairOrder }) {
+function OrderRow({ order, canWrite, onEdit }: { order: RepairOrder; canWrite: boolean; onEdit: (o: RepairOrder) => void }) {
   const { toast } = useToast();
-  const qc = useQueryClient();
+  const update = useUpdateOrder();
 
   const changeStage = async (stage: string) => {
-    const res = await authFetch(`${BASE}/api/taller/orders/${order.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage }),
-    });
-    if (!res.ok) {
-      toast({ title: "No se pudo actualizar la fase", variant: "destructive" });
-      return;
-    }
-    qc.invalidateQueries({ queryKey: ["taller-orders"] });
-    qc.invalidateQueries({ queryKey: ["taller-dashboard"] });
+    try { await update.mutateAsync({ id: order.id, patch: { stage } }); }
+    catch (e) { toast({ title: (e as Error).message, variant: "destructive" }); }
   };
 
   return (
@@ -134,15 +83,20 @@ function OrderRow({ order }: { order: RepairOrder }) {
       <td className="py-3 text-slate-400">{SERVICE_LABEL[order.serviceType] ?? order.serviceType}</td>
       <td className="py-3"><StageBadge s={order.stage} /></td>
       <td className="py-3">
-        <select
-          value={order.stage}
-          onChange={(e) => changeStage(e.target.value)}
-          className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-orange-500"
-        >
-          {STAGES.map((s) => (
-            <option key={s} value={s}>{STAGE_LABEL[s]}</option>
-          ))}
-        </select>
+        {canWrite ? (
+          <select
+            aria-label={`Cambiar fase de la orden ${order.id}`}
+            value={order.stage}
+            disabled={update.isPending}
+            onChange={(e) => changeStage(e.target.value)}
+            className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-orange-500"
+          >
+            {REPAIR_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
+          </select>
+        ) : <span className="text-xs text-slate-500">—</span>}
+      </td>
+      <td className="py-3 text-right">
+        {canWrite && <button aria-label={`Editar orden ${order.id}`} className="text-slate-400 hover:text-white" onClick={() => onEdit(order)}><Pencil className="w-4 h-4" /></button>}
       </td>
     </tr>
   );
@@ -152,41 +106,33 @@ function OrderRow({ order }: { order: RepairOrder }) {
 
 export default function TallerPage() {
   const [stageFilter, setStageFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<RepairOrder | "new" | null>(null);
+  const { canWrite } = useTallerPermissions();
 
-  const {
-    data: dashboard, isLoading, isError, refetch,
-  } = useQuery<DashboardData>({
-    queryKey: ["taller-dashboard"],
-    queryFn: () =>
-      authFetch(`${BASE}/api/taller/dashboard`).then(r => {
-        if (!r.ok) throw new Error("Error al cargar el dashboard del taller");
-        return r.json() as Promise<DashboardData>;
-      }),
-    refetchInterval: 30_000,
-  });
-
-  const { data: orders = [] } = useQuery<RepairOrder[]>({
-    queryKey: ["taller-orders", stageFilter],
-    queryFn: () =>
-      authFetch(`${BASE}/api/taller/orders${stageFilter ? `?stage=${stageFilter}` : ""}`)
-        .then(r => r.ok ? r.json() as Promise<RepairOrder[]> : []),
-  });
+  const { data: dashboard, isLoading, isError, refetch } = useTallerDashboard();
+  const { data: orders = [], isError: ordersError } = useRepairOrders({ stage: stageFilter || undefined, q: search });
 
   const safeData = dashboard ?? EMPTY_DASHBOARD;
+  const filtered = stageFilter !== "" || search.trim() !== "";
+  const newBtn = canWrite ? <button className={`${primaryBtn} inline-flex items-center gap-2`} onClick={() => setEditing("new")}><Plus className="w-4 h-4" /> Nueva orden</button> : null;
 
   return (
     <div className="min-h-screen bg-slate-900 p-4 md:p-6">
       <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-600/20 border border-orange-500/30 flex items-center justify-center">
-            <Wrench className="w-5 h-5 text-orange-400" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-600/20 border border-orange-500/30 flex items-center justify-center">
+              <Wrench className="w-5 h-5 text-orange-400" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-white">Omni Taller</h1>
+              <p className="text-xs text-slate-400">Órdenes de reparación — citas y presupuestos en /calendar y /quotes</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-white">Omni Taller</h1>
-            <p className="text-xs text-slate-400">Órdenes de reparación — citas y presupuestos en /calendar y /quotes</p>
-          </div>
+          {newBtn}
         </div>
 
         {isError ? (
@@ -209,24 +155,40 @@ export default function TallerPage() {
 
             {/* Órdenes */}
             <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
                   <Wrench className="w-4 h-4 text-orange-400" /> Órdenes de reparación
                 </h3>
-                <select
-                  value={stageFilter}
-                  onChange={(e) => setStageFilter(e.target.value)}
-                  className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500"
-                >
-                  <option value="">Todas las fases</option>
-                  {STAGES.map((s) => (
-                    <option key={s} value={s}>{STAGE_LABEL[s]}</option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      aria-label="Buscar órdenes"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Matrícula, modelo o cliente"
+                      className={`${inputCls} !w-56 !pl-8 !py-1.5 text-xs`}
+                    />
+                  </div>
+                  <select
+                    aria-label="Filtrar por fase"
+                    value={stageFilter}
+                    onChange={(e) => setStageFilter(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500"
+                  >
+                    <option value="">Todas las fases</option>
+                    {REPAIR_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
+                  </select>
+                </div>
               </div>
 
-              {orders.length === 0 ? (
-                <p className="text-sm text-slate-500 py-6 text-center">No hay órdenes de reparación con ese filtro.</p>
+              {ordersError ? (
+                <p role="alert" className="text-sm text-red-400 py-6 text-center">No se pudieron cargar las órdenes.</p>
+              ) : orders.length === 0 ? (
+                <EmptyState
+                  text={filtered ? "No hay órdenes que coincidan con la búsqueda." : "Todavía no hay órdenes de reparación. Crea la primera al recibir un vehículo."}
+                  action={filtered ? null : newBtn}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
@@ -237,10 +199,11 @@ export default function TallerPage() {
                         <th className="pb-2 font-medium">Servicio</th>
                         <th className="pb-2 font-medium">Fase</th>
                         <th className="pb-2 font-medium">Cambiar a</th>
+                        <th className="pb-2" />
                       </tr>
                     </thead>
                     <tbody>
-                      {orders.map((o) => <OrderRow key={o.id} order={o} />)}
+                      {orders.map((o) => <OrderRow key={o.id} order={o} canWrite={canWrite} onEdit={setEditing} />)}
                     </tbody>
                   </table>
                 </div>
@@ -249,6 +212,7 @@ export default function TallerPage() {
           </>
         )}
       </div>
+      {editing && <OrderForm order={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }

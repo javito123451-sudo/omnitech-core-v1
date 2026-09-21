@@ -6,6 +6,11 @@ import {
   ServerCrash, RefreshCw, Link2, Copy, Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useOrg } from "@/lib/orgContext";
+import { useFleetDrivers, useFleetPermissions, useFleetVehicles } from "@/lib/fleet/fleetApi";
+import { DriversPanel } from "@/components/fleet/DriversPanel";
+import { VehiclesPanel } from "@/components/fleet/VehiclesPanel";
+import { RoutesPanel } from "@/components/fleet/RoutesPanel";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -25,9 +30,6 @@ interface DashboardData {
     totalStops: number; completedStops: number; incidentStops: number;
   }>;
 }
-
-interface FleetDriver { id: number; name: string; status: string; }
-interface FleetVehicle { id: number; plate: string; status: string; driverId: number | null; }
 
 interface ProviderInfo {
   connected: boolean;
@@ -99,18 +101,22 @@ function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => vo
 
 // ── Sección de conexión con la app de reparto (adaptador pluggable) ─────────
 
-function DeliveryProviderCard() {
+function DeliveryProviderCard({ canWrite }: { canWrite: boolean }) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { org } = useOrg();
+  const orgId = org?.id ?? null;
   const [copied, setCopied] = useState(false);
   const [selected, setSelected] = useState("");
 
   const { data: provider } = useQuery<ProviderInfo>({
-    queryKey: ["fleet-provider"],
+    queryKey: ["fleet", orgId, "provider"],
+    enabled: orgId !== null,
     queryFn: () => authFetch(`${BASE}/api/fleet/provider`).then(r => r.json() as Promise<ProviderInfo>),
   });
   const { data: options = [] } = useQuery<ProviderOption[]>({
-    queryKey: ["fleet-providers"],
+    queryKey: ["fleet", orgId, "providers"],
+    enabled: orgId !== null,
     queryFn: () => authFetch(`${BASE}/api/fleet/providers`).then(r => r.json() as Promise<ProviderOption[]>),
   });
 
@@ -125,7 +131,7 @@ function DeliveryProviderCard() {
       return;
     }
     toast({ title: "Proveedor de estado de entregas conectado ✓" });
-    qc.invalidateQueries({ queryKey: ["fleet-provider"] });
+    qc.invalidateQueries({ queryKey: ["fleet", orgId, "provider"] });
   };
 
   const copyUrl = () => {
@@ -166,6 +172,8 @@ function DeliveryProviderCard() {
             Configura esta URL como webhook de estado en la app de reparto que ya usa el cliente.
           </p>
         </div>
+      ) : !canWrite ? (
+        <p className="text-sm text-slate-500">Todavía no hay una app de reparto conectada. Pide a un administrador que la conecte.</p>
       ) : (
         <div className="flex items-center gap-2">
           <select
@@ -193,11 +201,22 @@ function DeliveryProviderCard() {
 
 // ── Página principal ─────────────────────────────────────────────────────────
 
+type Tab = "summary" | "routes" | "drivers" | "vehicles" | "connection";
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "summary", label: "Resumen" }, { id: "routes", label: "Rutas" }, { id: "drivers", label: "Conductores" },
+  { id: "vehicles", label: "Vehículos" }, { id: "connection", label: "App de reparto" },
+];
+
 export default function FleetPage() {
+  const { org } = useOrg();
+  const orgId = org?.id ?? null;
+  const { canWrite } = useFleetPermissions();
+  const [tab, setTab] = useState<Tab>("summary");
   const {
     data: dashboard, isLoading, isError, refetch,
   } = useQuery<DashboardData>({
-    queryKey: ["fleet-dashboard"],
+    queryKey: ["fleet", orgId, "dashboard"],
+    enabled: orgId !== null,
     queryFn: () =>
       authFetch(`${BASE}/api/fleet/dashboard`).then(r => {
         if (!r.ok) throw new Error("Error al cargar el dashboard de flota");
@@ -206,14 +225,8 @@ export default function FleetPage() {
     refetchInterval: 30_000,
   });
 
-  const { data: drivers = [] } = useQuery<FleetDriver[]>({
-    queryKey: ["fleet-drivers"],
-    queryFn: () => authFetch(`${BASE}/api/fleet/drivers`).then(r => r.ok ? r.json() as Promise<FleetDriver[]> : []),
-  });
-  const { data: vehicles = [] } = useQuery<FleetVehicle[]>({
-    queryKey: ["fleet-vehicles"],
-    queryFn: () => authFetch(`${BASE}/api/fleet/vehicles`).then(r => r.ok ? r.json() as Promise<FleetVehicle[]> : []),
-  });
+  const { data: drivers = [] } = useFleetDrivers();
+  const { data: vehicles = [] } = useFleetVehicles();
 
   const driverName = (id: number | null) => drivers.find(d => d.id === id)?.name ?? "Sin asignar";
   const vehiclePlate = (id: number | null) => vehicles.find(v => v.id === id)?.plate ?? "Sin asignar";
@@ -235,7 +248,21 @@ export default function FleetPage() {
           </div>
         </div>
 
-        {isError ? (
+        <div role="tablist" aria-label="Secciones de Omni Fleet" className="flex flex-wrap gap-1 border-b border-slate-700/50">
+          {TABS.map((t) => (
+            <button
+              key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.id ? "border-blue-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+            >{t.label}</button>
+          ))}
+        </div>
+
+        {tab === "routes" && <RoutesPanel canWrite={canWrite} />}
+        {tab === "drivers" && <DriversPanel canWrite={canWrite} />}
+        {tab === "vehicles" && <VehiclesPanel canWrite={canWrite} />}
+        {tab === "connection" && <DeliveryProviderCard canWrite={canWrite} />}
+
+        {tab === "summary" && (isError ? (
           <ErrorState onRetry={() => refetch()} />
         ) : isLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -296,9 +323,8 @@ export default function FleetPage() {
               )}
             </div>
 
-            <DeliveryProviderCard />
           </>
-        )}
+        ))}
       </div>
     </div>
   );
