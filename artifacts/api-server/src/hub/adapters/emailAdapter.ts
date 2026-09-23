@@ -45,14 +45,27 @@ const EmailAdapter: IntegrationAdapter = {
     const subject = (payload.metadata?.["subject"] as string | undefined) ?? "Mensaje de OmniTech Core";
     const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;white-space:pre-wrap;line-height:1.6;color:#1a1f2e;">${escapeHtml(payload.message)}</div>`;
     try {
-      const ok = await sendEmail(payload.to, subject, html);
-      return ok ? { success: true } : { success: false, error: "RESEND_API_KEY no configurado" };
+      // OmniSeller Fase 5 — PASO 1: sendEmail() ahora devuelve el id real de
+      // Resend; se propaga como providerId para que outreachService.ts lo
+      // guarde en lead_messages.external_message_id (sin esto, el webhook de
+      // Fase 5 no podría correlacionar ningún evento de email).
+      const result = await sendEmail(payload.to, subject, html);
+      return result.ok
+        ? { success: true, providerId: result.id }
+        : { success: false, error: result.error ?? "RESEND_API_KEY no configurado" };
     } catch (err) {
       return { success: false, error: String(err) };
     }
   },
 
-  // No procesamos webhooks entrantes de email en esta versión.
+  // No procesamos webhooks entrantes de email EN EL HUB en esta versión —
+  // el webhook de eventos de Resend (delivered/bounced/...) de OmniSeller
+  // Fase 5 vive deliberadamente fuera del Hub, en
+  // outreach/webhooks/resendWebhook.ts, con su propia verificación de firma
+  // Svix y su propia lógica de correlación con lead_messages — no encaja en
+  // la forma ReceiveMessagePayload (pensada para mensajes conversacionales
+  // entrantes, no para eventos de estado de entrega). Este método sigue
+  // devolviendo null a propósito.
   async receive(_rawPayload: unknown): Promise<ReceiveMessagePayload | null> {
     return null;
   },

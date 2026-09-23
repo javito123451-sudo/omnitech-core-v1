@@ -1,8 +1,10 @@
-import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { organizationsTable } from "./organizations";
 import { clientsTable } from "./clients";
+import { leadContactsTable } from "./leadContacts";
+import { missionsTable } from "./missions";
 
 export const appointmentsTable = pgTable("appointments", {
   id: serial("id").primaryKey(),
@@ -27,7 +29,19 @@ export const appointmentsTable = pgTable("appointments", {
   tags: text("tags"),
   location: text("location"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+  // ── OmniSeller Fase 8 — trazabilidad opcional (nullable) hacia el lead que
+  // originó la reserva. NUNCA obligatoria: una cita tradicional del CRM (o
+  // una de invitado creada fuera de OmniSeller) sigue funcionando exactamente
+  // igual con estas dos columnas en null. onDelete "set null" (no "cascade"):
+  // borrar el lead_contact o la mission no debe borrar la cita ya creada.
+  leadContactId: integer("lead_contact_id")
+    .references(() => leadContactsTable.id, { onDelete: "set null" }),
+  missionId: integer("mission_id")
+    .references(() => missionsTable.id, { onDelete: "set null" }),
+}, (t) => [
+  index("appointments_lead_contact_id_idx").on(t.leadContactId),
+  index("appointments_mission_id_idx").on(t.missionId),
+]);
 
 export const insertAppointmentSchema = createInsertSchema(appointmentsTable).omit({ id: true, createdAt: true });
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;

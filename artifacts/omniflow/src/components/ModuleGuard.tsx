@@ -17,6 +17,7 @@ const MODULE_LABELS: Record<string, string> = {
   omni_agent_factory: "Omni Agent Factory",
   omni_accounting: "Omni Accounting",
   omni_leads:    "OmniLeads AI",
+  omni_seller:   "OmniSeller — Misiones",
   a_medida:      "A Medida",
   omni_fleet:    "Omni Fleet",
   omni_taller:   "Omni Taller",

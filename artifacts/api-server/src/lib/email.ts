@@ -14,15 +14,34 @@ function getResend(): Resend | null {
 // función acepta cualquier asunto/cuerpo — la usa el Autopilot por cliente para
 // enviar seguimientos comerciales generados por IA. Remitente compartido de la
 // plataforma (RESEND_API_KEY único) — no hay remitente propio por organización.
-export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+//
+// OmniSeller Fase 5 — PASO 1: antes, esta función descartaba el id que
+// devuelve `resend.emails.send()` (solo miraba `result.error`, nunca
+// `result.data.id`) — sin ese id, ningún lead_message enviado por email
+// podía correlacionarse con un webhook de entrega posterior
+// (delivered/bounced/...), porque `external_message_id` quedaba siempre en
+// null. Se cambia el tipo de retorno de `boolean` a `SendEmailResult` para
+// propagarlo. Único llamador existente de sendEmail(): hub/adapters/
+// emailAdapter.ts — se actualiza en el mismo cambio, así que no queda
+// ningún consumidor roto (comprobado con grep antes de este cambio).
+export interface SendEmailResult {
+  ok: boolean;
+  /** El id que Resend devuelve para el email creado — mismo valor que luego
+   *  aparece en `data.email_id` en los webhooks de eventos de ese email. */
+  id?: string;
+  error?: string;
+}
+
+export async function sendEmail(to: string, subject: string, html: string): Promise<SendEmailResult> {
   const resend = getResend();
   if (!resend) {
     console.warn("[Email] RESEND_API_KEY no configurado — envío omitido.");
-    return false;
+    return { ok: false, error: "RESEND_API_KEY no configurado" };
   }
   const from = process.env["EMAIL_FROM"] ?? "OmniTech Core <onboarding@resend.dev>";
   const result = await resend.emails.send({ from, to, subject, html });
-  return !result.error;
+  if (result.error) return { ok: false, error: result.error.message ?? String(result.error) };
+  return { ok: true, id: result.data?.id };
 }
 
 export interface PortalEmailParams {

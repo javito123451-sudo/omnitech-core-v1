@@ -19,6 +19,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { processDueTemplates } from "../utils/recurringInvoiceScheduler";
 import { runAutopilotTick } from "../utils/autopilotScheduler";
 import { runDailyBackupJob } from "../utils/backupEngine";
+import { runFollowupTick } from "../outreach/followup/followupEngine";
 import { logger } from "../lib/logger";
 
 export const internalCronRouter: IRouter = Router();
@@ -70,6 +71,21 @@ internalCronRouter.post("/daily-backup", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "[InternalCron] daily-backup falló");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// OmniSeller Fase 6 — sibling tick de Follow-up. NUNCA existió como
+// cron.schedule() residente (a diferencia de autopilotScheduler.ts, que sí
+// lo tiene todavía por compatibilidad) — nace ya en el patrón serverless
+// correcto, sin necesitar migración futura.
+internalCronRouter.post("/omniseller-followup", async (req, res) => {
+  if (!requireCronSecret(req, res)) return;
+  try {
+    const result = await runFollowupTick();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logger.error({ err }, "[InternalCron] omniseller-followup falló");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

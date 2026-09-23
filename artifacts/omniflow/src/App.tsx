@@ -61,6 +61,7 @@ import TaxPage from "@/pages/tax/index";
 import MarketingHubPage from "@/pages/marketing";
 import OmniAdsPage from "@/pages/ads/index";
 import LeadsPage from "@/pages/leads";
+import MissionsPage from "@/pages/missions";
 import TimePage from "@/pages/time";
 import FleetPage from "@/pages/fleet";
 import TallerPage from "@/pages/taller";
@@ -554,6 +555,15 @@ function AppRoutes() {
           <MainLayout>
             <ModuleGuard moduleKey="omni_leads">
               <LeadsPage />
+            </ModuleGuard>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/missions">
+        <ProtectedRoute>
+          <MainLayout>
+            <ModuleGuard moduleKey="omni_seller">
+              <MissionsPage />
             </ModuleGuard>
           </MainLayout>
         </ProtectedRoute>

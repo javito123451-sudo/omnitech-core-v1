@@ -121,7 +121,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     const ALL_MODULE_SLUGS = [
       "crm", "ai_agents", "omni_agent_factory", "analytics", "integrations", "automations",
       "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
-      "omni_marketing", "omni_ads", "omni_leads", "omni_diagnostics",
+      "omni_marketing", "omni_ads", "omni_leads", "omni_seller", "omni_diagnostics",
       "omni_security", "omni_docs", "quotes", "portal_cliente",
       "knowledge_base", "a_medida", "omni_fleet", "omni_taller",
     ] as const;

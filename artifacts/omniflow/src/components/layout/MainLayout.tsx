@@ -84,6 +84,7 @@ const sidebarGroups: NavGroup[] = [
       { icon: Megaphone,  label: "Omni Marketing Hub", href: "/marketing", moduleKey: "omni_marketing" },
       { icon: Radio,      label: "OmniAds",            href: "/ads",       moduleKey: "omni_ads" },
       { icon: ScanSearch, label: "OmniLeads AI",       href: "/leads",     moduleKey: "omni_leads" },
+      { icon: Target,     label: "Misiones",           href: "/missions",  moduleKey: "omni_seller" },
       { icon: Truck,      label: "A Medida",           href: "/a-medida-panel", moduleKey: "a_medida" },
     ],
   },
@@ -146,6 +147,7 @@ const moreItems: MoreItem[] = [
   { icon: Megaphone,       label: "Omni Marketing Hub", href: "/marketing",   group: "Marketing",  moduleKey: "omni_marketing" },
   { icon: Radio,           label: "OmniAds",            href: "/ads",         group: "Marketing",  moduleKey: "omni_ads" },
   { icon: ScanSearch,      label: "OmniLeads AI",        href: "/leads",       group: "Marketing",  moduleKey: "omni_leads" },
+  { icon: Target,          label: "Misiones",            href: "/missions",    group: "Marketing",  moduleKey: "omni_seller" },
   { icon: Truck,           label: "A Medida",            href: "/a-medida-panel", group: "Marketing", moduleKey: "a_medida" },
 ];
 

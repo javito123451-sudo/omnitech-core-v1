@@ -4,6 +4,7 @@ import { scheduleAutoBackups } from "./utils/backupEngine";
 import { autoSetupTelegramWebhooks } from "./routes/telegram";
 import { runStartupMigrations } from "./utils/startupMigrations";
 import { startAutopilotScheduler } from "./utils/autopilotScheduler";
+import { startFollowupScheduler } from "./outreach/followup/followupEngine";
 import { startRecurringInvoiceScheduler } from "./utils/recurringInvoiceScheduler";
 import { initAIE } from "./aie";
 
@@ -39,6 +40,10 @@ app.listen(port, (err) => {
     });
   scheduleAutoBackups();
   if (process.env["NODE_ENV"] !== "test") startAutopilotScheduler();
+  // OmniSeller Fase 9 — mismo mecanismo residente (node-cron dentro de este
+  // proceso), registro propio e independiente del de Autopilot — ver
+  // cabecera de outreach/followup/followupEngine.ts.
+  if (process.env["NODE_ENV"] !== "test") startFollowupScheduler();
 
   // Auto-register Telegram webhooks for all configured orgs.
   // Priority: PUBLIC_URL (env override) > hardcoded production domain.

@@ -37,10 +37,14 @@ import { taxRouter } from "./tax";
 import { marketingRouter } from "./marketing";
 import { adsRouter } from "./ads";
 import { leadsRouter } from "./leads";
+import { missionsRouter } from "./missions";
 import { publicLeadCaptureRouter } from "./publicLeadCapture";
 import { aMedidaLeadsRouter } from "./aMedidaLeads";
 import { timeRouter }  from "./time";
 import { fleetRouter, fleetWebhookRouter } from "./fleet";
+import { outreachWebhooksRouter } from "./outreachWebhooks";
+import { outreachFollowupRouter } from "./outreachFollowup";
+import { outreachBookingsRouter } from "./outreachBookings";
 import { tallerRouter } from "./taller";
 import { aceRouter } from "./ace";
 import { avaCoreRouter } from "./ava-core";
@@ -75,6 +79,10 @@ router.use("/telegram", telegramWebhookRouter);
 // ── Fleet delivery-status webhook — public (la app de reparto del cliente
 // llama esto sin auth, con el secreto en la propia URL) ───────────────────────
 router.use("/fleet", fleetWebhookRouter);
+
+// ── OmniSeller Fase 5 — webhooks de Outreach (Resend) — public, autenticado
+// por firma Svix (no por sesión) ───────────────────────────────────────────────
+router.use("/outreach/webhooks", outreachWebhooksRouter);
 
 // ── Public lead capture — formulario web de la landing, sin auth ──────────────
 // Prefijo propio "/leads-public", NO "/leads": evitamos deliberadamente
@@ -139,6 +147,19 @@ router.use("/tax",            requireModule("omni_tax"), taxRouter);
 router.use("/marketing",      requireModule("omni_marketing"), marketingRouter);
 router.use("/ads",            requireModule("omni_ads"),       adsRouter);
 router.use("/leads",          requireModule("omni_leads"),     leadsRouter);
+// OmniSeller Fase 1 — Missions tiene su propio módulo ("omni_seller"),
+// independiente de OmniLeads (omni_leads sigue gobernando solo leadsRouter).
+// Decisión de arquitectura aprobada explícitamente (ver plan OmniSeller).
+router.use("/missions",       requireModule("omni_seller"),    missionsRouter);
+// OmniSeller Fase 6 — gestión de secuencias de Follow-up. Mismo módulo que
+// Missions (omni_seller) y mismos permisos (omniseller.read/write) — ver
+// cabecera de routes/outreachFollowup.ts.
+router.use("/outreach/followups", requireModule("omni_seller"), outreachFollowupRouter);
+// OmniSeller Fase 8 — booking desde OmniSeller reutilizando appointments/
+// appointmentSkills.ts (ver cabecera de routes/outreachBookings.ts). Mismo
+// módulo y mismos permisos que Missions/Follow-ups — omniseller.write, sin
+// tocar los permisos calendar.* del sistema de citas tradicional.
+router.use("/outreach/bookings", requireModule("omni_seller"), outreachBookingsRouter);
 router.use("/a-medida-leads", requireModule("a_medida"),       aMedidaLeadsRouter);
 router.use("/time",           requireModule("omni_time"),      timeRouter);
 router.use("/fleet",          requireModule("omni_fleet"),     fleetRouter);

@@ -663,6 +663,7 @@ export async function getModulesData() {
     { slug: "omni_tax",         name: "OmniTax",                description: "Motor fiscal, calendario y simuladores", alwaysOn: false },
     { slug: "omni_ads",         name: "OmniAds",                description: "Centro de publicidad con IA — campañas, creativos, analíticas", alwaysOn: false },
     { slug: "omni_leads",       name: "OmniLeads AI",           description: "Captación y gestión de leads con IA",    alwaysOn: false },
+    { slug: "omni_seller",      name: "OmniSeller — Misiones",  description: "Orquestación de campañas de prospección B2B (Missions)", alwaysOn: false },
     { slug: "a_medida",         name: "A Medida",               description: "Panel de solicitudes del formulario público de montaje y mudanzas", alwaysOn: false },
     { slug: "omni_fleet",       name: "Omni Fleet",             description: "Flota, conductores, rutas y estado de entregas", alwaysOn: false },
     { slug: "omni_taller",      name: "Omni Taller",            description: "Órdenes de reparación para talleres: vehículo, fase y seguimiento", alwaysOn: false },

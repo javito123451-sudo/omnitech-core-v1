@@ -78,6 +78,48 @@
       "when": 1789932762568,
       "tag": "0010_agent_live_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790053542734,
+      "tag": "0011_omniseller_fase1_missions",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790072477621,
+      "tag": "0012_jittery_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790099135182,
+      "tag": "0013_spotty_rafael_vega",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790105913064,
+      "tag": "0014_omniseller_fase5_webhooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790110610707,
+      "tag": "0015_omniseller_fase6_followups",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790135149393,
+      "tag": "0016_omniseller_fase8_booking",
+      "breakpoints": true
     }
   ]
 }

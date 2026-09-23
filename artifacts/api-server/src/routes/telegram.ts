@@ -9,6 +9,11 @@ import { eq, and, desc, asc, isNotNull, isNull, ne, ilike, gte, inArray } from "
 import { decryptCredentials, logIntegrationEvent } from "../utils/integrationCreds";
 import { transcribeAudio } from "../utils/transcribeAudio";
 import { pauseAutopilotOnReply } from "../utils/autopilotPause";
+// OmniSeller Fase 5 — PASO 12/14: rama ADITIVA y aislada, añadida a este
+// archivo en vez de crear un segundo webhook de Telegram (un bot solo puede
+// tener una URL de webhook registrada — ver auditoría de Fase 5).
+import { processOutreachEvent } from "../outreach/webhooks/eventProcessor";
+import { correlateInboundContact } from "../outreach/webhooks/inboundCorrelation";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Ava V2 imports
@@ -918,6 +923,26 @@ async function processIncomingTelegramMessage(orgId: number, msg: TgMessage): Pr
   const senderName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ");
   const username   = msg.from?.username ? `@${msg.from.username}` : null;
   const trimmed    = text.toLowerCase();
+
+  // ── OmniSeller Fase 5 — PASO 11/12: rama ADITIVA y aislada. Si este chat
+  // corresponde INEQUÍVOCAMENTE (mismo org — ya resuelto arriba por el
+  // secreto propio de este bot — mismo canal, al menos un envío de
+  // Outreach ya realizado) a una conversación de OmniSeller, se registra el
+  // evento + audit y se omite el resto del pipeline (bot CRM/Autopilot):
+  // sin auto-reply, sin IA, sin follow-up, sin booking. Si no hay
+  // correlación clara, el comportamiento es EXACTAMENTE el de siempre.
+  const outreachCorrelation = await correlateInboundContact(orgId, "telegram", String(chatId), true).catch(() => null);
+  if (outreachCorrelation) {
+    await processOutreachEvent({
+      provider: "telegram",
+      externalEventId: `telegram_inbound:${orgId}:${outreachCorrelation.contactId}:${msg.message_id}`,
+      eventType: "telegram_inbound",
+      rawPayload: { chatId, text: text.slice(0, 500), messageId: msg.message_id },
+      correlate: { by: "resolved", orgId, contactId: outreachCorrelation.contactId, leadMessageId: outreachCorrelation.mostRecentLeadMessageId ?? undefined },
+    }).catch((err) => console.error("[Telegram Webhook] OmniSeller inbound processing error:", err));
+    console.log(`[Telegram] Mensaje correlacionado con OmniSeller (contactId=${outreachCorrelation.contactId}) — sin auto-reply, sin IA.`);
+    return;
+  }
 
   const isAccepted = ACCEPTANCE_RE.test(trimmed);
   const isRejected = !isAccepted && REJECTION_RE.test(trimmed);

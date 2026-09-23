@@ -1203,6 +1203,27 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-AX: CRM ficha comercial + Autopilot-por-cliente columns ensured");
 
+    // ── FIX-AY: OmniSeller (Missions) pasa a ser un módulo propio (omni_seller).
+    //    Antes Missions colgaba del gate de omni_leads (que sigue gobernando solo
+    //    OmniLeads). Para no quitar ni dar acceso a nadie por el cambio, cada
+    //    workspace que aún no tiene fila para omni_seller hereda el estado actual
+    //    de su fila omni_leads — mismo patrón que FIX-AG (omni_agent_factory ←
+    //    ai_agents). updated_by = 'system-fix-ay' (distinto de 'system-fix-ab'):
+    //    FIX-AB/AF nunca lo sobrescriben, y una fila que el administrador ya haya
+    //    tocado (ON CONFLICT DO NOTHING) tampoco. Idempotente: solo inserta lo
+    //    que falta.
+    {
+      const result = await db.execute(sql`
+        INSERT INTO module_configs (org_id, module_slug, is_enabled, updated_by, updated_at)
+        SELECT mc.org_id, 'omni_seller', mc.is_enabled, 'system-fix-ay', NOW()
+        FROM module_configs mc
+        WHERE mc.module_slug = 'omni_leads'
+        ON CONFLICT (org_id, module_slug) DO NOTHING
+      `);
+      const inserted = (result as { rowCount?: number }).rowCount ?? 0;
+      logger.info(`[Migration] ✅ FIX-AY: omni_seller heredó el estado de omni_leads en ${inserted} workspace(s)`);
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

@@ -30,6 +30,93 @@ export function getMadridWeekBounds(): { start: Date; end: Date } {
   return { start, end };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared appointment insert + CRM-003 verification — extracted in OmniSeller
+// Fase 8 so a second caller (the OmniSeller booking bridge, see
+// outreach/booking/omniSellerBooking.ts) can create appointments through the
+// SAME insert + read-back-verification + activity-log path as the
+// conversational skill below, instead of duplicating it. `leadContactId`/
+// `missionId` are the only new, always-optional fields — a caller that omits
+// them (the skill below, always) gets byte-identical behaviour to before
+// this refactor.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface InsertAppointmentInput {
+  orgId: number;
+  title: string;
+  description?: string | null;
+  startTime: Date;
+  endTime: Date;
+  type?: string | null;
+  location?: string | null;
+  clientId?: number | null;
+  guestName?: string | null;
+  guestPhone?: string | null;
+  guestEmail?: string | null;
+  /** OmniSeller Fase 8 — trazabilidad opcional, nunca requerida. */
+  leadContactId?: number | null;
+  missionId?: number | null;
+  reminder?: boolean;
+  /** Nombre a mostrar en el log de actividad (cliente resuelto o invitado). */
+  displayName: string;
+  /** Sufijo libre para el texto del log de actividad, p. ej. " (invitado)". */
+  activityNote?: string;
+}
+
+export type AppointmentRow = typeof appointmentsTable.$inferSelect;
+
+export type InsertAppointmentResult =
+  | { success: true; appointment: AppointmentRow }
+  | { success: false; error: string };
+
+export async function insertAppointmentWithVerification(
+  input: InsertAppointmentInput,
+): Promise<InsertAppointmentResult> {
+  const [appointment] = await db.insert(appointmentsTable).values({
+    orgId:         input.orgId,
+    clientId:      input.clientId ?? null,
+    guestName:     input.guestName  ?? null,
+    guestPhone:    input.guestPhone ?? null,
+    guestEmail:    input.guestEmail ?? null,
+    leadContactId: input.leadContactId ?? null,
+    missionId:     input.missionId    ?? null,
+    title:         input.title,
+    description:   input.description ?? null,
+    startTime:     input.startTime,
+    endTime:       input.endTime,
+    status:        "pending",
+    type:          input.type ?? "meeting",
+    location:      input.location ?? null,
+    reminder:      input.reminder ?? false,
+  }).returning();
+
+  // CRM-003: DB READ-BACK VALIDATION
+  if (!appointment) {
+    return { success: false, error: "Error al crear la cita: la inserción no devolvió registro." };
+  }
+  const [saved] = await db.select().from(appointmentsTable)
+    .where(and(eq(appointmentsTable.id, appointment.id), eq(appointmentsTable.orgId, input.orgId)));
+  if (!saved || Math.abs(saved.startTime.getTime() - input.startTime.getTime()) > 60_000) {
+    return { success: false, error: "Error de validación: la cita no se pudo verificar en la base de datos." };
+  }
+
+  const localDate = apptDateDisplay(saved.startTime);
+  const localTime = apptTimeDisplay(saved.startTime);
+
+  await db.insert(activityTable).values({
+    orgId:       input.orgId,
+    type:        "appointment_scheduled",
+    description: `Cita "${input.title}" agendada con ${input.displayName}${input.activityNote ?? ""} para el ${localDate} a las ${localTime}`,
+    clientName:  input.displayName,
+  }).catch(() => {/* non-critical */});
+
+  // CRM-003: POST-OPERATION VERIFICATION — re-query the appointment to confirm
+  const [reverified] = await db.select().from(appointmentsTable)
+    .where(and(eq(appointmentsTable.id, saved.id), eq(appointmentsTable.orgId, input.orgId)));
+
+  return { success: true, appointment: reverified ?? saved };
+}
+
 export function getMadridMonthStart(): Date {
   const now = new Date();
   const base = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 0, 0));
@@ -105,8 +192,9 @@ async function createAppointment(
   // This is what lets reschedule/cancel later find the appointment
   // reliably from context.guestIdentity.
   const effectiveGuestPhone = isGuestBooking ? (context.guestIdentity ?? guestPhoneArg ?? null) : null;
+  const displayName = resolvedClient?.name ?? guestNameArg;
 
-  const [appointment] = await db.insert(appointmentsTable).values({
+  const result = await insertAppointmentWithVerification({
     orgId,
     clientId:    resolvedClient?.id ?? null,
     guestName:   isGuestBooking ? guestNameArg  : null,
@@ -116,40 +204,19 @@ async function createAppointment(
     description,
     startTime,
     endTime,
-    status:      "pending",
     type:        apptType,
     location,
-    reminder:    false,
-  }).returning();
+    displayName,
+    activityNote: isGuestBooking ? " (invitado)" : "",
+  });
 
-  // CRM-003: DB READ-BACK VALIDATION
-  if (!appointment) {
-    return JSON.stringify({ error: "Error al crear la cita: la inserción no devolvió registro." });
+  if (!result.success) {
+    return JSON.stringify({ error: result.error });
   }
-  const [saved] = await db.select().from(appointmentsTable)
-    .where(and(eq(appointmentsTable.id, appointment.id), eq(appointmentsTable.orgId, orgId)));
-  if (!saved || Math.abs(saved.startTime.getTime() - startTime.getTime()) > 60_000) {
-    return JSON.stringify({ error: "Error de validación: la cita no se pudo verificar en la base de datos." });
-  }
+  const saved = result.appointment;
 
-  const localDate = apptDateDisplay(saved.startTime);
-  const localTime = apptTimeDisplay(saved.startTime);
-  const displayName = resolvedClient?.name ?? guestNameArg;
-
-  await db.insert(activityTable).values({
-    orgId,
-    type:        "appointment_scheduled",
-    description: `Cita "${title}" agendada con ${displayName}${isGuestBooking ? " (invitado)" : ""} para el ${localDate} a las ${localTime}`,
-    clientName:  displayName,
-  }).catch(() => {/* non-critical */});
-
-  // CRM-003: POST-OPERATION VERIFICATION — re-query the appointment to confirm
-  const [reverified] = await db.select()
-    .from(appointmentsTable)
-    .where(and(eq(appointmentsTable.id, saved.id), eq(appointmentsTable.orgId, orgId)));
-
-  const verifiedDate = reverified ? apptDateDisplay(reverified.startTime) : localDate;
-  const verifiedTime = reverified ? apptTimeDisplay(reverified.startTime) : localTime;
+  const verifiedDate = apptDateDisplay(saved.startTime);
+  const verifiedTime = apptTimeDisplay(saved.startTime);
 
   return JSON.stringify({
     success:       true,
@@ -163,7 +230,7 @@ async function createAppointment(
     date:          verifiedDate,
     time:          verifiedTime,
     duration:      durationMinutes,
-    status:        reverified?.status ?? "pending",
+    status:        saved.status ?? "pending",
     type:          apptType,
     description,
     location,
@@ -185,8 +252,6 @@ async function createAppointment(
 // one match. Zero matches → "not found". More than one → return the options
 // so the AI asks the user which one, instead of guessing.
 // ═══════════════════════════════════════════════════════════════════════════
-
-type AppointmentRow = typeof appointmentsTable.$inferSelect;
 
 interface AppointmentResolution {
   appointment?: AppointmentRow;

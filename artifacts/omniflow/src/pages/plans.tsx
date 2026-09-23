@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   Zap, Check, X, Crown, Rocket, Building2, Users, Brain,
-  BarChart3, Puzzle, MessageSquare, Receipt, Shield, Sparkles,
+  BarChart3, Puzzle, MessageSquare, Receipt, Shield, Sparkles, Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +54,7 @@ export const PLANS: PlanInfo[] = [
     icon: Crown,
     color: "amber",
     users: 25,
-    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_seller", "omni_tax", "omni_diagnostics", "omni_security"],
   },
   {
     key: "enterprise",
@@ -64,7 +64,7 @@ export const PLANS: PlanInfo[] = [
     icon: Building2,
     color: "rose",
     users: 999,
-    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_tax", "omni_diagnostics", "omni_security"],
+    modules: ["crm", "whatsapp", "omni_marketing", "knowledge_base", "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente", "automations", "integrations", "analytics", "omni_docs", "omni_import_ai", "omni_ads", "omni_leads", "omni_seller", "omni_tax", "omni_diagnostics", "omni_security"],
   },
 ];
 
@@ -85,6 +85,7 @@ const ALL_MODULES = [
   { key: "omni_import_ai", label: "Omni Import AI",     icon: Sparkles },
   { key: "omni_ads",       label: "OmniAds",            icon: BarChart3 },
   { key: "omni_leads",     label: "OmniLeads AI",       icon: Users },
+  { key: "omni_seller",    label: "OmniSeller — Misiones", icon: Target },
   { key: "omni_tax",       label: "OmniTax",            icon: Receipt },
   { key: "omni_security",  label: "Seguridad",          icon: Shield },
 ];

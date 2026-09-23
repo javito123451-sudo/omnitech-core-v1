@@ -176,15 +176,25 @@ function DashboardTab() {
 function BuscarTab({ onSearchDone }: { onSearchDone: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [form, setForm] = useState({ sector: "", city: "", postalCode: "", radiusKm: 20, maxResults: 20 });
+  const [form, setForm] = useState({ sector: "", city: "", postalCode: "", radiusKm: 20, maxResults: 20, missionId: "" });
   const [lastResult, setLastResult] = useState<{ found: number } | null>(null);
+
+  // Misiones activas — asociar una búsqueda a una misión es opcional (ver Fase 1 de OmniSeller).
+  const { data: missions } = useQuery<Array<{ id: number; name: string; status: string }>>({
+    queryKey: ["missions"],
+    queryFn:  () => authFetch(`${BASE}/api/missions`).then(r => r.json()),
+  });
+  const activeMissions = (missions ?? []).filter(m => m.status === "active");
 
   const mut = useMutation({
     mutationFn: () =>
       authFetch(`${BASE}/api/leads/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          missionId: form.missionId ? Number(form.missionId) : undefined,
+        }),
       }).then(async r => {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error ?? "Error en la búsqueda");
@@ -194,6 +204,8 @@ function BuscarTab({ onSearchDone }: { onSearchDone: () => void }) {
       setLastResult({ found: data.found });
       qc.invalidateQueries({ queryKey: ["leads-results"] });
       qc.invalidateQueries({ queryKey: ["leads-dashboard"] });
+      if (form.missionId) qc.invalidateQueries({ queryKey: ["mission", Number(form.missionId)] });
+      qc.invalidateQueries({ queryKey: ["missions"] });
       toast({ title: `✅ ${data.found} empresas encontradas` });
     },
     onError: (err: Error) => toast({ title: "Error en la búsqueda", description: err.message, variant: "destructive" }),
@@ -267,6 +279,20 @@ function BuscarTab({ onSearchDone }: { onSearchDone: () => void }) {
               </select>
             </div>
           </div>
+
+          {activeMissions.length > 0 && (
+            <div>
+              <label className="block text-xs text-slate-500 mb-2">Misión (opcional)</label>
+              <select
+                value={form.missionId}
+                onChange={e => setForm(f => ({ ...f, missionId: e.target.value }))}
+                className="w-full bg-[#0a0b14] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-violet-500 text-sm"
+              >
+                <option value="">Sin misión (búsqueda suelta)</option>
+                {activeMissions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+          )}
 
           <button
             onClick={() => mut.mutate()}

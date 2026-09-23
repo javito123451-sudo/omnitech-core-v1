@@ -32,6 +32,13 @@ import { logAuditSystem } from "../utils/auditLogger";
 import { transcribeAudio } from "../utils/transcribeAudio";
 import { IntegrationManager } from "../hub";
 import { pauseAutopilotOnReply } from "../utils/autopilotPause";
+// OmniSeller Fase 5 — PASO 10/11/13: ramas ADITIVAS y aisladas, añadidas a
+// este archivo en vez de crear un segundo webhook de WhatsApp (Meta solo
+// permite una URL de webhook por número — ver auditoría de Fase 5). No
+// alteran el comportamiento del bot de Autopilot para ningún mensaje que no
+// corresponda inequívocamente a una conversación de OmniSeller.
+import { processOutreachEvent } from "../outreach/webhooks/eventProcessor";
+import { correlateInboundContact } from "../outreach/webhooks/inboundCorrelation";
 
 export const whatsappRouter = Router();
 export const whatsappWebhookRouter = Router();
@@ -482,6 +489,12 @@ async function processIncomingMessage(payload: {
   waMessageId:   string;
   contactName?:  string; // from Meta contacts[] array
   phoneNumberId?: string; // Meta business phone_number_id — used to resolve org
+  // OmniSeller Fase 5 — PASO 13: true solo si X-Hub-Signature-256 se
+  // verificó con éxito para ESTA petición. Nunca se aplican efectos de
+  // OmniSeller (correlación/tracking/suppression/audit) si esto no es true
+  // — ver el guard más abajo. No afecta al resto del pipeline del bot
+  // (CRM/Autopilot), que sigue su comportamiento preexistente.
+  signatureVerified?: boolean;
 }): Promise<void> {
   const { fromPhone, text, contactName, phoneNumberId } = payload;
   const normalizedIncoming = normalizePhone(fromPhone);
@@ -585,6 +598,29 @@ async function processIncomingMessage(payload: {
     pauseAutopilotOnReply(orgId, client.id).catch((err) =>
       console.error("[WA] pauseAutopilotOnReply error:", err),
     );
+  }
+
+  // ── OmniSeller Fase 5 — PASO 11: rama ADITIVA y aislada. Si este
+  // remitente corresponde INEQUÍVOCAMENTE (mismo org, mismo canal, al menos
+  // un envío de Outreach ya realizado — correlateInboundContact) a una
+  // conversación de OmniSeller, se registra el evento normalizado + audit y
+  // se omite el resto del pipeline del bot para ESTE mensaje: sin
+  // auto-reply, sin IA, sin follow-up (regla explícita de Fase 5). Si no
+  // hay correlación clara, el comportamiento es EXACTAMENTE el de siempre
+  // — cero cambios para cualquier conversación que no sea de OmniSeller.
+  const outreachCorrelation = payload.signatureVerified
+    ? await correlateInboundContact(orgId, "whatsapp", fromPhone).catch(() => null)
+    : null;
+  if (outreachCorrelation) {
+    await processOutreachEvent({
+      provider: "whatsapp",
+      externalEventId: `whatsapp_inbound:${orgId}:${outreachCorrelation.contactId}:${payload.waMessageId ?? Date.now()}`,
+      eventType: "whatsapp_inbound",
+      rawPayload: { fromPhone, text: text.slice(0, 500), waMessageId: payload.waMessageId },
+      correlate: { by: "resolved", orgId, contactId: outreachCorrelation.contactId, leadMessageId: outreachCorrelation.mostRecentLeadMessageId ?? undefined },
+    }).catch((err) => console.error("[WhatsApp Webhook] OmniSeller inbound processing error:", err));
+    console.log(`[WA] Mensaje correlacionado con OmniSeller (contactId=${outreachCorrelation.contactId}) — sin auto-reply, sin IA.`);
+    return;
   }
 
   // ── Phase 3: Lead Intelligence — solo si existe cliente CRM vinculado ──────
@@ -913,6 +949,18 @@ whatsappWebhookRouter.get("/webhook", async (req, res) => {
 // ── POST /whatsapp/webhook — Incoming messages (PUBLIC, no auth) ──────────────
 whatsappWebhookRouter.post("/webhook", (req, res) => {
   // ── X-Hub-Signature-256 HMAC validation (Meta requirement) ────────────────
+  // OmniSeller Fase 5 — PASO 13 (hallazgo de la auditoría, documentado
+  // explícitamente): si META_APP_SECRET no está configurado, este webhook
+  // seguía procesando TODO sin verificar firma (solo un console.warn) — un
+  // problema preexistente que no se oculta ni se corrige aquí de forma
+  // general (tocar esa política para el bot de Autopilot excede "cambio
+  // mínimo" y no está autorizado). En su lugar: se añade `signatureVerified`
+  // y se usa para blindar ESPECÍFICAMENTE las dos ramas nuevas de OmniSeller
+  // (statuses[] más abajo, e inbound correlacionado dentro de
+  // processIncomingMessage) — nunca se aplican efectos de OmniSeller
+  // (tracking/suppression/audit) sobre un payload sin firma verificada,
+  // aunque el resto del bot siga con su comportamiento preexistente.
+  let signatureVerified = false;
   const appSecret = process.env["META_APP_SECRET"];
   if (appSecret) {
     const sigHeader = req.headers["x-hub-signature-256"] as string | undefined;
@@ -931,12 +979,13 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
         res.sendStatus(403);
         return;
       }
+      signatureVerified = true;
     } catch {
       res.sendStatus(403);
       return;
     }
   } else {
-    console.warn("[WhatsApp Webhook] ⚠️  META_APP_SECRET not set — skipping HMAC validation");
+    console.warn("[WhatsApp Webhook] ⚠️  META_APP_SECRET not set — skipping HMAC validation (OmniSeller: eventos de este webhook se ignorarán hasta que META_APP_SECRET esté configurado)");
   }
 
   // Meta requires an immediate 200 — process asynchronously
@@ -967,6 +1016,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
         // Pass the business phone_number_id so processIncomingMessage can resolve
         // the correct org — critical for multi-tenant and for new contacts.
         phoneNumberId: (received.metadata?.phoneNumberId as string) ?? undefined,
+        signatureVerified,
       }).catch((err) => console.error("[WhatsApp Webhook] Processing error:", err));
       return;
     }
@@ -988,6 +1038,28 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
             summary:         `Estado de mensaje: ${status.status} (ID: ${status.id?.slice(-12)}, para: +${String(status.recipient_id ?? "").slice(-9)})`,
             payloadJson:     { messageId: status.id, recipientId: status.recipient_id, status: status.status, timestamp: status.timestamp },
           });
+
+          // ── OmniSeller Fase 5 — PASO 10: rama ADITIVA, independiente del
+          // log genérico de arriba (que NO resuelve el org correcto — usa
+          // auditOrgId, un fallback). Aquí la organización se deriva
+          // EXCLUSIVAMENTE de lead_messages.external_message_id (el wamid),
+          // nunca del payload — Paso 17. Valores de status.status
+          // confirmados por la documentación oficial de Meta (sent/
+          // delivered/read/failed); cualquier otro valor (p. ej. "accepted",
+          // "held_for_quality_assessment") se registra igual, sin inventar
+          // un tratamiento distinto para él.
+          if (signatureVerified && status.id && status.status) {
+            void processOutreachEvent({
+              provider: "whatsapp",
+              // Meta no expone un id de evento propio para status callbacks
+              // — clave compuesta determinista a partir de campos que el
+              // propio payload ya trae (documentado en outreachEvents.ts).
+              externalEventId: `${status.id}:${status.status}:${status.timestamp ?? ""}`,
+              eventType: `whatsapp_status_${status.status}`,
+              rawPayload: status,
+              correlate: { by: "external_message_id", externalMessageId: status.id },
+            }).catch((err) => console.error("[WhatsApp Webhook] OmniSeller status processing error:", err));
+          }
         }
 
         if (change.field !== "messages") continue;
@@ -1008,6 +1080,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
               waMessageId:   msg.id,
               contactName:   contactNameMap[msg.from],
               phoneNumberId,
+              signatureVerified,
             }).catch((err) =>
               console.error("[WhatsApp Webhook] Processing error:", err),
             );
@@ -1051,6 +1124,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
                   waMessageId:   msg.id,
                   contactName:   contactNameMap[msg.from],
                   phoneNumberId: phoneNumberId ?? undefined,
+                  signatureVerified,
                 });
               } catch (err) {
                 console.error("[WhatsApp Webhook] Audio processing error:", err);

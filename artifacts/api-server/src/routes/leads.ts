@@ -5,11 +5,19 @@ import OpenAI from "openai";
 import type { Request } from "express";
 import { requirePermission } from "../middlewares/permissions";
 import { logAudit } from "../utils/auditLogger";
+import { reserveCredits, settleCredits, releaseHold, InsufficientCreditsError } from "../credits/creditService";
 
 export const leadsRouter = Router();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY ?? "";
+
+// OmniSeller Fase 1 — coste PROVISIONAL en créditos de una búsqueda de
+// prospección. No es precio comercial definitivo: la tarificación real se
+// fija en Fase 9 (OmniCredits), una vez medido el coste real de la llamada a
+// Google Places + el resto de la cadena. Se instrumenta ya para que el
+// consumo quede registrado desde el primer día, no para fijar precio.
+const SEARCH_CREDIT_COST = 1;
 
 function dbRows<T>(r: unknown): T[] {
   return (r as { rows: T[] }).rows;
@@ -47,7 +55,7 @@ function normalizeEmail(email: string | null | undefined): string | null {
   return e || null;
 }
 
-interface LeadCandidate {
+export interface LeadCandidate {
   placeId?: string | null;
   phone?:   string | null;
   website?: string | null;
@@ -61,7 +69,7 @@ interface LeadCandidate {
  * Devuelve { id, matchReason } si encuentra duplicado, o null si es nuevo.
  * No crea nada — solo comprueba. El llamador decide qué hacer con el resultado.
  */
-async function findDuplicateLead(orgId: number, candidate: LeadCandidate): Promise<{ id: number; matchReason: string } | null> {
+export async function findDuplicateLead(orgId: number, candidate: LeadCandidate): Promise<{ id: number; matchReason: string } | null> {
   // 1. Google Place ID — el identificador más fiable
   if (candidate.placeId) {
     const rows = await db.execute(sql`
@@ -337,8 +345,9 @@ leadsRouter.get("/dashboard", requirePermission("leads.read"), async (req: Reque
 leadsRouter.post("/search", requirePermission("leads.write"), async (req: Request, res) => {
   const orgId  = req.orgId!;
   const userId = req.userId!;
-  const { sector, city, postalCode, radiusKm = 20, maxResults = 20 } = req.body as {
+  const { sector, city, postalCode, radiusKm = 20, maxResults = 20, missionId } = req.body as {
     sector: string; city: string; postalCode?: string; radiusKm?: number; maxResults?: number;
+    missionId?: number;
   };
 
   if (!sector?.trim() || !city?.trim()) {
@@ -348,12 +357,50 @@ leadsRouter.post("/search", requirePermission("leads.write"), async (req: Reques
 
   const safeMax = Math.min(60, Math.max(1, Number(maxResults) || 20));
 
+  // Si se pasa missionId, debe existir en esta organización — nunca se crea
+  // ni se asume. Una misión terminada/cancelada no admite nuevas búsquedas.
+  let safeMissionId: number | null = null;
+  if (missionId != null) {
+    const missionRows = await db.execute(sql`
+      SELECT id, status FROM missions WHERE id = ${Number(missionId)} AND org_id = ${orgId}
+    `);
+    const mission = dbRows<{ id: number; status: string }>(missionRows)[0];
+    if (!mission) {
+      res.status(404).json({ error: "Misión no encontrada" });
+      return;
+    }
+    if (mission.status === "completed" || mission.status === "cancelled") {
+      res.status(409).json({ error: `La misión está en estado "${mission.status}" y no admite nuevas búsquedas` });
+      return;
+    }
+    safeMissionId = mission.id;
+  }
+
   const ins = await db.execute(sql`
-    INSERT INTO lead_searches (org_id, created_by, sector, city, postal_code, radius_km, max_results, status)
-    VALUES (${orgId}, ${userId}, ${sector.trim()}, ${city.trim()}, ${postalCode ?? null}, ${Number(radiusKm)}, ${safeMax}, 'running')
+    INSERT INTO lead_searches (org_id, created_by, mission_id, sector, city, postal_code, radius_km, max_results, status)
+    VALUES (${orgId}, ${userId}, ${safeMissionId}, ${sector.trim()}, ${city.trim()}, ${postalCode ?? null}, ${Number(radiusKm)}, ${safeMax}, 'running')
     RETURNING id
   `);
   const searchId = dbRows<{ id: number }>(ins)[0]?.id;
+  const creditReference = `leads:search:${searchId}`;
+
+  // Reserva el coste ANTES de llamar a Google Places — si no hay saldo, no se
+  // gasta ninguna llamada externa. Ver SEARCH_CREDIT_COST arriba: coste
+  // provisional, no precio comercial definitivo (eso es Fase 9).
+  try {
+    await reserveCredits({ orgId, credits: SEARCH_CREDIT_COST, reference: creditReference, userClerkId: req.clerkUserId ?? null });
+  } catch (err) {
+    await db.execute(sql`
+      UPDATE lead_searches SET status = 'failed', error_msg = ${"Créditos insuficientes"}, updated_at = NOW()
+      WHERE id = ${searchId}
+    `);
+    if (err instanceof InsufficientCreditsError) {
+      res.status(402).json({ error: "Créditos insuficientes para realizar esta búsqueda" });
+      return;
+    }
+    res.status(500).json({ error: String(err) });
+    return;
+  }
 
   try {
     const places = await searchGooglePlaces(sector.trim(), city.trim(), safeMax);
@@ -391,18 +438,31 @@ leadsRouter.post("/search", requirePermission("leads.write"), async (req: Reques
       WHERE id = ${searchId}
     `);
 
+    // Liquida el coste real de la búsqueda (hoy siempre SEARCH_CREDIT_COST —
+    // ver comentario junto a la constante). metadata conserva la trazabilidad
+    // hacia la misión y la búsqueda, ya que no existen columnas tipadas
+    // leadId/missionId en el ledger.
+    await settleCredits({
+      orgId,
+      reference: creditReference,
+      credits:   SEARCH_CREDIT_COST,
+      userClerkId: req.clerkUserId ?? null,
+      metadata:  { missionId: safeMissionId, searchId, sector: sector.trim(), city: city.trim(), inserted, duplicates },
+    }).catch(() => {}); // el settle nunca debe tumbar una búsqueda que ya tuvo éxito
+
     await logAudit({
       actorClerkId: req.clerkUserId ?? "unknown",
       action:       "leads.search",
       resource:     "lead_search",
       resourceId:   searchId,
       orgId,
-      details:      { sector: sector.trim(), city: city.trim(), requested: safeMax, found: places.length, inserted, duplicates },
+      details:      { sector: sector.trim(), city: city.trim(), requested: safeMax, found: places.length, inserted, duplicates, missionId: safeMissionId },
       req,
     });
 
-    res.json({ searchId, found: places.length, inserted, duplicates, status: "done" });
+    res.json({ searchId, found: places.length, inserted, duplicates, status: "done", missionId: safeMissionId });
   } catch (err) {
+    await releaseHold(orgId, creditReference).catch(() => {});
     await db.execute(sql`
       UPDATE lead_searches SET status = 'failed', error_msg = ${String(err)}, updated_at = NOW()
       WHERE id = ${searchId}
@@ -413,7 +473,7 @@ leadsRouter.post("/search", requirePermission("leads.write"), async (req: Reques
       resource:     "lead_search",
       resourceId:   searchId,
       orgId,
-      details:      { sector: sector.trim(), city: city.trim(), error: String(err) },
+      details:      { sector: sector.trim(), city: city.trim(), error: String(err), missionId: safeMissionId },
       severity:     "warning",
       result:       "error",
       req,
@@ -487,6 +547,47 @@ leadsRouter.get("/results", requirePermission("leads.read"), async (req: Request
   }
 });
 
+// ── Researcher + Scorer — núcleo compartido ─────────────────────────────────
+// Analiza un lead_result (Researcher: señales de la web + Scorer: puntuación
+// OpenAI con fallback heurístico, ambos ya dentro de analyzeWebsite) y
+// persiste el resultado en lead_analysis. Único punto que hace este trabajo:
+// lo usan tanto los endpoints clásicos de OmniLeads (bulk-analyze, analyze)
+// como el endpoint de Missions en routes/missions.ts (OmniSeller Fase 2) —
+// así no se duplica el motor de research/scoring en ningún sitio.
+//
+// No decide qué hacer si falla: lanza el error tal cual y deja que cada
+// llamador decida su propia recuperación (cada endpoint existente ya tenía
+// su propia política de error antes de esta extracción, y se conserva sin
+// cambios: bulk-analyze seguía sin la fila y no revertía el status; analyze
+// sí lo revertía a 'new').
+export async function runLeadAnalysis(orgId: number, userId: number, resultId: number) {
+  const rows = await db.execute(sql`
+    SELECT id, name, website, sector FROM lead_results WHERE id=${resultId} AND org_id=${orgId}
+  `);
+  const row = dbRows<{ id: number; name: string; website: string | null; sector: string | null }>(rows)[0];
+  if (!row) return null;
+
+  await db.execute(sql`UPDATE lead_results SET status='analyzing', updated_at=NOW() WHERE id=${resultId} AND org_id=${orgId}`);
+  const analysis = await analyzeWebsite(row.website, row.name, row.sector ?? "");
+  await db.execute(sql`DELETE FROM lead_analysis WHERE result_id=${resultId} AND org_id=${orgId}`);
+  await db.execute(sql`
+    INSERT INTO lead_analysis
+      (org_id, result_id, created_by, has_website, has_https, has_form, has_whatsapp,
+       has_facebook, has_instagram, has_google_business, has_cta,
+       has_mobile_optimization, has_load_speed, has_contact_info,
+       score, opportunity, summary, improvements)
+    VALUES
+      (${orgId}, ${resultId}, ${userId},
+       ${analysis.hasWebsite}, ${analysis.hasHttps}, ${analysis.hasForm}, ${analysis.hasWhatsapp},
+       ${analysis.hasFacebook}, ${analysis.hasInstagram}, ${analysis.hasGoogleBusiness}, ${analysis.hasCta},
+       ${analysis.hasMobileOptimization}, ${analysis.hasLoadSpeed}, ${analysis.hasContactInfo},
+       ${analysis.score}, ${analysis.opportunity}, ${analysis.summary}, ${analysis.improvements})
+  `);
+  await db.execute(sql`UPDATE lead_results SET status='analyzed', updated_at=NOW() WHERE id=${resultId} AND org_id=${orgId}`);
+
+  return analysis;
+}
+
 // POST /results/bulk-analyze  (must be before /:id routes)
 leadsRouter.post("/results/bulk-analyze", requirePermission("leads.write"), async (req: Request, res) => {
   const orgId  = req.orgId!;
@@ -505,30 +606,7 @@ leadsRouter.post("/results/bulk-analyze", requirePermission("leads.write"), asyn
   void (async () => {
     for (const id of ids) {
       try {
-        const rows = await db.execute(sql`
-          SELECT id, name, website, sector FROM lead_results
-          WHERE id = ${id} AND org_id = ${orgId}
-        `);
-        const row = dbRows<{ id: number; name: string; website: string | null; sector: string | null }>(rows)[0];
-        if (!row) continue;
-
-        await db.execute(sql`UPDATE lead_results SET status='analyzing', updated_at=NOW() WHERE id=${id} AND org_id=${orgId}`);
-        const analysis = await analyzeWebsite(row.website, row.name, row.sector ?? "");
-        await db.execute(sql`DELETE FROM lead_analysis WHERE result_id=${id} AND org_id=${orgId}`);
-        await db.execute(sql`
-          INSERT INTO lead_analysis
-            (org_id, result_id, created_by, has_website, has_https, has_form, has_whatsapp,
-             has_facebook, has_instagram, has_google_business, has_cta,
-             has_mobile_optimization, has_load_speed, has_contact_info,
-             score, opportunity, summary, improvements)
-          VALUES
-            (${orgId}, ${id}, ${userId},
-             ${analysis.hasWebsite}, ${analysis.hasHttps}, ${analysis.hasForm}, ${analysis.hasWhatsapp},
-             ${analysis.hasFacebook}, ${analysis.hasInstagram}, ${analysis.hasGoogleBusiness}, ${analysis.hasCta},
-             ${analysis.hasMobileOptimization}, ${analysis.hasLoadSpeed}, ${analysis.hasContactInfo},
-             ${analysis.score}, ${analysis.opportunity}, ${analysis.summary}, ${analysis.improvements})
-        `);
-        await db.execute(sql`UPDATE lead_results SET status='analyzed', updated_at=NOW() WHERE id=${id} AND org_id=${orgId}`);
+        await runLeadAnalysis(orgId, userId, id);
       } catch { /* continue */ }
     }
   })();
@@ -541,30 +619,8 @@ leadsRouter.post("/results/:id/analyze", requirePermission("leads.write"), async
   const resultId = Number(req.params.id);
 
   try {
-    const rows = await db.execute(sql`
-      SELECT id, name, website, sector FROM lead_results WHERE id=${resultId} AND org_id=${orgId}
-    `);
-    const row = dbRows<{ id: number; name: string; website: string | null; sector: string | null }>(rows)[0];
-    if (!row) { res.status(404).json({ error: "No encontrado" }); return; }
-
-    await db.execute(sql`UPDATE lead_results SET status='analyzing', updated_at=NOW() WHERE id=${resultId} AND org_id=${orgId}`);
-    const analysis = await analyzeWebsite(row.website, row.name, row.sector ?? "");
-    await db.execute(sql`DELETE FROM lead_analysis WHERE result_id=${resultId} AND org_id=${orgId}`);
-    await db.execute(sql`
-      INSERT INTO lead_analysis
-        (org_id, result_id, created_by, has_website, has_https, has_form, has_whatsapp,
-         has_facebook, has_instagram, has_google_business, has_cta,
-         has_mobile_optimization, has_load_speed, has_contact_info,
-         score, opportunity, summary, improvements)
-      VALUES
-        (${orgId}, ${resultId}, ${userId},
-         ${analysis.hasWebsite}, ${analysis.hasHttps}, ${analysis.hasForm}, ${analysis.hasWhatsapp},
-         ${analysis.hasFacebook}, ${analysis.hasInstagram}, ${analysis.hasGoogleBusiness}, ${analysis.hasCta},
-         ${analysis.hasMobileOptimization}, ${analysis.hasLoadSpeed}, ${analysis.hasContactInfo},
-         ${analysis.score}, ${analysis.opportunity}, ${analysis.summary}, ${analysis.improvements})
-    `);
-    await db.execute(sql`UPDATE lead_results SET status='analyzed', updated_at=NOW() WHERE id=${resultId} AND org_id=${orgId}`);
-
+    const analysis = await runLeadAnalysis(orgId, userId, resultId);
+    if (!analysis) { res.status(404).json({ error: "No encontrado" }); return; }
     res.json({ ...analysis, resultId });
   } catch (err) {
     await db.execute(sql`UPDATE lead_results SET status='new', updated_at=NOW() WHERE id=${resultId} AND org_id=${orgId}`).catch(() => {});
@@ -704,13 +760,25 @@ Escribe SOLO el mensaje.`;
 });
 
 // GET /results/:id/messages
+//
+// OmniSeller Fase 16 (Historial de Outreach): admite un `?contactId=` opcional
+// para acotar el historial a un contacto concreto cuando un lead_result tiene
+// varios contactos encontrados — resuelto con información YA existente
+// (lead_messages.contact_id, columna e índice ya presentes desde antes de
+// Fase 13, ver lead_messages_org_contact_channel_idx en schema/leads.ts), sin
+// migración ni cambio de esquema. Sin el parámetro, el comportamiento es
+// idéntico al de siempre (todos los mensajes del lead_result).
 leadsRouter.get("/results/:id/messages", requirePermission("leads.read"), async (req: Request, res) => {
   const orgId    = req.orgId!;
   const resultId = Number(req.params.id);
+  const { contactId } = req.query as { contactId?: string };
+  const contactFilter = contactId && Number.isFinite(Number(contactId))
+    ? sql`AND contact_id=${Number(contactId)}`
+    : sql``;
   try {
     const rows = await db.execute(sql`
-      SELECT id, channel, content, tone, status, sent_at, created_at
-      FROM lead_messages WHERE result_id=${resultId} AND org_id=${orgId}
+      SELECT id, contact_id, channel, content, tone, status, sent_at, created_at
+      FROM lead_messages WHERE result_id=${resultId} AND org_id=${orgId} ${contactFilter}
       ORDER BY created_at DESC
     `);
     res.json(dbRows<Record<string, unknown>>(rows));
