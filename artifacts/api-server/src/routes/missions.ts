@@ -27,7 +27,7 @@ import { requirePermission } from "../middlewares/permissions";
 import { logAudit } from "../utils/auditLogger";
 import { reserveCredits, settleCredits, releaseHold, InsufficientCreditsError } from "../credits/creditService";
 import { runLeadAnalysis } from "./leads";
-import { findContactsForLead } from "../contactFinder";
+import { findContactsForLead, addManualContact } from "../contactFinder";
 import { OUTREACH_CHANNELS, checkContactAndChannel, isSuppressed, isCooldownActive } from "../outreach/outreachGuard";
 import { dbConfirmationStore } from "../outreach/confirmationStore";
 import { assertMissionOpen, confirmAndSendMessage } from "../outreach/outreachService";
@@ -438,6 +438,70 @@ missionsRouter.post("/:id/contacts/find", requirePermission("omniseller.write"),
       id: c.id, name: c.name, role: c.role, email: c.email, phone: c.phone,
       linkedinUrl: c.linkedinUrl, status: c.status, confidence: c.confidence,
     })),
+  });
+});
+
+// POST /api/missions/:id/contacts — carga MANUAL de un contacto, mientras no
+// haya un ProspectingProvider real conectado (ver "### PROVIDER DECISION" en
+// contactFinder/index.ts). Mismo destino y misma deduplicación que Contact
+// Finder (lead_contacts, ver addManualContact()/persistContacts() en
+// contactFinderService.ts) para que Outreach/Booking no distingan el
+// origen — a propósito NO cobra OmniCredits (no hay proveedor externo).
+missionsRouter.post("/:id/contacts", requirePermission("omniseller.write"), async (req: Request, res) => {
+  const orgId     = req.orgId!;
+  const missionId = Number(req.params.id);
+
+  const missionCheck = await assertMissionOpen(orgId, missionId);
+  if (!missionCheck.ok) { res.status(missionCheck.httpStatus).json({ error: missionCheck.error }); return; }
+
+  const body = (req.body ?? {}) as {
+    leadResultId?: number; name?: string; role?: string; email?: string; phone?: string; linkedinUrl?: string;
+  };
+  const leadResultId = Number(body.leadResultId);
+  if (!Number.isFinite(leadResultId)) { res.status(400).json({ error: "leadResultId es obligatorio" }); return; }
+
+  const name        = body.name?.trim()        || undefined;
+  const role        = body.role?.trim()         || undefined;
+  const email       = body.email?.trim()        || undefined;
+  const phone       = body.phone?.trim()        || undefined;
+  const linkedinUrl = body.linkedinUrl?.trim()  || undefined;
+  if (!name && !email && !phone) {
+    res.status(400).json({ error: "Se requiere al menos name, email o phone" });
+    return;
+  }
+
+  // El lead_result debe pertenecer a ESTA misión y ESTA organización — mismo
+  // criterio que POST .../contacts/find.
+  const [leadResult] = await db
+    .select({ id: leadResultsTable.id })
+    .from(leadResultsTable)
+    .innerJoin(leadSearchesTable, eq(leadResultsTable.searchId, leadSearchesTable.id))
+    .where(and(
+      eq(leadResultsTable.id, leadResultId),
+      eq(leadResultsTable.orgId, orgId),
+      eq(leadSearchesTable.missionId, missionId),
+    ));
+  if (!leadResult) { res.status(404).json({ error: "El prospecto no pertenece a esta misión" }); return; }
+
+  const contact = await addManualContact(orgId, leadResult.id, { name, role, email, phone, linkedinUrl });
+
+  await logAudit({
+    actorClerkId: req.clerkUserId ?? "unknown",
+    action:       "missions.contacts.manual_add",
+    resource:     "mission",
+    resourceId:   missionId,
+    orgId,
+    details:      { leadResultId: leadResult.id, contactId: contact.id },
+    req,
+  });
+
+  res.status(201).json({
+    missionId,
+    leadResultId: leadResult.id,
+    contact: {
+      id: contact.id, name: contact.name, role: contact.role, email: contact.email, phone: contact.phone,
+      linkedinUrl: contact.linkedinUrl, status: contact.status, provider: contact.provider,
+    },
   });
 });
 

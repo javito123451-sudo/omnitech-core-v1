@@ -10,8 +10,8 @@
  */
 export * from "./types";
 export { ProspectingProviderRegistry } from "./providerRegistry";
-export { findContactsForLead } from "./contactFinderService";
-export type { ContactFinderResult, ContactFinderStatus, LeadResultForContactFinder } from "./contactFinderService";
+export { findContactsForLead, addManualContact, MANUAL_CONTACT_PROVIDER_SLUG } from "./contactFinderService";
+export type { ContactFinderResult, ContactFinderStatus, LeadResultForContactFinder, ManualContactInput } from "./contactFinderService";
 
 // ── Auto-registro de adaptadores reales ───────────────────────────────────────
 // (ninguno todavía — ver "### PROVIDER DECISION" en el informe de Fase 3)

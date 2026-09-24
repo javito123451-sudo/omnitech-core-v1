@@ -317,3 +317,43 @@ export async function findContactsForLead(opts: {
 
   return { status: "ok", contacts: saved, provider: provider.slug, creditsSpent: estimatedCredits };
 }
+
+// ── Carga manual (sin proveedor) ──────────────────────────────────────────────
+//
+// Mientras no haya un ProspectingProvider real conectado (ver "###
+// PROVIDER DECISION" al inicio de este archivo y contactFinder/index.ts), un
+// operador puede añadir un contacto que ya conoce a mano. Reutiliza
+// EXACTAMENTE persistContacts() — misma deduplicación por email/teléfono
+// dentro del lead_result, mismo onConflictDoNothing ante una carrera — para
+// que Outreach/Booking no tengan que distinguir si un lead_contact vino de
+// un proveedor pagado o de un operador. A propósito NO pasa por
+// reserveCredits/settleCredits: no hay proveedor externo que cobrar.
+export const MANUAL_CONTACT_PROVIDER_SLUG = "manual";
+
+export interface ManualContactInput {
+  name?: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+  linkedinUrl?: string;
+}
+
+export async function addManualContact(
+  orgId: number,
+  leadResultId: number,
+  input: ManualContactInput,
+): Promise<LeadContact> {
+  // El operador escribió el dato él mismo — a diferencia de un proveedor
+  // externo que puede no declarar su confianza (ver mapStatus más arriba:
+  // "nunca se asume verificado por defecto"), aquí no hay ambigüedad sobre
+  // el origen: se marca "verificado" explícitamente.
+  const [saved] = await persistContacts(orgId, leadResultId, MANUAL_CONTACT_PROVIDER_SLUG, [{
+    name: input.name,
+    role: input.role,
+    email: input.email,
+    phone: input.phone,
+    linkedinUrl: input.linkedinUrl,
+    quality: "verificado",
+  }]);
+  return saved!;
+}
