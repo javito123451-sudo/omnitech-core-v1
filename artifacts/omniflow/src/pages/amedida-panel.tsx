@@ -39,10 +39,26 @@ const CATEGORY_LABELS: Record<string, string> = {
   muebles: "Muebles",
   portes: "Portes",
   mudanzas: "Mudanzas",
+  electrodomesticos: "Electrodomésticos",
   organizacion_espacios: "A3 · Organización",
   limpieza_profesional: "A3 · Limpieza",
   consulta_general: "A3 · Consulta general",
 };
+
+// ── Marcas ────────────────────────────────────────────────────────────────────
+// La tabla física es una sola (leads públicos), pero tres landings distintas
+// escriben ahí: A3 Ordena, A Medida y FridgeFix. `category` es el único
+// discriminador — este mapa (espejo de BRAND_CATEGORIES en
+// routes/aMedidaLeads.ts) agrupa las solicitudes por marca para que el panel
+// no las muestre todas mezcladas bajo un único filtro de categoría.
+const BRANDS = [
+  { id: "", label: "Todas las marcas", icon: "🗂️", categories: [] as string[] },
+  { id: "a3_ordena", label: "A3 Ordena", icon: "🧹", categories: ["organizacion_espacios", "limpieza_profesional", "consulta_general"] },
+  { id: "a_medida", label: "A Medida", icon: "🚚", categories: ["cocinas", "muebles", "portes", "mudanzas"] },
+  { id: "fridgefix", label: "FridgeFix", icon: "🧊", categories: ["electrodomesticos"] },
+] as const;
+
+type BrandId = typeof BRANDS[number]["id"];
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleString("es-ES", {
@@ -52,20 +68,35 @@ function fmtDate(iso: string): string {
 
 export default function AMedidaPanelPage() {
   const qc = useQueryClient();
+  const [brand, setBrand] = useState<BrandId>("");
   const [status, setStatus] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [search, setSearch] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
 
+  const activeBrand = BRANDS.find(b => b.id === brand) ?? BRANDS[0];
+
+  function handleBrandChange(next: BrandId) {
+    setBrand(next);
+    setCategory(""); // la categoría pertenece a la marca anterior — se reinicia al cambiar
+  }
+
   const params = new URLSearchParams();
   if (status) params.set("status", status);
+  if (brand) params.set("brand", brand);
   if (category) params.set("category", category);
   if (search.trim()) params.set("search", search.trim());
 
   const { data, isLoading, isFetching, refetch } = useQuery<LeadsResponse>({
-    queryKey: ["a-medida-leads", status, category, search],
+    queryKey: ["a-medida-leads", brand, status, category, search],
     queryFn: () => authFetch(`${BASE}/api/a-medida-leads?${params.toString()}`).then(r => r.json()),
     staleTime: 10_000,
+  });
+
+  const { data: brandCounts } = useQuery<Record<string, number>>({
+    queryKey: ["a-medida-leads-brand-counts"],
+    queryFn: () => authFetch(`${BASE}/api/a-medida-leads/brand-counts`).then(r => r.json()),
+    staleTime: 30_000,
   });
 
   const updateStatus = useMutation({
@@ -84,6 +115,7 @@ export default function AMedidaPanelPage() {
     onSettled: () => {
       setPendingId(null);
       void qc.invalidateQueries({ queryKey: ["a-medida-leads"] });
+      void qc.invalidateQueries({ queryKey: ["a-medida-leads-brand-counts"] });
     },
   });
 
@@ -103,6 +135,7 @@ export default function AMedidaPanelPage() {
     onSettled: () => {
       setPendingId(null);
       void qc.invalidateQueries({ queryKey: ["a-medida-leads"] });
+      void qc.invalidateQueries({ queryKey: ["a-medida-leads-brand-counts"] });
     },
   });
 
@@ -116,10 +149,10 @@ export default function AMedidaPanelPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Truck size={24} className="text-amber-400" /> A Medida — Solicitudes
+            <Truck size={24} className="text-amber-400" /> {activeBrand.id ? activeBrand.label : "Leads"} — Solicitudes
           </h1>
           <p className="text-slate-500 mt-1">
             Solicitudes recibidas desde la landing pública ({data?.total ?? 0} en total)
@@ -133,6 +166,30 @@ export default function AMedidaPanelPage() {
           <RefreshCw size={13} className={isFetching ? "animate-spin" : ""} />
           Actualizar
         </button>
+      </div>
+
+      {/* Brand tabs — separan las solicitudes de A3 Ordena, A Medida y FridgeFix,
+          aunque compartan la misma tabla y el mismo pipeline de captación. */}
+      <div className="flex items-center gap-2 flex-wrap mb-6">
+        {BRANDS.map(b => (
+          <button
+            key={b.id || "todas"}
+            onClick={() => handleBrandChange(b.id)}
+            className={cn(
+              "flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-medium transition-colors",
+              brand === b.id
+                ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                : "bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]",
+            )}
+          >
+            <span>{b.icon}</span> {b.label}
+            {b.id && brandCounts && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/[0.08] text-slate-300">
+                {brandCounts[b.id] ?? 0}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}
@@ -151,14 +208,10 @@ export default function AMedidaPanelPage() {
           onChange={e => setCategory(e.target.value)}
           className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
         >
-          <option value="">Todas las categorías</option>
-          <option value="cocinas">Cocinas</option>
-          <option value="muebles">Muebles</option>
-          <option value="portes">Portes</option>
-          <option value="mudanzas">Mudanzas</option>
-          <option value="organizacion_espacios">A3 · Organización</option>
-          <option value="limpieza_profesional">A3 · Limpieza</option>
-          <option value="consulta_general">A3 · Consulta general</option>
+          <option value="">{activeBrand.id ? `Todas — ${activeBrand.label}` : "Todas las categorías"}</option>
+          {(activeBrand.id ? activeBrand.categories : Object.keys(CATEGORY_LABELS)).map(c => (
+            <option key={c} value={c}>{CATEGORY_LABELS[c] ?? c}</option>
+          ))}
         </select>
         <select
           value={status}

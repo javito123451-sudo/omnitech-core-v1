@@ -71,6 +71,14 @@
       "areaServed": { "@type": "City", "name": "Madrid" },
       "provider": { "@type": "Organization", "name": "A Medida" },
       "url": "https://hogar.omnitech-core.com/mudanzas-madrid"
+    },
+    {
+      "@type": "Service",
+      "name": "Reparación de electrodomésticos en Madrid",
+      "serviceType": "Reparación de electrodomésticos",
+      "areaServed": { "@type": "City", "name": "Madrid" },
+      "provider": { "@type": "Organization", "name": "A Medida" },
+      "url": "https://hogar.omnitech-core.com/reparacion-electrodomesticos-madrid"
     }
   ]
 }
@@ -308,7 +316,7 @@
   /* ================= SERVICES ================= */
   .services{padding:64px 6vw; max-width:1240px; margin:0 auto;}
   .cats{
-    display:grid; grid-template-columns:repeat(4,1fr); gap:20px;
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:20px;
   }
   .cat{
     position:relative;
@@ -522,7 +530,7 @@
 <section class="services" id="servicios">
   <div class="section-head">
     <div class="eyebrow">Nuestros servicios</div>
-    <h2>Cuatro oficios, un solo sitio</h2>
+    <h2>Cinco oficios, un solo sitio</h2>
   </div>
   <div class="cats" id="cats">
     <div class="cat active" data-cat="cocinas">
@@ -549,13 +557,20 @@
       <div class="cat-name">Mudanzas</div>
       <div class="cat-desc">Traslado completo de vivienda.</div>
     </div>
+    <div class="cat" data-cat="electrodomesticos">
+      <span class="cat-num">05</span>
+      <div class="cat-icon">🧊</div>
+      <div class="cat-name">Electrodomésticos</div>
+      <div class="cat-desc">Reparación de neveras, lavadoras y más.</div>
+    </div>
   </div>
   <p style="text-align:center; margin-top:24px; font-size:13px; color:var(--grey);">
     Más información sobre cada servicio:
     <a href="/montaje-cocinas-madrid" style="color:var(--blue); font-weight:600;">montaje de cocinas</a> ·
     <a href="/montaje-muebles-madrid" style="color:var(--blue); font-weight:600;">montaje de muebles</a> ·
     <a href="/portes-madrid" style="color:var(--blue); font-weight:600;">portes</a> ·
-    <a href="/mudanzas-madrid" style="color:var(--blue); font-weight:600;">mudanzas</a> en Madrid.
+    <a href="/mudanzas-madrid" style="color:var(--blue); font-weight:600;">mudanzas</a> ·
+    <a href="/reparacion-electrodomesticos-madrid" style="color:var(--blue); font-weight:600;">reparación de electrodomésticos</a> en Madrid.
   </p>
 </section>
 
@@ -619,6 +634,7 @@
         <a href="/montaje-muebles-madrid">Montaje de muebles</a>
         <a href="/portes-madrid">Portes</a>
         <a href="/mudanzas-madrid">Mudanzas</a>
+        <a href="/reparacion-electrodomesticos-madrid">Reparación de electrodomésticos</a>
       </div>
       <div class="footer-col">
         <h4>Empresa</h4>
@@ -640,13 +656,15 @@
     cocinas: 'Solicita tu presupuesto de montaje de cocina',
     muebles: 'Solicita tu presupuesto de montaje de muebles',
     portes: 'Solicita tu presupuesto de portes',
-    mudanzas: 'Solicita tu presupuesto de mudanza'
+    mudanzas: 'Solicita tu presupuesto de mudanza',
+    electrodomesticos: 'Solicita tu reparación de electrodomésticos'
   };
   const catNames = {
     cocinas: 'montaje de cocinas',
     muebles: 'montaje de muebles',
     portes: 'portes',
-    mudanzas: 'mudanzas'
+    mudanzas: 'mudanzas',
+    electrodomesticos: 'reparación de electrodomésticos'
   };
   let currentCat = 'cocinas';
 

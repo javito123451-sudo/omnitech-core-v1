@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, leadsTable } from "@workspace/db";
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { requirePermission } from "../middlewares/permissions";
 import { logAudit } from "../utils/auditLogger";
 
@@ -16,16 +16,30 @@ export const aMedidaLeadsRouter = Router();
 
 const VALID_STATUSES = new Set(["open", "contacted", "closed"]);
 
+// ── Marcas ────────────────────────────────────────────────────────────────────
+// La tabla `leads` recibe solicitudes de varias landings públicas distintas
+// (misma tabla física, sin columna de marca) — A3 Ordena, A Medida y
+// FridgeFix comparten `category` como único discriminador. Este mapa agrupa
+// las categorías conocidas por marca para poder filtrar/separar en el panel
+// sin tocar el esquema de la tabla ni el pipeline de publicLeadCapture.ts.
+export const BRAND_CATEGORIES: Record<string, string[]> = {
+  a3_ordena: ["organizacion_espacios", "limpieza_profesional", "consulta_general"],
+  a_medida: ["cocinas", "muebles", "portes", "mudanzas"],
+  fridgefix: ["electrodomesticos"],
+};
+
 // ── GET / — lista de solicitudes, con filtros opcionales ────────────────────────
 aMedidaLeadsRouter.get("/", requirePermission("a_medida.read"), async (req, res) => {
   const status   = typeof req.query["status"] === "string" ? req.query["status"] : undefined;
   const category = typeof req.query["category"] === "string" ? req.query["category"] : undefined;
+  const brand    = typeof req.query["brand"] === "string" ? req.query["brand"] : undefined;
   const search   = typeof req.query["search"] === "string" ? req.query["search"].trim() : undefined;
   const limit    = Math.min(Number(req.query["limit"] ?? 50) || 50, 200);
   const offset   = Math.max(Number(req.query["offset"] ?? 0) || 0, 0);
 
   const conditions = [];
   if (status && VALID_STATUSES.has(status)) conditions.push(eq(leadsTable.status, status));
+  if (brand && BRAND_CATEGORIES[brand]) conditions.push(inArray(leadsTable.category, BRAND_CATEGORIES[brand]));
   if (category) conditions.push(eq(leadsTable.category, category));
   if (search) {
     conditions.push(
@@ -48,6 +62,21 @@ aMedidaLeadsRouter.get("/", requirePermission("a_medida.read"), async (req, res)
     .offset(offset);
 
   res.json({ leads, total: Number(total), limit, offset });
+});
+
+// ── GET /brand-counts — total de solicitudes abiertas por marca (para las
+// pestañas del panel) ───────────────────────────────────────────────────────────
+aMedidaLeadsRouter.get("/brand-counts", requirePermission("a_medida.read"), async (_req, res) => {
+  const entries = await Promise.all(
+    Object.entries(BRAND_CATEGORIES).map(async ([brand, categories]) => {
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(leadsTable)
+        .where(and(inArray(leadsTable.category, categories), eq(leadsTable.status, "open")));
+      return [brand, Number(total)] as const;
+    }),
+  );
+  res.json(Object.fromEntries(entries));
 });
 
 // ── PATCH /:id — cambia el estado de una solicitud ──────────────────────────────
