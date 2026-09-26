@@ -39,6 +39,15 @@ Disallow: /control-center
 Disallow: /manual
 Disallow: /setup
 Disallow: /no-access
+Disallow: /agents
+Disallow: /fleet
+Disallow: /missions
+Disallow: /portal
+Disallow: /taller
+# URLs con token — a diferencia del resto, si estas se indexaran el token
+# quedaría cacheado públicamente en el buscador, no solo una pantalla de login.
+Disallow: /invite/
+Disallow: /invoice/
 Disallow: /api/
 
 Sitemap: https://hogar.omnitech-core.com/sitemap.xml
