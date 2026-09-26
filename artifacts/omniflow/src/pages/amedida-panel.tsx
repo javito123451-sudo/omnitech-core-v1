@@ -147,6 +147,26 @@ export default function AMedidaPanelPage() {
 
   const leads = data?.leads ?? [];
 
+  // ── Agrupación por categoría ────────────────────────────────────────────────
+  // Dentro de cada marca, la lista se separa en bloques por categoría (Cocinas,
+  // Muebles…) en vez de una lista cronológica única — la marca ya no basta como
+  // única frontera visual cuando agrupa varias categorías (p.ej. A Medida junta
+  // cocinas/muebles/portes/mudanzas). Orden fijo por marca+categoría conocida;
+  // categorías fuera de catálogo (texto libre, ver publicLeadCapture.ts) caen
+  // en un grupo "Otras" al final en vez de desaparecer.
+  const categoryOrder = activeBrand.id
+    ? activeBrand.categories
+    : BRANDS.slice(1).flatMap(b => b.categories);
+  const knownCategories = new Set(categoryOrder);
+  const leadGroups = [
+    ...categoryOrder
+      .map(cat => ({ cat, label: CATEGORY_LABELS[cat] ?? cat, items: leads.filter(l => l.category === cat) }))
+      .filter(g => g.items.length > 0),
+    ...(leads.some(l => !knownCategories.has(l.category))
+      ? [{ cat: "__other__", label: "Otras categorías", items: leads.filter(l => !knownCategories.has(l.category)) }]
+      : []),
+  ];
+
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
@@ -235,57 +255,64 @@ export default function AMedidaPanelPage() {
           <p>No hay solicitudes que coincidan con los filtros</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {leads.map(lead => (
-            <div
-              key={lead.id}
-              className="bg-[#0d0e1e] border border-white/[0.06] rounded-2xl p-5 flex items-start gap-4 flex-wrap"
-            >
-              <div className="flex-1 min-w-[240px]">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                    {CATEGORY_LABELS[lead.category] ?? lead.category}
-                  </span>
-                  <span className="text-slate-600 text-xs">{fmtDate(lead.createdAt)}</span>
-                </div>
-                <p className="text-white text-sm mb-2">{lead.description}</p>
-                <div className="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
-                  <span className="flex items-center gap-1.5"><MapPin size={12} /> {lead.zone}</span>
-                  <span className="flex items-center gap-1.5"><Phone size={12} /> {lead.contactPhone}</span>
-                  {lead.timing && <span className="flex items-center gap-1.5"><Clock size={12} /> {lead.timing}</span>}
-                </div>
+        <div className="space-y-8">
+          {leadGroups.map(group => (
+            <div key={group.cat}>
+              <div className="flex items-center gap-2 mb-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-amber-400">{group.label}</h2>
+                <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/[0.06] text-slate-400">{group.items.length}</span>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={cn(
-                  "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium border",
-                  STATUS_COLORS[lead.status] ?? "bg-slate-500/10 text-slate-400 border-slate-500/20",
-                )}>
-                  {STATUS_LABELS[lead.status] ?? lead.status}
-                </span>
-                <select
-                  value={lead.status}
-                  disabled={pendingId === lead.id}
-                  onChange={e => updateStatus.mutate({ id: lead.id, newStatus: e.target.value })}
-                  className={cn(
-                    "bg-white/[0.04] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500/50",
-                    pendingId === lead.id && "opacity-60",
-                  )}
-                >
-                  <option value="open">Abierta</option>
-                  <option value="contacted">Contactada</option>
-                  <option value="closed">Cerrada</option>
-                </select>
-                <button
-                  onClick={() => handleDelete(lead.id)}
-                  disabled={pendingId === lead.id}
-                  title="Borrar solicitud"
-                  className={cn(
-                    "flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.03] text-slate-500 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/[0.06] transition-colors",
-                    pendingId === lead.id && "opacity-60",
-                  )}
-                >
-                  <Trash2 size={13} />
-                </button>
+              <div className="space-y-3">
+                {group.items.map(lead => (
+                  <div
+                    key={lead.id}
+                    className="bg-[#0d0e1e] border border-white/[0.06] rounded-2xl p-5 flex items-start gap-4 flex-wrap"
+                  >
+                    <div className="flex-1 min-w-[240px]">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="text-slate-600 text-xs">{fmtDate(lead.createdAt)}</span>
+                      </div>
+                      <p className="text-white text-sm mb-2">{lead.description}</p>
+                      <div className="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
+                        <span className="flex items-center gap-1.5"><MapPin size={12} /> {lead.zone}</span>
+                        <span className="flex items-center gap-1.5"><Phone size={12} /> {lead.contactPhone}</span>
+                        {lead.timing && <span className="flex items-center gap-1.5"><Clock size={12} /> {lead.timing}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={cn(
+                        "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium border",
+                        STATUS_COLORS[lead.status] ?? "bg-slate-500/10 text-slate-400 border-slate-500/20",
+                      )}>
+                        {STATUS_LABELS[lead.status] ?? lead.status}
+                      </span>
+                      <select
+                        value={lead.status}
+                        disabled={pendingId === lead.id}
+                        onChange={e => updateStatus.mutate({ id: lead.id, newStatus: e.target.value })}
+                        className={cn(
+                          "bg-white/[0.04] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500/50",
+                          pendingId === lead.id && "opacity-60",
+                        )}
+                      >
+                        <option value="open">Abierta</option>
+                        <option value="contacted">Contactada</option>
+                        <option value="closed">Cerrada</option>
+                      </select>
+                      <button
+                        onClick={() => handleDelete(lead.id)}
+                        disabled={pendingId === lead.id}
+                        title="Borrar solicitud"
+                        className={cn(
+                          "flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.03] text-slate-500 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/[0.06] transition-colors",
+                          pendingId === lead.id && "opacity-60",
+                        )}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
