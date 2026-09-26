@@ -80,6 +80,22 @@
   .diag-skip a{ font-size:13px; color:var(--grey); text-decoration:underline; }
   .diag-skip a:hover{ color:var(--ink); }
   @media(max-width:600px){ .diag-card{ padding:28px 22px; } }
+
+  /* Botón flotante — lleva al cuestionario desde cualquier punto de la
+     página; se oculta mientras el cuestionario ya está a la vista para no
+     quedar flotando encima de sí mismo. */
+  .diag-fab{
+    position:fixed; right:20px; bottom:20px; z-index:200;
+    display:flex; align-items:center; gap:8px;
+    background:var(--ink); color:#fff; border:none; border-radius:999px;
+    padding:14px 22px 14px 18px; font-family:'Inter', sans-serif; font-weight:700; font-size:14px;
+    box-shadow:0 14px 30px rgba(11,15,28,0.35); cursor:pointer;
+    transition:transform .18s ease, box-shadow .18s ease, opacity .2s ease, visibility .2s ease;
+  }
+  .diag-fab:hover{ transform:translateY(-2px); box-shadow:0 18px 36px rgba(11,15,28,0.45); }
+  .diag-fab-icon{ font-size:18px; line-height:1; }
+  .diag-fab.is-hidden{ opacity:0; visibility:hidden; transform:translateY(12px); pointer-events:none; }
+  @media(max-width:480px){ .diag-fab-text{ display:none; } .diag-fab{ padding:14px; } }
 </style>
 
 <script type="application/ld+json">
@@ -161,6 +177,11 @@
     <a href="/a-medida?categoria=frigorificos#pedir" class="nav-cta">Pedir presupuesto</a>
   </nav>
 </header>
+
+<button type="button" id="diag-fab" class="diag-fab" aria-label="Ir al diagnóstico rápido">
+  <span class="diag-fab-icon">🧊</span>
+  <span class="diag-fab-text">Diagnóstico rápido</span>
+</button>
 
 <section class="hero">
   <div class="hero-inner">
@@ -435,6 +456,22 @@
       progress.hidden = false;
       showStep(1);
     });
+  }
+
+  var fab = document.getElementById('diag-fab');
+  var diagSection = document.getElementById('diagnostico');
+  if (fab && diagSection) {
+    fab.addEventListener('click', function () {
+      diagSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          fab.classList.toggle('is-hidden', entry.isIntersecting);
+        });
+      }, { threshold: 0.15 });
+      io.observe(diagSection);
+    }
   }
 })();
 </script>
