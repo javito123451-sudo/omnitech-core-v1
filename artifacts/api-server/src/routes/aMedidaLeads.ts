@@ -25,7 +25,7 @@ const VALID_STATUSES = new Set(["open", "contacted", "closed"]);
 export const BRAND_CATEGORIES: Record<string, string[]> = {
   a3_ordena: ["organizacion_espacios", "limpieza_profesional", "consulta_general"],
   a_medida: ["cocinas", "muebles", "portes", "mudanzas"],
-  fridgefix: ["electrodomesticos"],
+  fridgefix: ["frigorificos"],
 };
 
 // ── GET / — lista de solicitudes, con filtros opcionales ────────────────────────

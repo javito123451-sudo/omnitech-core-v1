@@ -19,7 +19,7 @@ const VALID_CATEGORIES = new Set([
   "muebles",
   "portes",
   "mudanzas",
-  "electrodomesticos",
+  "frigorificos",
 ]);
 
 publicLeadCaptureRouter.post("/", async (req, res) => {

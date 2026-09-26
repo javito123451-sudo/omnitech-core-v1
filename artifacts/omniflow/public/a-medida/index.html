@@ -74,11 +74,11 @@
     },
     {
       "@type": "Service",
-      "name": "Reparación de electrodomésticos en Madrid",
-      "serviceType": "Reparación de electrodomésticos",
+      "name": "Reparación de frigoríficos y neveras en Madrid",
+      "serviceType": "Reparación de frigoríficos",
       "areaServed": { "@type": "City", "name": "Madrid" },
       "provider": { "@type": "Organization", "name": "A Medida" },
-      "url": "https://hogar.omnitech-core.com/reparacion-electrodomesticos-madrid"
+      "url": "https://hogar.omnitech-core.com/reparacion-frigorificos-madrid"
     }
   ]
 }
@@ -557,11 +557,11 @@
       <div class="cat-name">Mudanzas</div>
       <div class="cat-desc">Traslado completo de vivienda.</div>
     </div>
-    <div class="cat" data-cat="electrodomesticos">
+    <div class="cat" data-cat="frigorificos">
       <span class="cat-num">05</span>
       <div class="cat-icon">🧊</div>
-      <div class="cat-name">Electrodomésticos</div>
-      <div class="cat-desc">Reparación de neveras, lavadoras y más.</div>
+      <div class="cat-name">Frigoríficos</div>
+      <div class="cat-desc">Reparación de neveras y congeladores.</div>
     </div>
   </div>
   <p style="text-align:center; margin-top:24px; font-size:13px; color:var(--grey);">
@@ -570,7 +570,7 @@
     <a href="/montaje-muebles-madrid" style="color:var(--blue); font-weight:600;">montaje de muebles</a> ·
     <a href="/portes-madrid" style="color:var(--blue); font-weight:600;">portes</a> ·
     <a href="/mudanzas-madrid" style="color:var(--blue); font-weight:600;">mudanzas</a> ·
-    <a href="/reparacion-electrodomesticos-madrid" style="color:var(--blue); font-weight:600;">reparación de electrodomésticos</a> en Madrid.
+    <a href="/reparacion-frigorificos-madrid" style="color:var(--blue); font-weight:600;">reparación de frigoríficos</a> en Madrid.
   </p>
 </section>
 
@@ -634,7 +634,7 @@
         <a href="/montaje-muebles-madrid">Montaje de muebles</a>
         <a href="/portes-madrid">Portes</a>
         <a href="/mudanzas-madrid">Mudanzas</a>
-        <a href="/reparacion-electrodomesticos-madrid">Reparación de electrodomésticos</a>
+        <a href="/reparacion-frigorificos-madrid">Reparación de frigoríficos</a>
       </div>
       <div class="footer-col">
         <h4>Empresa</h4>
@@ -657,14 +657,14 @@
     muebles: 'Solicita tu presupuesto de montaje de muebles',
     portes: 'Solicita tu presupuesto de portes',
     mudanzas: 'Solicita tu presupuesto de mudanza',
-    electrodomesticos: 'Solicita tu reparación de electrodomésticos'
+    frigorificos: 'Solicita tu reparación de frigorífico'
   };
   const catNames = {
     cocinas: 'montaje de cocinas',
     muebles: 'montaje de muebles',
     portes: 'portes',
     mudanzas: 'mudanzas',
-    electrodomesticos: 'reparación de electrodomésticos'
+    frigorificos: 'reparación de frigoríficos'
   };
   let currentCat = 'cocinas';
 
@@ -689,6 +689,14 @@
       if (match) match.classList.add('active');
       currentCat = preselect;
       document.getElementById('card-title').textContent = cardTitles[preselect];
+    }
+
+    // Precarga la descripción si se llega desde el diagnóstico rápido de
+    // /reparacion-frigorificos-madrid (?resumen=...). Solo texto plano del
+    // propio enlace generado por esa página — nunca se ejecuta como HTML.
+    const resumen = params.get('resumen');
+    if (resumen) {
+      document.getElementById('descripcion').value = resumen;
     }
   } catch (e) { /* no-op — nunca debe romper el formulario */ }
 

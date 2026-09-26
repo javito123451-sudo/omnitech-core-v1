@@ -39,7 +39,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   muebles: "Muebles",
   portes: "Portes",
   mudanzas: "Mudanzas",
-  electrodomesticos: "Electrodomésticos",
+  frigorificos: "Frigoríficos",
   organizacion_espacios: "A3 · Organización",
   limpieza_profesional: "A3 · Limpieza",
   consulta_general: "A3 · Consulta general",
@@ -55,7 +55,7 @@ const BRANDS = [
   { id: "", label: "Todas las marcas", icon: "🗂️", categories: [] as string[] },
   { id: "a3_ordena", label: "A3 Ordena", icon: "🧹", categories: ["organizacion_espacios", "limpieza_profesional", "consulta_general"] },
   { id: "a_medida", label: "A Medida", icon: "🚚", categories: ["cocinas", "muebles", "portes", "mudanzas"] },
-  { id: "fridgefix", label: "FridgeFix", icon: "🧊", categories: ["electrodomesticos"] },
+  { id: "fridgefix", label: "FridgeFix", icon: "🧊", categories: ["frigorificos"] },
 ] as const;
 
 type BrandId = typeof BRANDS[number]["id"];

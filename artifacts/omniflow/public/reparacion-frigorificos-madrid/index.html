@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reparación de Frigoríficos y Neveras en Madrid | Presupuesto Gratis</title>
+<meta name="description" content="¿Tu frigorífico o nevera no enfría, hace ruido o gotea? Haz el diagnóstico rápido y pide presupuesto gratis en Madrid — te contacta un técnico especialista de tu zona.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://hogar.omnitech-core.com/reparacion-frigorificos-madrid">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+<meta property="og:title" content="Reparación de Frigoríficos y Neveras en Madrid | Presupuesto Gratis">
+<meta property="og:description" content="¿Tu frigorífico o nevera no enfría, hace ruido o gotea? Haz el diagnóstico rápido y pide presupuesto gratis en Madrid.">
+<meta property="og:url" content="https://hogar.omnitech-core.com/reparacion-frigorificos-madrid">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="A Medida">
+<meta property="og:locale" content="es_ES">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Reparación de Frigoríficos y Neveras en Madrid | Presupuesto Gratis">
+<meta name="twitter:description" content="¿Tu frigorífico o nevera no enfría, hace ruido o gotea? Haz el diagnóstico rápido y pide presupuesto gratis en Madrid.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/hogar-services.css">
+
+<style>
+  /* Widget de diagnóstico rápido — específico de esta landing (no compartido
+     con las demás páginas de servicio, que no tienen cuestionario). */
+  .diag-card{
+    max-width:760px; margin:0 auto; background:#fff; border:1px solid var(--line-dark);
+    border-radius:20px; padding:36px 32px; box-shadow:0 30px 60px -20px rgba(11,15,28,0.18);
+  }
+  .diag-eyebrow{
+    display:inline-block; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--blue); margin-bottom:10px;
+  }
+  .diag-head h2{ font-family:'Fraunces', serif; font-weight:600; font-size:24px; margin-bottom:8px; color:var(--ink); }
+  .diag-head p{ font-size:14.5px; color:var(--grey); line-height:1.55; margin-bottom:24px; }
+
+  .diag-progress{ display:flex; gap:8px; margin-bottom:24px; }
+  .diag-progress .dot{ flex:1; height:4px; border-radius:4px; background:var(--line-dark); }
+  .diag-progress .dot.active{ background:var(--gold); }
+
+  .diag-q{ font-family:'Fraunces', serif; font-weight:600; font-size:17px; color:var(--ink); margin-bottom:16px; }
+  .diag-options{ display:grid; gap:10px; }
+  .diag-opt{
+    text-align:left; font-family:'Inter', sans-serif; font-size:14.5px; font-weight:500; color:var(--ink);
+    background:var(--paper-2); border:1.5px solid transparent; border-radius:10px; padding:13px 16px;
+    cursor:pointer; transition:all .15s ease; width:100%;
+  }
+  .diag-opt:hover{ border-color:var(--blue); }
+  .diag-opt.sel{ border-color:var(--gold); background:#fff; box-shadow:0 0 0 1px var(--gold) inset; }
+
+  .diag-input{
+    width:100%; border:1.5px solid var(--line-dark); border-radius:8px; padding:13px 14px;
+    font-family:'Inter', sans-serif; font-size:15px; margin-bottom:16px; outline:none; color:var(--ink);
+  }
+  .diag-input:focus{ border-color:var(--blue); }
+  .diag-continue{
+    background:var(--ink); color:#fff; border:none; font-weight:700; font-size:14.5px;
+    padding:13px 24px; border-radius:8px; cursor:pointer; transition:background .15s ease;
+  }
+  .diag-continue:hover{ background:var(--blue); }
+
+  .diag-back{
+    display:block; margin-top:14px; background:none; border:none; color:var(--grey);
+    font-size:13px; cursor:pointer; padding:0;
+  }
+  .diag-back:hover{ color:var(--ink); }
+
+  .diag-result-title{ font-family:'Fraunces', serif; font-weight:600; font-size:19px; color:var(--ink); margin-bottom:10px; }
+  .diag-result p{ font-size:14.5px; line-height:1.6; color:#2b2f3a; margin-bottom:12px; }
+  .diag-disclaimer{ font-size:12.5px; color:var(--grey); font-style:italic; margin-bottom:20px; }
+  .diag-restart{
+    display:block; margin-top:14px; background:none; border:none; color:var(--grey);
+    font-size:13px; cursor:pointer; padding:0; text-decoration:underline;
+  }
+  .diag-skip{ text-align:center; margin-top:18px; }
+  .diag-skip a{ font-size:13px; color:var(--grey); text-decoration:underline; }
+  .diag-skip a:hover{ color:var(--ink); }
+  @media(max-width:600px){ .diag-card{ padding:28px 22px; } }
+</style>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://hogar.omnitech-core.com/reparacion-frigorificos-madrid#webpage",
+      "url": "https://hogar.omnitech-core.com/reparacion-frigorificos-madrid",
+      "name": "Reparación de Frigoríficos y Neveras en Madrid | Presupuesto Gratis",
+      "description": "¿Tu frigorífico o nevera no enfría, hace ruido o gotea? Haz el diagnóstico rápido y pide presupuesto gratis en Madrid — te contacta un técnico especialista de tu zona.",
+      "inLanguage": "es-ES",
+      "isPartOf": { "@type": "WebSite", "@id": "https://hogar.omnitech-core.com/#website", "name": "A Medida", "url": "https://hogar.omnitech-core.com/" }
+    },
+    {
+      "@type": "Service",
+      "name": "Reparación de frigoríficos y neveras en Madrid",
+      "serviceType": "Reparación de frigoríficos",
+      "areaServed": { "@type": "City", "name": "Madrid" },
+      "provider": { "@type": "Organization", "name": "A Medida" },
+      "url": "https://hogar.omnitech-core.com/reparacion-frigorificos-madrid"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "¿Es gratis pedir presupuesto?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Sí, solicitar presupuesto es gratuito y no supone ningún compromiso de contratación." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿En cuánto tiempo me contactan?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Normalmente el técnico de tu zona se pone en contacto contigo el mismo día para concretar la visita, según su disponibilidad." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Tengo que contratar si pido presupuesto?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Recibes el contacto de un técnico y decides tú si quieres seguir adelante con la reparación." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cubrís todo Madrid?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Trabajamos con técnicos en Madrid capital y municipios de alrededor." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Reparáis solo frigoríficos o también otros electrodomésticos?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Este servicio es específico de frigoríficos, neveras y congeladores. Trabajamos con técnicos especializados en este tipo de aparato, de marcas como Bosch, Siemens, Balay, Samsung, LG, Liebherr, Whirlpool, Beko, AEG, Fagor, Zanussi, Electrolux, Hisense, Haier, Teka, Smeg o Miele." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Y si el frigorífico no tiene arreglo?",
+          "acceptedAnswer": { "@type": "Answer", "text": "El técnico te lo indicará al revisarlo. En ese caso no hay coste de reparación, solo el de la visita si así se ha acordado de antemano." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Traéis el gas refrigerante o las piezas de repuesto?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Depende de la avería. El técnico valora el problema en la visita — carga de gas, compresor, termostato, junta de puerta — y te indica si necesita encargar alguna pieza antes de completar la reparación." }
+        },
+        {
+          "@type": "Question",
+          "name": "¿El diagnóstico rápido de la web sustituye al técnico?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Es una orientación a partir de tus respuestas, útil para saber qué puede estar pasando y para que el técnico llegue con más contexto — la causa exacta se confirma al revisar el frigorífico en persona." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+  <div class="logo">A <span class="dot">·</span> Medida</div>
+  <nav>
+    <a href="/a-medida#servicios">Servicios</a>
+    <a href="/a-medida?categoria=frigorificos#pedir" class="nav-cta">Pedir presupuesto</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Madrid y alrededores</div>
+    <h1>Reparación de frigoríficos y neveras en Madrid</h1>
+    <p>Haz el diagnóstico rápido de aquí abajo o cuéntanos directamente qué le pasa a tu frigorífico — te ponemos en contacto con un técnico especialista de tu zona.</p>
+    <a href="/a-medida?categoria=frigorificos#pedir" class="cta-primary">Pedir presupuesto gratis →</a>
+  </div>
+</section>
+
+<main>
+  <section id="diagnostico">
+    <div class="diag-card">
+      <div class="diag-head">
+        <span class="diag-eyebrow">Diagnóstico rápido</span>
+        <h2>¿Qué le pasa a tu frigorífico?</h2>
+        <p>Responde 3 preguntas y te damos una primera idea de qué puede estar pasando. El técnico confirma la causa exacta al revisarlo.</p>
+      </div>
+
+      <div class="diag-progress" id="diag-progress">
+        <span class="dot active" data-step="1"></span>
+        <span class="dot" data-step="2"></span>
+        <span class="dot" data-step="3"></span>
+        <span class="dot" data-step="4"></span>
+      </div>
+
+      <div class="diag-step" data-step="1">
+        <div class="diag-q">¿Qué le pasa exactamente?</div>
+        <div class="diag-options">
+          <button type="button" class="diag-opt" data-q="sintoma" data-v="no_enfria">No enfría nada</button>
+          <button type="button" class="diag-opt" data-q="sintoma" data-v="enfria_poco">Enfría poco o de forma irregular</button>
+          <button type="button" class="diag-opt" data-q="sintoma" data-v="ruido">Hace un ruido raro</button>
+          <button type="button" class="diag-opt" data-q="sintoma" data-v="gotea">Gotea agua o forma charcos</button>
+          <button type="button" class="diag-opt" data-q="sintoma" data-v="puerta">La puerta no cierra bien</button>
+          <button type="button" class="diag-opt" data-q="sintoma" data-v="otro">Otro problema</button>
+        </div>
+      </div>
+
+      <div class="diag-step" data-step="2" hidden>
+        <div class="diag-q">¿Desde cuándo tiene el problema?</div>
+        <div class="diag-options">
+          <button type="button" class="diag-opt" data-q="desde" data-v="hoy">Desde hoy</button>
+          <button type="button" class="diag-opt" data-q="desde" data-v="dias">Desde hace unos días</button>
+          <button type="button" class="diag-opt" data-q="desde" data-v="semanas">Desde hace semanas o más</button>
+        </div>
+        <button type="button" class="diag-back" data-target="1">← Atrás</button>
+      </div>
+
+      <div class="diag-step" data-step="3" hidden>
+        <div class="diag-q">¿Pasó algo antes de que empezara?</div>
+        <div class="diag-options">
+          <button type="button" class="diag-opt" data-q="contexto" data-v="corte_luz">Hubo un corte de luz</button>
+          <button type="button" class="diag-opt" data-q="contexto" data-v="movido">Se ha movido o trasladado</button>
+          <button type="button" class="diag-opt" data-q="contexto" data-v="nada">Nada en particular</button>
+        </div>
+        <button type="button" class="diag-back" data-target="2">← Atrás</button>
+      </div>
+
+      <div class="diag-step" data-step="4" hidden>
+        <div class="diag-q">¿Qué marca es? <span style="font-weight:400; color:var(--grey);">(opcional)</span></div>
+        <input type="text" id="diag-marca" class="diag-input" placeholder="Ej: Balay, Samsung, Bosch…">
+        <button type="button" class="diag-continue" id="diag-finish">Ver diagnóstico →</button>
+        <button type="button" class="diag-back" data-target="3">← Atrás</button>
+      </div>
+
+      <div class="diag-result" id="diag-result" hidden>
+        <div class="diag-result-title" id="diag-result-title"></div>
+        <p id="diag-result-text"></p>
+        <p class="diag-disclaimer">Diagnóstico orientativo a partir de tus respuestas — el técnico confirma la causa exacta al revisar tu frigorífico.</p>
+        <a href="/a-medida?categoria=frigorificos#pedir" id="diag-cta" class="cta-primary" style="display:inline-block;">Pedir presupuesto con este diagnóstico →</a>
+        <button type="button" class="diag-restart" id="diag-restart">Empezar de nuevo</button>
+      </div>
+
+      <div class="diag-skip">
+        <a href="/a-medida?categoria=frigorificos#pedir">Prefiero pedir presupuesto directamente, sin el cuestionario →</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Qué es este servicio y para quién es</h2>
+    <p>A Medida es una plataforma de contacto: no somos nosotros quienes reparamos tu frigorífico, sino que te ponemos en contacto directo con un técnico independiente especializado en frigoríficos de tu zona de Madrid. Tú describes la avería y decides con quién trabajar.</p>
+    <p>Este servicio está pensado específicamente para averías de frigoríficos, neveras y congeladores — no cubre otros electrodomésticos como lavadoras u hornos. Si tu frigorífico ha dejado de enfriar bien, hace ruido raro o pierde agua, un técnico especialista lo revisa antes de que decidas si merece la pena repararlo.</p>
+  </section>
+
+  <section>
+    <h2>Qué averías puedes solicitar</h2>
+    <p>Cada avería es distinta, y el diagnóstico exacto lo confirma el técnico al revisar el frigorífico. Como referencia, este es el tipo de solicitudes más habituales:</p>
+    <ul class="benefits">
+      <li><span class="ic">✓</span> El frigorífico no enfría o enfría poco</li>
+      <li><span class="ic">✓</span> El congelador no congela o acumula hielo en exceso</li>
+      <li><span class="ic">✓</span> Ruidos extraños, vibración o el compresor no para de funcionar</li>
+      <li><span class="ic">✓</span> Gotea agua o forma charcos por dentro o por fuera</li>
+      <li><span class="ic">✓</span> La puerta no cierra bien o la junta de goma está deteriorada</li>
+      <li><span class="ic">✓</span> El piloto o el display no encienden</li>
+      <li><span class="ic">✓</span> Diagnóstico previo cuando no está claro si el frigorífico tiene arreglo</li>
+    </ul>
+    <p>Trabajamos con técnicos que reparan frigoríficos de las marcas más habituales del mercado: Bosch, Siemens, Balay, Samsung, LG, Liebherr, Whirlpool, Beko, AEG, Fagor, Zanussi, Electrolux, Hisense, Haier, Teka, Smeg, Miele y otras.</p>
+  </section>
+
+  <section>
+    <h2>Cómo funciona la solicitud</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><h3>Cuéntanos la avería</h3><p>Usa el diagnóstico rápido o describe el frigorífico, la marca y qué le pasa, en un formulario breve.</p></div>
+      <div class="step"><div class="step-num">2</div><h3>Te contacta un técnico</h3><p>Un técnico especialista de tu zona revisa tu solicitud y se pone en contacto contigo directamente.</p></div>
+      <div class="step"><div class="step-num">3</div><h3>Decides tú</h3><p>Valoras el presupuesto y acuerdas directamente con el técnico la visita, el precio y la reparación.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Qué ocurre después de enviar tu solicitud</h2>
+    <p>Tu solicitud llega a técnicos especialistas en frigoríficos que trabajan en tu zona. Si alguno encaja con lo que necesitas, te contacta directamente para pedirte más detalles o concretar la visita. A partir de ahí, el resto de la conversación — precio, fecha, alcance de la reparación — la llevas tú directamente con esa persona; A Medida no interviene en esa parte. No tienes ninguna obligación de contratar por haber pedido presupuesto.</p>
+  </section>
+
+  <section>
+    <h2>Zona de cobertura</h2>
+    <p>Trabajamos con técnicos en Madrid capital y municipios de alrededor. La disponibilidad concreta en tu zona te la confirma el técnico que te contacte.</p>
+  </section>
+
+  <section>
+    <h2>Preguntas frecuentes</h2>
+    <div class="faq-item"><h3>¿Es gratis pedir presupuesto?</h3><p>Sí, solicitar presupuesto es gratuito y no supone ningún compromiso de contratación.</p></div>
+    <div class="faq-item"><h3>¿En cuánto tiempo me contactan?</h3><p>Normalmente el técnico de tu zona se pone en contacto contigo el mismo día para concretar la visita, según su disponibilidad.</p></div>
+    <div class="faq-item"><h3>¿Tengo que contratar si pido presupuesto?</h3><p>No. Recibes el contacto de un técnico y decides tú si quieres seguir adelante con la reparación.</p></div>
+    <div class="faq-item"><h3>¿Cubrís todo Madrid?</h3><p>Trabajamos con técnicos en Madrid capital y municipios de alrededor.</p></div>
+    <div class="faq-item"><h3>¿Reparáis solo frigoríficos o también otros electrodomésticos?</h3><p>Este servicio es específico de frigoríficos, neveras y congeladores. Trabajamos con técnicos especializados en este tipo de aparato, de marcas como Bosch, Siemens, Balay, Samsung, LG, Liebherr, Whirlpool, Beko, AEG, Fagor, Zanussi, Electrolux, Hisense, Haier, Teka, Smeg o Miele.</p></div>
+    <div class="faq-item"><h3>¿Y si el frigorífico no tiene arreglo?</h3><p>El técnico te lo indicará al revisarlo. En ese caso no hay coste de reparación, solo el de la visita si así se ha acordado de antemano.</p></div>
+    <div class="faq-item"><h3>¿Traéis el gas refrigerante o las piezas de repuesto?</h3><p>Depende de la avería. El técnico valora el problema en la visita — carga de gas, compresor, termostato, junta de puerta — y te indica si necesita encargar alguna pieza antes de completar la reparación.</p></div>
+    <div class="faq-item"><h3>¿El diagnóstico rápido de la web sustituye al técnico?</h3><p>No. Es una orientación a partir de tus respuestas, útil para saber qué puede estar pasando y para que el técnico llegue con más contexto — la causa exacta se confirma al revisar el frigorífico en persona.</p></div>
+  </section>
+
+  <section class="cta-band">
+    <h2>¿Tu frigorífico ha dejado de funcionar bien?</h2>
+    <p>Pide presupuesto gratis y sin compromiso. Un técnico especialista de tu zona te contacta.</p>
+    <a href="/a-medida?categoria=frigorificos#pedir" class="cta-primary">Pedir presupuesto gratis →</a>
+  </section>
+
+  <section>
+    <h2>Otros servicios en Madrid</h2>
+    <div class="related">
+      <a href="/a-medida">Todos los servicios</a>
+      <a href="/montaje-cocinas-madrid">Montaje de cocinas</a>
+      <a href="/montaje-muebles-madrid">Montaje de muebles</a>
+      <a href="/portes-madrid">Portes</a>
+      <a href="/mudanzas-madrid">Mudanzas</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="logo" style="color:#fff;">A <span class="dot">·</span> Medida</div>
+      <p>Profesionales de confianza para montar, portear, mudar y reparar en Madrid.</p>
+    </div>
+    <div class="footer-links">
+      <a href="/a-medida">A Medida</a>
+      <a href="/montaje-cocinas-madrid">Montaje de cocinas</a>
+      <a href="/montaje-muebles-madrid">Montaje de muebles</a>
+      <a href="/portes-madrid">Portes</a>
+      <a href="/mudanzas-madrid">Mudanzas</a>
+      <a href="/reparacion-frigorificos-madrid">Reparación de frigoríficos</a>
+    </div>
+    <div class="footer-bottom">A Medida © 2026 — Madrid y alrededores</div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var TOTAL_STEPS = 4;
+  var current = 1;
+  var answers = {};
+
+  var steps = document.querySelectorAll('.diag-step');
+  var dots = document.querySelectorAll('#diag-progress .dot');
+  var progress = document.getElementById('diag-progress');
+  var result = document.getElementById('diag-result');
+
+  function showStep(n) {
+    current = n;
+    steps.forEach(function (s) { s.hidden = Number(s.dataset.step) !== n; });
+    dots.forEach(function (d) { d.classList.toggle('active', Number(d.dataset.step) <= n); });
+  }
+
+  document.querySelectorAll('.diag-opt').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      answers[btn.dataset.q] = btn.dataset.v;
+      var group = btn.parentElement.querySelectorAll('.diag-opt');
+      group.forEach(function (b) { b.classList.remove('sel'); });
+      btn.classList.add('sel');
+      if (current < TOTAL_STEPS) {
+        setTimeout(function () { showStep(current + 1); }, 150);
+      }
+    });
+  });
+
+  document.querySelectorAll('.diag-back').forEach(function (btn) {
+    btn.addEventListener('click', function () { showStep(Number(btn.dataset.target)); });
+  });
+
+  var SYMPTOM_LABELS = {
+    no_enfria: 'no enfría nada', enfria_poco: 'enfría poco o de forma irregular',
+    ruido: 'hace un ruido raro', gotea: 'gotea agua o forma charcos',
+    puerta: 'la puerta no cierra bien', otro: 'tiene otro problema',
+  };
+  var TIMING_LABELS = { hoy: 'desde hoy', dias: 'desde hace unos días', semanas: 'desde hace semanas o más' };
+  var CONTEXT_LABELS = {
+    corte_luz: 'hubo un corte de luz antes de que empezara',
+    movido: 'se ha movido o trasladado recientemente',
+    nada: 'no ha pasado nada en particular antes',
+  };
+  // Diagnóstico orientativo por síntoma (+ contexto cuando aporta algo más
+  // específico) — no sustituye la revisión del técnico, ver disclaimer en el
+  // resultado y en la FAQ de la página.
+  var DIAGNOSIS = {
+    no_enfria: {
+      corte_luz: { title: 'Podría ser algo puntual tras el corte de luz', text: 'Después de un corte de luz, a veces el termostato o la placa electrónica se quedan en un estado incorrecto. En otros casos puede ser el compresor o una fuga de gas refrigerante.' },
+      default: { title: 'Podría ser el compresor, el termostato o falta de gas', text: 'Cuando un frigorífico deja de enfriar por completo, lo habitual es que sea el compresor, el termostato o una fuga de gas refrigerante — el técnico lo diagnostica en la visita.' },
+    },
+    enfria_poco: {
+      default: { title: 'Podría ser la junta de la puerta o el termostato', text: 'Enfriar poco o de forma irregular suele deberse a una junta de puerta que no sella bien, el termostato, o que el condensador necesita una limpieza.' },
+    },
+    ruido: {
+      movido: { title: 'Puede que no esté bien nivelado tras el traslado', text: 'Un frigorífico recién movido que hace ruido suele necesitar solo nivelarse. Si el ruido persiste, puede ser el compresor o el ventilador.' },
+      default: { title: 'Suele ser el compresor, el ventilador o la nivelación', text: 'Los ruidos raros suelen venir del compresor, el ventilador interno o de que el frigorífico no está bien nivelado.' },
+    },
+    gotea: {
+      default: { title: 'Suele ser el desagüe obstruido o la junta de la puerta', text: 'Que gotee agua o forme charcos casi siempre es el desagüe o tubo de drenaje obstruido, o una junta de puerta que deja entrar humedad.' },
+    },
+    puerta: {
+      default: { title: 'Probablemente la junta de goma o la nivelación', text: 'Si la puerta no cierra bien, lo más habitual es que la junta de goma esté deteriorada o que el frigorífico no esté bien nivelado.' },
+    },
+    otro: {
+      default: { title: 'El técnico necesita revisarlo para saber más', text: 'Con esta descripción, lo mejor es que un técnico lo revise directamente para darte un diagnóstico preciso.' },
+    },
+  };
+
+  var finishBtn = document.getElementById('diag-finish');
+  if (finishBtn) {
+    finishBtn.addEventListener('click', function () {
+      var marca = document.getElementById('diag-marca').value.trim();
+      answers.marca = marca;
+
+      var bySymptom = DIAGNOSIS[answers.sintoma] || DIAGNOSIS.otro;
+      var diag = bySymptom[answers.contexto] || bySymptom.default;
+
+      document.getElementById('diag-result-title').textContent = diag.title;
+      document.getElementById('diag-result-text').textContent = diag.text;
+
+      var summary = 'Diagnóstico rápido: el frigorífico ' + (SYMPTOM_LABELS[answers.sintoma] || '') +
+        ', ' + (TIMING_LABELS[answers.desde] || '') + '. ' +
+        (CONTEXT_LABELS[answers.contexto] ? CONTEXT_LABELS[answers.contexto].charAt(0).toUpperCase() + CONTEXT_LABELS[answers.contexto].slice(1) + '. ' : '') +
+        (marca ? 'Marca: ' + marca + '. ' : '') +
+        'Posible causa orientativa: ' + diag.title + '.';
+
+      var cta = document.getElementById('diag-cta');
+      cta.href = '/a-medida?categoria=frigorificos&resumen=' + encodeURIComponent(summary) + '#pedir';
+
+      steps.forEach(function (s) { s.hidden = true; });
+      progress.hidden = true;
+      result.hidden = false;
+    });
+  }
+
+  var restartBtn = document.getElementById('diag-restart');
+  if (restartBtn) {
+    restartBtn.addEventListener('click', function () {
+      answers = {};
+      document.querySelectorAll('.diag-opt.sel').forEach(function (b) { b.classList.remove('sel'); });
+      document.getElementById('diag-marca').value = '';
+      result.hidden = true;
+      progress.hidden = false;
+      showStep(1);
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
