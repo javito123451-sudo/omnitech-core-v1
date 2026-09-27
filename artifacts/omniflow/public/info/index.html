@@ -15,9 +15,13 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="A3 Ordena">
 <meta property="og:locale" content="es_ES">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://hogar.omnitech-core.com/assets/og-a3-ordena.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="A3 Ordena | Limpieza y Organización de Espacios en Madrid">
 <meta name="twitter:description" content="Limpieza profesional y organización de espacios en Madrid. Presupuesto gratis y sin compromiso.">
+<meta name="twitter:image" content="https://hogar.omnitech-core.com/assets/og-a3-ordena.jpg">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -253,10 +257,12 @@
       <div class="svc-card">
         <h3>Organización profesional de espacios</h3>
         <p>Habitaciones, cocinas, armarios y clósets, baños, salones, trasteros, oficinas en casa, varias estancias o la vivienda completa. Analizamos el espacio, reorganizamos objetos y zonas, y creamos sistemas funcionales de orden.</p>
+        <p style="margin-top:12px;"><a href="/organizacion-espacios-madrid" style="color:var(--blue); font-weight:600; font-size:14.5px;">Más información →</a></p>
       </div>
       <div class="svc-card">
         <h3>Limpieza profesional</h3>
         <p>Viviendas y apartamentos (general, profunda, puntual o recurrente), oficinas, portales y comunidades, gimnasios, y limpieza fin de obra tras una reforma. Puntual o recurrente, según lo que necesites.</p>
+        <p style="margin-top:12px;"><a href="/limpieza-profesional-madrid" style="color:var(--blue); font-weight:600; font-size:14.5px;">Más información →</a></p>
       </div>
     </div>
   </section>
@@ -347,7 +353,8 @@
       <p>Limpieza profesional y organización de espacios en Madrid.</p>
     </div>
     <div class="footer-links">
-      <a href="#servicios">Servicios</a>
+      <a href="/organizacion-espacios-madrid">Organización de espacios</a>
+      <a href="/limpieza-profesional-madrid">Limpieza profesional</a>
       <a href="#faq">Preguntas frecuentes</a>
       <a href="#pedir">Pedir presupuesto</a>
     </div>
@@ -356,6 +363,18 @@
 </footer>
 
 <script>
+  // Preselecciona el servicio si se llega desde una landing dedicada
+  // (ej. /organizacion-espacios-madrid → /info?categoria=organizacion_espacios#pedir).
+  // Defensivo: si el parámetro no es válido, se ignora y se mantiene el valor por defecto.
+  try {
+    var VALID_SERVICE_VALUES = ['organizacion_espacios', 'limpieza_profesional', 'consulta_general'];
+    var params = new URLSearchParams(window.location.search);
+    var preselect = params.get('categoria');
+    if (preselect && VALID_SERVICE_VALUES.indexOf(preselect) !== -1) {
+      document.getElementById('servicio').value = preselect;
+    }
+  } catch (e) { /* no-op — nunca debe romper el formulario */ }
+
   var API_URL = 'https://omnitech-core-api.onrender.com/api/leads-public';
 
   function sleep(ms) { return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
