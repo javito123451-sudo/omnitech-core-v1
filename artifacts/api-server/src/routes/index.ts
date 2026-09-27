@@ -39,6 +39,7 @@ import { adsRouter } from "./ads";
 import { leadsRouter } from "./leads";
 import { missionsRouter } from "./missions";
 import { publicLeadCaptureRouter } from "./publicLeadCapture";
+import { publicDiagnosticLeadCaptureRouter } from "./publicDiagnosticLeadCapture";
 import { aMedidaLeadsRouter } from "./aMedidaLeads";
 import { timeRouter }  from "./time";
 import { fleetRouter, fleetWebhookRouter } from "./fleet";
@@ -97,6 +98,10 @@ const publicLeadCaptureLimiter = rateLimit({
   message: { error: "Demasiadas solicitudes. Inténtalo de nuevo en un minuto." },
 });
 router.use("/leads-public", publicLeadCaptureLimiter, publicLeadCaptureRouter);
+
+// Leads B2B del propio SaaS (info.omnitech-core.com) — bajo el mismo
+// prefijo "/leads-public" para heredar su bypass de CORS (ver app.ts).
+router.use("/leads-public/diagnostico", publicLeadCaptureLimiter, publicDiagnosticLeadCaptureRouter);
 
 router.use(requireAuth, resolveOrg, resolvePermissions);
 

@@ -25,6 +25,7 @@ export * from "./outreachConfirmations";
 export * from "./outreachEvents";
 export * from "./outreachFollowups";
 export * from "./leadCapture";
+export * from "./b2bDiagnosticLeads";
 export * from "./ads";
 export * from "./marketing";
 export * from "./notifications";

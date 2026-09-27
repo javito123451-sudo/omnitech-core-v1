@@ -120,6 +120,13 @@
       "when": 1790135149393,
       "tag": "0016_omniseller_fase8_booking",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790548522204,
+      "tag": "0017_fat_sinister_six",
+      "breakpoints": true
     }
   ]
 }
