@@ -42,7 +42,7 @@ export function reasoningEffortParam(model: string): { reasoning_effort?: "none"
   return /^gpt-6-luna$/i.test(model.trim()) ? { reasoning_effort: "none" } : {};
 }
 
-const DEFAULT_OPENAI_MODEL = process.env.OPENAI_DEFAULT_MODEL ?? "gpt-6-luna";
+const DEFAULT_OPENAI_MODEL = process.env.OPENAI_DEFAULT_MODEL ?? "gpt-4o-mini";
 
 export class OpenAIProvider implements AIProvider {
   id   = "openai";
