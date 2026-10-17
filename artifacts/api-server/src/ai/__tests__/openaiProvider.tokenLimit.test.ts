@@ -67,10 +67,10 @@ describe("OpenAIProvider.generate", () => {
     expect(sent()).not.toHaveProperty("max_completion_tokens");
   });
 
-  it("sin modelo indicado usa GPT-6 Luna y los parámetros compatibles", async () => {
+  it("sin modelo indicado conserva el fallback anterior; GPT-6 se activa por configuración", async () => {
     await new OpenAIProvider("k").generate(messages);
-    expect(sent()).toMatchObject({ model: "gpt-6-luna", max_completion_tokens: 4000, reasoning_effort: "none", temperature: 0.7 });
-    expect(sent()).not.toHaveProperty("max_tokens");
+    expect(sent()).toMatchObject({ model: "gpt-4o-mini", max_tokens: 4000, temperature: 0.7 });
+    expect(sent()).not.toHaveProperty("max_completion_tokens");
   });
 
   it("el límite por defecto de 4000 también se aplica con max_completion_tokens", async () => {
