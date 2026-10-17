@@ -72,7 +72,7 @@ export async function generateFollowupMessage(
       { role: "system", content: buildSystemPrompt(step, channel) },
       { role: "user", content: buildUserPrompt(client, step) },
     ],
-    { model: "gpt-4o-mini", temperature, maxTokens: 250 },
+    { model: (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"), temperature, maxTokens: 250 },
   );
 
   return result.text.trim();

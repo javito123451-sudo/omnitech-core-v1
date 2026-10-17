@@ -10,13 +10,12 @@ import type {
 import { trackLLMDirectCall } from "../utils/avaMetrics";
 
 /**
- * Los modelos de la familia GPT-5 y los razonadores (o1, o3, o4…) rechazan `max_tokens` con un 400
- * ("Use 'max_completion_tokens' instead") y exigen `max_completion_tokens`; el resto de modelos
- * (gpt-4o, gpt-4o-mini…) siguen usando `max_tokens` como hasta ahora. En estos modelos el límite
- * cuenta también los tokens de razonamiento.
+ * Los modelos GPT-5/GPT-6 y los razonadores (o1, o3, o4…) usan `max_completion_tokens`;
+ * los modelos GPT-4o siguen usando `max_tokens`. En los modelos de razonamiento, el límite
+ * de salida puede incluir tokens de razonamiento.
  */
 export function usesMaxCompletionTokens(model: string): boolean {
-  return /^(gpt-5|o[0-9])/i.test(model.trim());
+  return /^(gpt-(5|6)|o[0-9])/i.test(model.trim());
 }
 
 /** El parámetro de límite de salida que corresponde al modelo. */
@@ -25,14 +24,22 @@ export function outputTokenLimit(model: string, limit: number): { max_tokens: nu
 }
 
 /**
- * Esos mismos modelos (GPT-5.x y razonadores) solo admiten la temperatura por defecto (1): con cualquier
- * otro valor OpenAI responde 400 ("Unsupported value: 'temperature' does not support 0.3 with this
- * model. Only the default (1) value is supported."). Para ellos NO se envía `temperature` y se usa la
- * del proveedor; el resto de modelos conserva la temperatura pedida (0.7 por defecto), sin cambios.
+ * GPT-5 y los modelos de razonamiento con esfuerzo distinto de "none" no aceptan temperatura
+ * personalizada. GPT-6 Luna se usa con reasoning_effort="none", por lo que puede conservar temperature.
  */
 export function temperatureParam(model: string, temperature: number): { temperature?: number } {
-  return usesMaxCompletionTokens(model) ? {} : { temperature };
+  return usesMaxCompletionTokens(model) && !/^gpt-6-luna$/i.test(model.trim()) ? {} : { temperature };
 }
+
+/**
+ * GPT-6 Luna supports Chat Completions function calling only with reasoning_effort="none".
+ * Higher-reasoning GPT-6 models must use the Responses API for tool calling.
+ */
+export function reasoningEffortParam(model: string): { reasoning_effort?: "none" } {
+  return /^gpt-6-luna$/i.test(model.trim()) ? { reasoning_effort: "none" } : {};
+}
+
+const DEFAULT_OPENAI_MODEL = process.env.OPENAI_DEFAULT_MODEL ?? "gpt-6-luna";
 
 export class OpenAIProvider implements AIProvider {
   id   = "openai";
@@ -44,7 +51,7 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async generate(messages: Message[], options: GenerateOptions = {}): Promise<GenerateResult> {
-    const model = options.model ?? "gpt-4o-mini";
+    const model = options.model ?? DEFAULT_OPENAI_MODEL;
 
     const body: OpenAI.Chat.ChatCompletionCreateParams = {
       model,
@@ -80,6 +87,7 @@ export class OpenAIProvider implements AIProvider {
       }) as any,
       ...outputTokenLimit(model, options.maxTokens ?? 4000),
       ...temperatureParam(model, options.temperature ?? 0.7),
+      ...reasoningEffortParam(model),
     };
 
     if (options.tools && options.tools.length > 0) {
@@ -134,7 +142,7 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async *stream(messages: Message[], options: GenerateOptions = {}): AsyncGenerator<StreamChunk> {
-    const model = options.model ?? "gpt-4o-mini";
+    const model = options.model ?? DEFAULT_OPENAI_MODEL;
 
     const body: any = {
       model,
@@ -168,6 +176,7 @@ export class OpenAIProvider implements AIProvider {
       }),
       ...outputTokenLimit(model, options.maxTokens ?? 4000),
       ...temperatureParam(model, options.temperature ?? 0.7),
+      ...reasoningEffortParam(model),
       stream:      true,
       stream_options: { include_usage: true },
     };
@@ -227,8 +236,9 @@ export class OpenAIProvider implements AIProvider {
     confidence: number;
     params: Record<string, unknown>;
   }> {
+    const model = DEFAULT_OPENAI_MODEL;
     const resp = await this.client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model,
       messages: [
         {
           role: "system",
@@ -237,8 +247,9 @@ export class OpenAIProvider implements AIProvider {
         { role: "user", content: text },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 200,
-      temperature: 0.0,
+      ...outputTokenLimit(model, 200),
+      ...temperatureParam(model, 0.0),
+      ...reasoningEffortParam(model),
     });
     trackLLMDirectCall();
 

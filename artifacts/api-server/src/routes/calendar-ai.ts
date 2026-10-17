@@ -62,7 +62,7 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ], {
-      model:       "gpt-4o-mini",
+      model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
       temperature: 0.7,
       maxTokens:   500,
     });
@@ -71,7 +71,7 @@ Usa el tipo más apropiado. suggestedDuration en minutos (30, 45, 60, 90, 120).`
       orgId:        (req as Request & { orgId?: number }).orgId ?? null,
       userClerkId:  (req as Request & { clerkUserId?: string }).clerkUserId ?? null,
       functionName: `calendar_ai_${action as string}`,
-      model:        "gpt-4o-mini",
+      model:        (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
       tokensInput:  result.usage?.promptTokens     ?? 0,
       tokensOutput: result.usage?.completionTokens ?? 0,
       durationMs:   Date.now() - calAiStart,
