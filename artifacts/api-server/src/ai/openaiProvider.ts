@@ -16,7 +16,7 @@ import { trackLLMDirectCall } from "../utils/avaMetrics";
  * cuenta también los tokens de razonamiento.
  */
 export function usesMaxCompletionTokens(model: string): boolean {
-  return /^(gpt-5|o[0-9])/i.test(model.trim());
+  return /^(gpt-(5|6)|o[0-9])/i.test(model.trim());
 }
 
 /** El parámetro de límite de salida que corresponde al modelo. */
@@ -31,8 +31,18 @@ export function outputTokenLimit(model: string, limit: number): { max_tokens: nu
  * del proveedor; el resto de modelos conserva la temperatura pedida (0.7 por defecto), sin cambios.
  */
 export function temperatureParam(model: string, temperature: number): { temperature?: number } {
-  return usesMaxCompletionTokens(model) ? {} : { temperature };
+  return usesMaxCompletionTokens(model) && !/^gpt-6-luna$/i.test(model.trim()) ? {} : { temperature };
 }
+
+/**
+ * GPT-6 Luna supports Chat Completions function calling only with reasoning_effort="none".
+ * Higher-reasoning GPT-6 models must use the Responses API for tool calling.
+ */
+export function reasoningEffortParam(model: string): { reasoning_effort?: "none" } {
+  return /^gpt-6-luna$/i.test(model.trim()) ? { reasoning_effort: "none" } : {};
+}
+
+const DEFAULT_OPENAI_MODEL = process.env.OPENAI_DEFAULT_MODEL ?? "gpt-6-luna";
 
 export class OpenAIProvider implements AIProvider {
   id   = "openai";
@@ -44,7 +54,7 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async generate(messages: Message[], options: GenerateOptions = {}): Promise<GenerateResult> {
-    const model = options.model ?? "gpt-4o-mini";
+    const model = options.model ?? DEFAULT_OPENAI_MODEL;
 
     const body: OpenAI.Chat.ChatCompletionCreateParams = {
       model,
@@ -80,6 +90,7 @@ export class OpenAIProvider implements AIProvider {
       }) as any,
       ...outputTokenLimit(model, options.maxTokens ?? 4000),
       ...temperatureParam(model, options.temperature ?? 0.7),
+      ...reasoningEffortParam(model),
     };
 
     if (options.tools && options.tools.length > 0) {
@@ -134,7 +145,7 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async *stream(messages: Message[], options: GenerateOptions = {}): AsyncGenerator<StreamChunk> {
-    const model = options.model ?? "gpt-4o-mini";
+    const model = options.model ?? DEFAULT_OPENAI_MODEL;
 
     const body: any = {
       model,
@@ -168,6 +179,7 @@ export class OpenAIProvider implements AIProvider {
       }),
       ...outputTokenLimit(model, options.maxTokens ?? 4000),
       ...temperatureParam(model, options.temperature ?? 0.7),
+      ...reasoningEffortParam(model),
       stream:      true,
       stream_options: { include_usage: true },
     };
@@ -227,8 +239,9 @@ export class OpenAIProvider implements AIProvider {
     confidence: number;
     params: Record<string, unknown>;
   }> {
+    const model = DEFAULT_OPENAI_MODEL;
     const resp = await this.client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model,
       messages: [
         {
           role: "system",
@@ -237,8 +250,9 @@ export class OpenAIProvider implements AIProvider {
         { role: "user", content: text },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 200,
-      temperature: 0.0,
+      ...outputTokenLimit(model, 200),
+      ...temperatureParam(model, 0.0),
+      ...reasoningEffortParam(model),
     });
     trackLLMDirectCall();
 
