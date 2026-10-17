@@ -45,6 +45,7 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 const MODEL_COLOR: Record<string, string> = {
+  "gpt-6-luna":             "bg-emerald-500/20 text-emerald-400",
   "gpt-4o-mini":            "bg-blue-500/20 text-blue-400",
   "gpt-4o":                 "bg-violet-500/20 text-violet-400",
   "text-embedding-3-small": "bg-teal-500/20 text-teal-400",
