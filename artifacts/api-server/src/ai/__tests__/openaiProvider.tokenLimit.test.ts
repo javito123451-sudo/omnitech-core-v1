@@ -92,7 +92,7 @@ describe("OpenAIProvider.generate", () => {
     await new OpenAIProvider("k").generate(messages, { model: "gpt-4o-mini" });
     expect(sent()).toMatchObject({ temperature: 0.7 });
     await new OpenAIProvider("k").generate(messages);
-    expect(sent()).toMatchObject({ model: "gpt-4o-mini", temperature: 0.7 });
+    expect(sent()).toMatchObject({ model: "gpt-6-luna", max_completion_tokens: 4000, reasoning_effort: "none", temperature: 0.7 });
   });
 
   it("no cambia nada más de la petición ni de la respuesta: mensajes y uso (con tokens cacheados)", async () => {
