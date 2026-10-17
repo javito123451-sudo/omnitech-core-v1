@@ -8,7 +8,7 @@ vi.mock("openai", () => ({
   default: class { chat = { completions: { create } }; embeddings = { create: vi.fn() }; },
 }));
 
-import { OpenAIProvider, outputTokenLimit, temperatureParam, usesMaxCompletionTokens } from "../openaiProvider";
+import { OpenAIProvider, outputTokenLimit, temperatureParam, usesMaxCompletionTokens, reasoningEffortParam } from "../openaiProvider";
 
 const completion = { choices: [{ message: { content: "OK" } }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12, prompt_tokens_details: { cached_tokens: 4 } } };
 const messages = [{ role: "user" as const, content: "hola" }];
@@ -18,7 +18,7 @@ beforeEach(() => { create.mockReset(); create.mockResolvedValue(completion); });
 
 describe("qué modelos usan max_completion_tokens", () => {
   it("GPT-5.x y los razonadores sí; gpt-4o y compañía no", () => {
-    for (const m of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5", "gpt-5-mini", "GPT-5.6-Luna", " gpt-5.6-sol ", "o1", "o3-mini", "o4-mini"]) {
+    for (const m of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5", "gpt-5-mini", "gpt-6-luna", "gpt-6-astra", "gpt-6.1-sol", "GPT-5.6-Luna", " gpt-5.6-sol ", "o1", "o3-mini", "o4-mini"]) {
       expect(usesMaxCompletionTokens(m), m).toBe(true);
     }
     for (const m of ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-3.5-turbo", "claude-x", "omni-moderation", "text-embedding-3-small"]) {
@@ -28,15 +28,23 @@ describe("qué modelos usan max_completion_tokens", () => {
 
   it("outputTokenLimit devuelve exactamente un parámetro, el que corresponde", () => {
     expect(outputTokenLimit("gpt-5.6-luna", 64)).toEqual({ max_completion_tokens: 64 });
+    expect(outputTokenLimit("gpt-6-luna", 64)).toEqual({ max_completion_tokens: 64 });
     expect(outputTokenLimit("gpt-4o-mini", 64)).toEqual({ max_tokens: 64 });
   });
 });
 
 describe("temperatureParam", () => {
-  it("omite la temperatura en GPT-5.x y razonadores, y la conserva en el resto", () => {
-    for (const m of ["gpt-5.6-luna", "gpt-5", "o3-mini"]) expect(temperatureParam(m, 0.3), m).toEqual({});
-    for (const m of ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]) expect(temperatureParam(m, 0.3), m).toEqual({ temperature: 0.3 });
+  it("omite la temperatura en GPT-5.x y razonadores; GPT-6 Luna la admite con reasoning_effort none", () => {
+    for (const m of ["gpt-5.6-luna", "gpt-5", "gpt-6-astra", "gpt-6.1-sol", "o3-mini"]) expect(temperatureParam(m, 0.3), m).toEqual({});
+    for (const m of ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "gpt-6-luna"]) expect(temperatureParam(m, 0.3), m).toEqual({ temperature: 0.3 });
     expect(temperatureParam("gpt-4o-mini", 0)).toEqual({ temperature: 0 });   // 0 es un valor válido, no se pierde
+  });
+
+  it("activa reasoning_effort none solo para GPT-6 Luna en Chat Completions", () => {
+    expect(reasoningEffortParam("gpt-6-luna")).toEqual({ reasoning_effort: "none" });
+    expect(reasoningEffortParam("GPT-6-LUNA")).toEqual({ reasoning_effort: "none" });
+    expect(reasoningEffortParam("gpt-6-astra")).toEqual({});
+    expect(reasoningEffortParam("gpt-5.6-luna")).toEqual({});
   });
 });
 
@@ -47,16 +55,22 @@ describe("OpenAIProvider.generate", () => {
     expect(sent()).not.toHaveProperty("max_tokens");
   });
 
+  it("con GPT-6 Luna usa max_completion_tokens y reasoning_effort none para compatibilidad de herramientas", async () => {
+    await new OpenAIProvider("k").generate(messages, { model: "gpt-6-luna", maxTokens: 128, temperature: 0.2 });
+    expect(sent()).toMatchObject({ model: "gpt-6-luna", max_completion_tokens: 128, reasoning_effort: "none", temperature: 0.2 });
+    expect(sent()).not.toHaveProperty("max_tokens");
+  });
+
   it("con gpt-4o-mini sigue enviando max_tokens (sin cambios para los modelos actuales)", async () => {
     await new OpenAIProvider("k").generate(messages, { model: "gpt-4o-mini", maxTokens: 64 });
     expect(sent()).toMatchObject({ model: "gpt-4o-mini", max_tokens: 64 });
     expect(sent()).not.toHaveProperty("max_completion_tokens");
   });
 
-  it("sin modelo indicado usa el de siempre (gpt-4o-mini) con max_tokens y el límite por defecto de 4000", async () => {
+  it("sin modelo indicado usa GPT-6 Luna y los parámetros compatibles", async () => {
     await new OpenAIProvider("k").generate(messages);
-    expect(sent()).toMatchObject({ model: "gpt-4o-mini", max_tokens: 4000 });
-    expect(sent()).not.toHaveProperty("max_completion_tokens");
+    expect(sent()).toMatchObject({ model: "gpt-6-luna", max_completion_tokens: 4000, reasoning_effort: "none", temperature: 0.7 });
+    expect(sent()).not.toHaveProperty("max_tokens");
   });
 
   it("el límite por defecto de 4000 también se aplica con max_completion_tokens", async () => {
