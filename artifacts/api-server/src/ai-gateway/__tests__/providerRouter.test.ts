@@ -13,7 +13,7 @@ describe("Provider Router", () => {
   it("por defecto usa el proveedor global y el modelo por defecto", () => {
     const [route] = resolveRoutes();
     expect(route!.providerId).toBe("openai");
-    expect(route!.model).toBe("gpt-4o-mini");
+    expect(route!.model).toBe("gpt-6-luna");
   });
 
   it("la preferencia del agente gana a la del workspace y a la del plan", () => {
