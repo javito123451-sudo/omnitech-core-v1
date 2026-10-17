@@ -315,7 +315,7 @@ REGLA DE ALCANCE DE HERRAMIENTAS: En este canal SOLO tienes create_appointment, 
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await aiProvider.generate(loopMessages, {
-        model:       "gpt-4o-mini",
+        model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
         temperature: round === 0 ? 0.72 : 0.65,
         maxTokens:   round < MAX_ROUNDS - 1 ? 600 : 400,
         tools:       tgTools,
