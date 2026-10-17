@@ -30,6 +30,8 @@ export interface ModelPricing {
 
 const GPT_4O:      ModelPricing = { inputPer1M: 5,    outputPer1M: 15,  cachedInputPer1M: 2.5 };
 const GPT_4O_MINI: ModelPricing = { inputPer1M: 0.15, outputPer1M: 0.6, cachedInputPer1M: 0.075 };
+// Official standard pricing for GPT-6 Luna (USD per 1M tokens, up to 272K input tokens).
+const GPT_6_LUNA: ModelPricing = { inputPer1M: 0.10, outputPer1M: 0.50, cachedInputPer1M: 0.01 };
 
 /** Valores heredados. Ver la nota de cabecera: son un respaldo, no una fuente de verdad. */
 export const LEGACY_PRICING: Record<string, Record<string, ModelPricing>> = {
@@ -38,6 +40,7 @@ export const LEGACY_PRICING: Record<string, Record<string, ModelPricing>> = {
     "gpt-4o-2024-11-20":      GPT_4O,
     "gpt-4o-mini":            GPT_4O_MINI,
     "gpt-4o-mini-2024-07-18": GPT_4O_MINI,
+    "gpt-6-luna":             GPT_6_LUNA,
     "text-embedding-3-small": { inputPer1M: 0.02, outputPer1M: 0 },
     "text-embedding-3-large": { inputPer1M: 0.13, outputPer1M: 0 },
   },
