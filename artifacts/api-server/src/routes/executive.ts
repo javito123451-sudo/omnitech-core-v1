@@ -478,14 +478,14 @@ Máximo 3 clientes prioritarios y 3 bloqueadores. Sé directo y accionable. Sin 
     },
     { role: "user", content: context },
   ], {
-    model:       "gpt-4o-mini",
+    model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     temperature: 0.3,
   });
 
   logAiCall({
     orgId:        orgId,
     functionName: "executive_report",
-    model:        "gpt-4o-mini",
+    model:        (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     tokensInput:  result.usage?.promptTokens     ?? 0,
     tokensOutput: result.usage?.completionTokens ?? 0,
   }).catch(() => {});
@@ -603,14 +603,14 @@ Reglas:
     },
     { role: "user", content: context },
   ], {
-    model:       "gpt-4o-mini",
+    model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     temperature: 0.25,
   });
 
   logAiCall({
     orgId:        orgId,
     functionName: "executive_ceo",
-    model:        "gpt-4o-mini",
+    model:        (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     tokensInput:  result.usage?.promptTokens     ?? 0,
     tokensOutput: result.usage?.completionTokens ?? 0,
   }).catch(() => {});
