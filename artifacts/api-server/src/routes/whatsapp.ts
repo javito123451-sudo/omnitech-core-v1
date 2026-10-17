@@ -316,7 +316,7 @@ REGLA DE ALCANCE DE HERRAMIENTAS: En este canal SOLO tienes create_appointment, 
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await aiProvider.generate(loopMessages, {
-        model:       "gpt-4o-mini",
+        model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
         temperature: round === 0 ? 0.72 : 0.65,
         maxTokens:   round < MAX_ROUNDS - 1 ? 600 : 400,
         tools:       waTools,
@@ -1258,7 +1258,7 @@ whatsappRouter.post("/generate", requirePermission("whatsapp.write"), async (req
     { role: "system", content: buildSystemPrompt(messageType) },
     { role: "user",   content: buildUserPrompt(messageType, client, activity, nextAppointment ? { title: nextAppointment.title, startTime: nextAppointment.startTime, location: nextAppointment.location } : null) },
   ], {
-    model:       "gpt-4o-mini",
+    model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     temperature: 0.7,
     maxTokens:   200,
   });
