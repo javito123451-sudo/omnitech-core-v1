@@ -17,6 +17,20 @@ export const organizationsTable = pgTable("organizations", {
   featureFlags:      jsonb("feature_flags").default({}),
   fiscalConfig:      jsonb("fiscal_config").default({}),
   wizardState:       jsonb("wizard_state").default({}),
+  // ── Plan Chooser (experiencia inicial: Empresa / Persona / A3) ───────────
+  // experienceType: "business" | "personal" | "a3" — rama elegida en /setup.
+  experienceType:    text("experience_type"),
+  // personaNeeds: array de "home" | "learn" | "wellness" — solo si experienceType = "personal".
+  personaNeeds:      jsonb("persona_needs").default([]),
+  // a3ServiceTypes: array de "organization" | "cleaning" — solo si experienceType = "a3".
+  a3ServiceTypes:    jsonb("a3_service_types").default([]),
+  // a3ClientSegment: "individual" | "professional" — solo si experienceType = "a3". Metadato,
+  // no activa módulos por sí mismo (ver middlewares/requireModule.ts / module_configs).
+  a3ClientSegment:   text("a3_client_segment"),
+  // experienceTemplateSlug: solo se usa para Empresa, apunta a onboard_templates.slug
+  // (fijo a "servicios" desde el Chooser). Persona/A3 lo dejan null — sus módulos se
+  // calculan por mapeo dinámico, no por plantilla (ver lib/experienceModules.ts).
+  experienceTemplateSlug: text("experience_template_slug"),
   // ── Datos de empresa (rellenados por wizard) ─────────────────────────────
   legalName:         text("legal_name"),
   taxId:             text("tax_id"),
