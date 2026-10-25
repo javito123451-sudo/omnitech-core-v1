@@ -59,8 +59,9 @@ avaCoreRouter.post("/confirm", async (req, res) => {
       res.status(400).json({ error: "Se requiere confirmToken y confirm:true explícito." });
       return;
     }
-    // The action itself is always executed in the CRM context — Ava Super
-    // Admin has no writable actions in this phase.
+    // The action is executed with the org-scoped context. Actions restricted
+    // to SUPER_ADMIN (create_organization) re-check ctx.platformRole — which
+    // resolveAvaContext always re-derives from the backend — inside execute().
     const ctx = await resolveAvaContext(req, "crm");
 
     const { actionId, params, result } = await confirmAvaAction(ctx, confirmToken);

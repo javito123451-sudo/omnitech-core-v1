@@ -50,6 +50,9 @@ export interface ActionProposal {
 
 export interface AvaAction {
   id: string;
+  // Contextos en los que Ava puede PROPONER esta acción. Por defecto solo
+  // "crm" (comportamiento original de create_task).
+  contexts?: AvaContextType[];
   // Builds the human-readable proposal + validated params (READ + PROPOSE).
   // Throws if required data is missing or the user lacks permission — the
   // proposal step itself is permission-checked, not just execution.

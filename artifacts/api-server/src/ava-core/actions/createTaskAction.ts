@@ -10,6 +10,7 @@
 import { executeSkill } from "../../skills";
 import { getPermissionsForRole } from "../../middlewares/permissions";
 import type { AvaAction, AvaContext } from "../types";
+import { createOrganizationAction } from "./createOrganizationAction";
 
 function requireCrmWrite(ctx: AvaContext) {
   // Platform SUPER_ADMIN can act on any workspace via Ava (same bypass the
@@ -70,4 +71,5 @@ export const createTaskAction: AvaAction = {
 
 export const AVA_ACTIONS: Record<string, AvaAction> = {
   create_task: createTaskAction,
+  create_organization: createOrganizationAction,
 };

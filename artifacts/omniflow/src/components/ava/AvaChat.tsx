@@ -8,7 +8,14 @@ import AvaAvatar from "./AvaAvatar";
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type Role = "user" | "ai";
-type Msg  = { id: string; role: Role; content: string; ts: Date; streaming?: boolean; error?: boolean };
+type AvaProposal = {
+  actionId:     string;
+  confirmToken: string;
+  expiresAt:    string;
+  state:        "pending" | "confirming" | "done" | "cancelled" | "failed";
+  resultText?:  string;
+};
+type Msg  = { id: string; role: Role; content: string; ts: Date; streaming?: boolean; error?: boolean; proposal?: AvaProposal };
 
 function inlineFormat(text: unknown): React.ReactNode {
   if (typeof text !== "string") {
@@ -100,6 +107,35 @@ export default function AvaChat({ pendingMessage, onClearPending, moduleLabel, u
   const sessionIdRef          = useRef<string | undefined>(undefined);
   const textareaRef           = useRef<HTMLTextAreaElement>(null);
 
+  const updateProposal = useCallback((msgId: string, patch: Partial<AvaProposal>) => {
+    setMsgs(prev => prev.map(m => m.id === msgId && m.proposal ? { ...m, proposal: { ...m.proposal, ...patch } } : m));
+  }, []);
+
+  const confirmProposal = useCallback(async (msgId: string, token: string) => {
+    updateProposal(msgId, { state: "confirming" });
+    try {
+      const res = await authFetch(`${API_BASE}/api/ava-core/confirm`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmToken: token, confirm: true }),
+      });
+      const body = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok) {
+        updateProposal(msgId, { state: "failed", resultText: String((body as { error?: string }).error ?? "No se pudo ejecutar la acción.") });
+        return;
+      }
+      const result = (body as { result?: { name?: string; slug?: string; orgId?: number } }).result;
+      updateProposal(msgId, {
+        state: "done",
+        resultText: result?.name
+          ? `Creado: ${result.name} (id ${result.orgId}, slug ${result.slug}). Ahora invita al cliente por email desde Control Center.`
+          : "Hecho.",
+      });
+    } catch {
+      updateProposal(msgId, { state: "failed", resultText: "No se pudo conectar para confirmar." });
+    }
+  }, [updateProposal]);
+
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
@@ -160,10 +196,17 @@ export default function AvaChat({ pendingMessage, onClearPending, moduleLabel, u
           return;
         }
 
-        const data = await res.json() as { sessionId: string; answer: AvaCoreAnswer };
+        const data = await res.json() as {
+          sessionId: string;
+          answer: AvaCoreAnswer;
+          proposal?: { actionId: string; confirmToken: string; expiresAt: string };
+        };
         sessionIdRef.current = data.sessionId;
         const formatted = formatAvaCoreAnswer(data.answer);
-        setMsgs(prev => prev.map(m => m.id === aiId ? { ...m, content: formatted, streaming: false } : m));
+        const proposal: AvaProposal | undefined = data.proposal
+          ? { actionId: data.proposal.actionId, confirmToken: data.proposal.confirmToken, expiresAt: data.proposal.expiresAt, state: "pending" }
+          : undefined;
+        setMsgs(prev => prev.map(m => m.id === aiId ? { ...m, content: formatted, streaming: false, proposal } : m));
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
         markError("No se pudo conectar con Ava Core. Verifica tu conexión.");
@@ -298,6 +341,30 @@ export default function AvaChat({ pendingMessage, onClearPending, moduleLabel, u
                       </>
                   }
                 </div>
+                {msg.proposal && (
+                  <div className="flex flex-col gap-1.5 px-1">
+                    {msg.proposal.state === "pending" && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => void confirmProposal(msg.id, msg.proposal!.confirmToken)}
+                          className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all"
+                        >
+                          Confirmar
+                        </button>
+                        <button
+                          onClick={() => updateProposal(msg.id, { state: "cancelled" })}
+                          className="px-3 py-1.5 rounded-lg border border-white/10 text-xs text-slate-300 hover:text-white transition-all"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                    {msg.proposal.state === "confirming" && <span className="text-xs text-slate-400">Ejecutando…</span>}
+                    {msg.proposal.state === "cancelled" && <span className="text-xs text-slate-400">Cancelado. No se ha creado nada.</span>}
+                    {msg.proposal.state === "done" && <span className="text-xs text-green-400">{msg.proposal.resultText}</span>}
+                    {msg.proposal.state === "failed" && <span className="text-xs text-red-400">{msg.proposal.resultText}</span>}
+                  </div>
+                )}
                 {msg.role === "ai" && !msg.error && (
                   <div className="flex items-center gap-1 px-1">
                     <span className="text-[10px] text-muted-foreground">

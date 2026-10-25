@@ -28,7 +28,7 @@ const PROPOSE_ACTION_TOOL: ToolDefinition = {
   function: {
     name: "propose_action",
     description:
-      "Propón una acción que modifica datos (por ejemplo crear una tarea). " +
+      "Propón una acción que modifica datos (por ejemplo create_task en el contexto CRM, o create_organization en el contexto SUPER ADMIN). " +
       "NUNCA ejecutes la acción directamente — esto solo genera una propuesta " +
       "que el usuario debe confirmar explícitamente antes de que se ejecute nada.",
     parameters: {
@@ -42,9 +42,13 @@ const PROPOSE_ACTION_TOOL: ToolDefinition = {
   },
 };
 
+function actionAllowedInContext(action: { contexts?: Array<"super_admin" | "crm"> }, ctx: AvaContext): boolean {
+  return (action.contexts ?? ["crm"]).includes(ctx.type);
+}
+
 function toolsForContext(ctx: AvaContext) {
   const catalog = ctx.type === "super_admin" ? SUPER_ADMIN_TOOLS : CRM_TOOLS;
-  const actionsAvailable = ctx.type === "crm" && Object.keys(AVA_ACTIONS).length > 0;
+  const actionsAvailable = Object.values(AVA_ACTIONS).some(a => actionAllowedInContext(a, ctx));
   const definitions: ToolDefinition[] = [
     ...catalog.map(t => t.definition),
     PRESENT_FINDINGS_TOOL,
@@ -56,7 +60,7 @@ function toolsForContext(ctx: AvaContext) {
 
 function systemPrompt(ctx: AvaContext, aceSummary: string): string {
   const roleLine = ctx.type === "super_admin"
-    ? "Eres AVA CORE en el contexto SUPER ADMIN: ayudas al equipo de OmniTech a supervisar la plataforma (workspaces, usuarios, seguridad, IA, facturación). Solo lectura — no puedes modificar nada."
+    ? "Eres AVA CORE en el contexto SUPER ADMIN: ayudas al equipo de OmniTech a supervisar la plataforma (workspaces, usuarios, seguridad, IA, facturación). Para consultar usa las herramientas de lectura. La única acción de escritura que tienes es create_organization (crear un workspace nuevo), y solo vía propose_action."
     : "Eres AVA CORE en el contexto CRM: ayudas al usuario con su propio workspace (clientes, leads, pipeline, citas, presupuestos, tareas, conversaciones).";
 
   return [
@@ -65,7 +69,7 @@ function systemPrompt(ctx: AvaContext, aceSummary: string): string {
     "SIEMPRE debes terminar llamando a present_findings, estructurando tu respuesta en observado/análisis (y opcionalmente hipótesis/recomendación).",
     ctx.type === "crm"
       ? "Si el usuario pide crear, modificar o borrar algo, llama a propose_action — nunca lo des por hecho ni digas que ya está hecho hasta que el usuario confirme y el sistema lo ejecute."
-      : null,
+      : "Si el usuario pide crear un workspace/cliente nuevo, llama DIRECTAMENTE a propose_action con actionId 'create_organization' y params {name, email, phone, plan, modules, notes} usando los datos que te dé el usuario, sin buscar nada antes con otras herramientas — el sistema le mostrará un botón de confirmar. Los módulos válidos son los del catálogo (crm, quotes, omni_accounting, omni_tax, ai_agents, omni_agent_factory, automations, analytics, integrations, whatsapp, omni_import_ai, knowledge_base, portal_cliente, omni_docs, omni_ads, omni_marketing); si piden otros, créalo con crm y avísale de que el resto se activa luego en Control Center → Módulos. Nunca digas que ya está creado hasta que el usuario confirme.",
     "Contexto de sesión (ACE):",
     aceSummary,
   ].filter((l): l is string => l !== null).join("\n");
@@ -146,7 +150,7 @@ export async function runAvaCoreAsk(
         let args: { actionId?: string; params?: Record<string, unknown> } = {};
         try { args = JSON.parse(call.function.arguments); } catch { /* leave empty */ }
         const action = args.actionId ? AVA_ACTIONS[args.actionId] : undefined;
-        if (!action) {
+        if (!action || !actionAllowedInContext(action, ctx)) {
           messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: "Acción no reconocida." }) });
           continue;
         }
