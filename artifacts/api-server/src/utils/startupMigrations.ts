@@ -1224,6 +1224,17 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info(`[Migration] ✅ FIX-AY: omni_seller heredó el estado de omni_leads en ${inserted} workspace(s)`);
     }
 
+    // ── FIX AZ: Plan Chooser — experiencia inicial en organizations ────────────
+    await db.execute(sql`
+      ALTER TABLE organizations
+      ADD COLUMN IF NOT EXISTS experience_type TEXT,
+      ADD COLUMN IF NOT EXISTS persona_needs JSONB DEFAULT '[]',
+      ADD COLUMN IF NOT EXISTS a3_service_types JSONB DEFAULT '[]',
+      ADD COLUMN IF NOT EXISTS a3_client_segment TEXT,
+      ADD COLUMN IF NOT EXISTS experience_template_slug TEXT
+    `);
+    logger.info("[Migration] ✅ FIX-AZ: organizations Plan Chooser columns ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
