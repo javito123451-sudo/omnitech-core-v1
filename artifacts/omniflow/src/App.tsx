@@ -23,6 +23,7 @@ import MyCommissionsPage from "@/pages/my-commissions";
 import PipelinePage from "@/pages/pipeline";
 import OnboardingPage from "@/pages/onboarding";
 import SupportPage from "@/pages/support";
+import AyudaPage from "@/pages/ayuda";
 import Calendar from "@/pages/calendar";
 import Statistics from "@/pages/statistics";
 import Setup from "@/pages/setup";
@@ -341,6 +342,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <MainLayout>
             <OnboardingPage />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/ayuda">
+        <ProtectedRoute>
+          <MainLayout>
+            <AyudaPage />
           </MainLayout>
         </ProtectedRoute>
       </Route>

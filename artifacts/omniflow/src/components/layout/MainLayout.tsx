@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, CalendarDays, BarChart3,
   LogOut, Hexagon, Settings, Brain, FileText, Zap, Cpu, Puzzle,
   MoreHorizontal, X, ChevronRight, Shield, ShieldCheck, Sparkles, Bot, BookOpen,
-  Eye, ArrowLeft, Library, Receipt, Target, UserCheck, TrendingUp,
+  Eye, ArrowLeft, Library, LifeBuoy, Receipt, Target, UserCheck, TrendingUp,
   Ticket, Rocket, LogOut as LogOutIcon, Megaphone, Radio, ScanSearch, Clock, Truck, Route, Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -96,6 +96,7 @@ const sidebarGroups: NavGroup[] = [
       { icon: Bot,      label: "Agentes",        href: "/agents",        moduleKey: "omni_agent_factory" },
       { icon: Brain,    label: "Memoria",        href: "/memory",        moduleKey: "ai_agents" },
       { icon: BookOpen, label: "Base de Conoc.", href: "/knowledge-base", moduleKey: "ai_agents" },
+      { icon: LifeBuoy, label: "Guía de uso",    href: "/ayuda" },
       { icon: Library,  label: "Manual",         href: "/manual" },
       { icon: Puzzle,   label: "Integraciones",  href: "/integrations",  moduleKey: "integrations" },
       { icon: Ticket,   label: "Soporte",        href: "/support" },
@@ -135,6 +136,7 @@ const moreItems: MoreItem[] = [
   { icon: Sparkles,        label: "Omni Import AI",  href: "/import",         group: "Sistema",    moduleKey: "omni_import_ai" },
   { icon: Bot,             label: "Agentes",         href: "/agents",         group: "Sistema",    moduleKey: "omni_agent_factory" },
   { icon: Brain,           label: "Memoria",         href: "/memory",         group: "Sistema",    moduleKey: "ai_agents" },
+  { icon: LifeBuoy,        label: "Guía de uso",     href: "/ayuda",          group: "Sistema" },
   { icon: Library,         label: "Manual",          href: "/manual",         group: "Sistema" },
   { icon: Puzzle,          label: "Integraciones",   href: "/integrations",   group: "Sistema",    moduleKey: "integrations" },
   { icon: Ticket,          label: "Soporte",         href: "/support",        group: "Sistema" },
