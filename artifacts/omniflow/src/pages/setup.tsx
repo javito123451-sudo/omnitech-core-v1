@@ -29,7 +29,12 @@ export default function Setup() {
   const [a3ClientSegment, setA3ClientSegment] = useState<A3ClientSegment | null>(null);
   const [copied, setCopied] = useState(false);
 
-  if (org) {
+  // /setup?preview — permite a un SUPER_ADMIN que ya tiene organización ver el
+  // flujo del Chooser. No crea nada, así que es seguro; el gating de
+  // SUPER_ADMIN de más abajo sigue aplicando igual.
+  const isPreview = new URLSearchParams(window.location.search).has("preview");
+
+  if (org && !isPreview) {
     setLocation("/dashboard");
     return null;
   }
