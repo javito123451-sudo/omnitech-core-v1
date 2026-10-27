@@ -6,7 +6,7 @@ import {
   Building2, Plus, Edit2, Trash2, Users, UserCheck, Calendar, Loader2,
   CheckCircle2, AlertCircle, PauseCircle, PlayCircle, X, Save,
   UserPlus, UserMinus, Crown, BarChart3, Eye, Shield, LayoutGrid,
-  ChevronRight, ArrowRightLeft, XCircle, Search, KeyRound,
+  ChevronRight, ArrowRightLeft, XCircle, Search, KeyRound, Mail,
 } from "lucide-react";
 import { PortalDropdown, PortalDropdownItem } from "@/components/ui/PortalDropdown";
 
@@ -153,10 +153,21 @@ function AssignUserModal({ ws, onClose }: { ws: Workspace; onClose: () => void }
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, role, name: name.trim() || null }),
     }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       qc.invalidateQueries({ queryKey: ["cc-ws-members", ws.id] });
       qc.invalidateQueries({ queryKey: ["cc-workspaces"] });
-      toast({ title: "Invitación enviada", description: data.message ?? `Se ha enviado un email a ${email} para unirse a ${ws.name}.` });
+      if (data.emailSent === false) {
+        // La invitación existe pero el proveedor rechazó el email: no se dice "enviada".
+        let copied = false;
+        try { await navigator.clipboard.writeText(data.acceptUrl); copied = true; } catch { /* sin permiso de portapapeles */ }
+        toast({
+          title: "Invitación creada, pero el email NO se envió",
+          description: `${data.emailError ?? "Error del proveedor de email"}. ${copied ? "He copiado el enlace: pásaselo al usuario." : "Cópialo desde Invitaciones."}`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Invitación enviada", description: data.message ?? `Se ha enviado un email a ${email} para unirse a ${ws.name}.` });
+      }
       onClose();
     },
     onError: (e) => {
@@ -730,6 +741,7 @@ export default function WorkspacesPage() {
                     >
                       <PortalDropdownItem icon={<Users size={13} className="text-violet-400" />} label="Ver usuarios" onClick={() => { setManageWs(ws); setShowMembers(true); }} />
                       <PortalDropdownItem icon={<UserPlus size={13} className="text-emerald-400" />} label="Asignar usuario" onClick={() => { setManageWs(ws); setShowAssign(true); }} />
+                      <PortalDropdownItem icon={<Mail size={13} className="text-sky-400" />} label="Invitaciones" onClick={() => { window.location.href = `${BASE}/control-center/invitations?org=${ws.id}`; }} />
                       <PortalDropdownItem icon={<ArrowRightLeft size={13} className="text-amber-400" />} label="Transferir owner" onClick={() => { setManageWs(ws); setShowTransfer(true); }} />
                       <PortalDropdownItem icon={<BarChart3 size={13} className="text-blue-400" />} label="Ver consumo" onClick={() => { setManageWs(ws); setShowConsumption(true); }} />
                       <PortalDropdownItem icon={<Eye size={13} className="text-pink-400" />} label="Impersonar" onClick={() => { setImpersonateConfirm(ws); }} />

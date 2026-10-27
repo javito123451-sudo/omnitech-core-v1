@@ -1235,6 +1235,14 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-AZ: organizations Plan Chooser columns ensured");
 
+    // ── FIX BA: org_invitations — registro del último intento de envío ─────────
+    await db.execute(sql`
+      ALTER TABLE org_invitations
+      ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS last_send_error TEXT
+    `);
+    logger.info("[Migration] ✅ FIX-BA: org_invitations send-tracking columns ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

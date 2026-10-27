@@ -128,14 +128,18 @@ export interface InvitationEmailParams {
   expiresAt:   Date;
 }
 
-export async function sendInvitationEmail(p: InvitationEmailParams): Promise<void> {
+// Devuelve el resultado real del proveedor. Resend NO lanza excepción cuando
+// rechaza un envío (p. ej. 403 por remitente/dominio sin verificar): devuelve
+// { error }. Antes se ignoraba ese campo y la UI decía "Invitación enviada"
+// aunque el email nunca saliera.
+export async function sendInvitationEmail(p: InvitationEmailParams): Promise<SendEmailResult> {
   const resend = getResend();
   if (!resend) {
     console.warn(
       "[Email] RESEND_API_KEY no configurado — email de invitación omitido. " +
       "Establece RESEND_API_KEY y EMAIL_FROM para habilitar el envío.",
     );
-    return;
+    return { ok: false, error: "RESEND_API_KEY no configurado" };
   }
 
   const from      = process.env["EMAIL_FROM"] ?? "OmniTech Core <onboarding@resend.dev>";
@@ -144,7 +148,7 @@ export async function sendInvitationEmail(p: InvitationEmailParams): Promise<voi
     day: "numeric", month: "long", year: "numeric",
   });
 
-  await resend.emails.send({
+  const result = await resend.emails.send({
     from,
     to: p.to,
     subject: `${p.inviterName ?? "Tu equipo"} te invita a unirte a ${p.orgName} en OmniTech Core`,
@@ -201,4 +205,9 @@ export async function sendInvitationEmail(p: InvitationEmailParams): Promise<voi
 </body>
 </html>`,
   });
+  if (result.error) {
+    console.error("[Email] Invitation rejected by provider:", result.error.message ?? String(result.error));
+    return { ok: false, error: result.error.message ?? String(result.error) };
+  }
+  return { ok: true, id: result.data?.id };
 }

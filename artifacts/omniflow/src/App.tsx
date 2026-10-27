@@ -49,6 +49,7 @@ import ModulesPage from "@/pages/control-center/modules";
 import SecurityPage from "@/pages/control-center/security";
 import AuditPage from "@/pages/control-center/audit";
 import RolesPage from "@/pages/control-center/roles";
+import InvitationsPage from "@/pages/control-center/invitations";
 import CCIntegrationsPage from "@/pages/control-center/integrations";
 import LicensesPage from "@/pages/control-center/licenses";
 import DiagnosticsPage from "@/pages/control-center/diagnostics";
@@ -645,6 +646,13 @@ function AppRoutes() {
         <SuperAdminRoute>
           <ControlCenterLayout>
             <UsersPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/invitations">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <InvitationsPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>

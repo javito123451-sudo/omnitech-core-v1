@@ -344,30 +344,18 @@ controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) =
       expiresAt,
     }).returning();
 
-    // Fire invitation email asynchronously — non-blocking
-    const baseUrl  = req.get("origin") || `https://${req.get("host")}`;
-    const acceptUrl = `${baseUrl}/invite/${inv.token}`;
-    Promise.all([
-      db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, orgId)),
-      db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, invitedById)),
-    ]).then(([[org], [inviter]]) =>
-      sendInvitationEmail({
-        to:          inv.email,
-        inviterName: inviter?.name ?? null,
-        orgName:     org?.name ?? "Tu organización",
-        role:        inv.role,
-        acceptUrl,
-        expiresAt:   inv.expiresAt,
-      }),
-    ).catch(err => console.error("[Email] Invitation send failed:", String(err)));
+    // Envío esperado (no fire-and-forget): el resultado real del proveedor se
+    // guarda en la invitación y se devuelve a la UI. Un fallo de email NO
+    // deshace la invitación — el admin puede reenviarla o copiar el enlace.
+    const delivery = await deliverInvitation(inv, req);
 
     await logAudit({
       actorClerkId: req.clerkUserId!,
       action:       "workspace_user_invited",
       resource:     "workspace",
       resourceId:   String(orgId),
-      details:      { email: cleanEmail, role, name, invitationId: inv.id },
-      severity:     "info",
+      details:      { email: cleanEmail, role, name, invitationId: inv.id, emailSent: delivery.emailSent },
+      severity:     delivery.emailSent ? "info" : "warning",
       req,
     });
 
@@ -377,13 +365,183 @@ controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) =
       email: cleanEmail,
       role,
       invitationId: inv.id,
-      token: inv.token,
       expiresAt: inv.expiresAt.toISOString(),
-      message: "Invitación enviada. El usuario recibirá un email para unirse al Workspace.",
+      emailSent: delivery.emailSent,
+      emailError: delivery.emailError,
+      acceptUrl: delivery.acceptUrl,
+      message: delivery.emailSent
+        ? "Invitación enviada. El usuario recibirá un email para unirse al Workspace."
+        : "Invitación creada, pero el email NO se pudo enviar. Copia el enlace y pásaselo al usuario, o reenvíala desde Invitaciones.",
     });
   } catch (err) {
     console.error("[invite-and-assign] Error:", String(err));
     res.status(500).json({ error: "Error al crear la invitación. Inténtalo de nuevo." });
+  }
+});
+
+// ── Invitaciones: helpers y gestión centralizada (SUPER_ADMIN) ─────────────────
+function invitationBaseUrl(req: import("express").Request): string {
+  return req.get("origin") || "https://www.omnitech-core.com";
+}
+
+type InvitationRow = typeof orgInvitationsTable.$inferSelect;
+
+/** Envía el email de una invitación pendiente y guarda el resultado real. */
+async function deliverInvitation(
+  inv: InvitationRow,
+  req: import("express").Request,
+): Promise<{ emailSent: boolean; emailError: string | null; acceptUrl: string }> {
+  const acceptUrl = `${invitationBaseUrl(req)}/invite/${inv.token}`;
+  let emailSent = false;
+  let emailError: string | null = null;
+  try {
+    const [[org], [inviter]] = await Promise.all([
+      db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, inv.orgId)),
+      db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, inv.invitedBy)),
+    ]);
+    const result = await sendInvitationEmail({
+      to:          inv.email,
+      inviterName: inviter?.name ?? null,
+      orgName:     org?.name ?? "Tu organización",
+      role:        inv.role,
+      acceptUrl,
+      expiresAt:   inv.expiresAt,
+    });
+    emailSent = result.ok;
+    emailError = result.ok ? null : (result.error ?? "Error desconocido del proveedor de email");
+  } catch (err) {
+    emailError = String(err instanceof Error ? err.message : err);
+  }
+  await db.update(orgInvitationsTable)
+    .set({ lastSentAt: new Date(), lastSendError: emailError })
+    .where(eq(orgInvitationsTable.id, inv.id));
+  return { emailSent, emailError, acceptUrl };
+}
+
+function invitationStatus(inv: Pick<InvitationRow, "acceptedAt" | "expiresAt">): "accepted" | "expired" | "pending" {
+  if (inv.acceptedAt) return "accepted";
+  if (inv.expiresAt < new Date()) return "expired";
+  return "pending";
+}
+
+// GET /invitations?orgId=&q=&status=  — lista global o por workspace (sin tokens)
+controlCenterRouter.get("/invitations", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  try {
+    const orgId  = req.query["orgId"] ? Number(req.query["orgId"]) : null;
+    const q      = String(req.query["q"] ?? "").trim().toLowerCase();
+    const status = String(req.query["status"] ?? "").trim();
+
+    const conditions = [] as ReturnType<typeof eq>[];
+    if (orgId && Number.isFinite(orgId)) conditions.push(eq(orgInvitationsTable.orgId, orgId));
+    if (q) conditions.push(ilike(orgInvitationsTable.email, `%${q}%`));
+
+    const rows = await db
+      .select({
+        id: orgInvitationsTable.id,
+        orgId: orgInvitationsTable.orgId,
+        orgName: organizationsTable.name,
+        email: orgInvitationsTable.email,
+        role: orgInvitationsTable.role,
+        expiresAt: orgInvitationsTable.expiresAt,
+        acceptedAt: orgInvitationsTable.acceptedAt,
+        createdAt: orgInvitationsTable.createdAt,
+        lastSentAt: orgInvitationsTable.lastSentAt,
+        lastSendError: orgInvitationsTable.lastSendError,
+      })
+      .from(orgInvitationsTable)
+      .innerJoin(organizationsTable, eq(orgInvitationsTable.orgId, organizationsTable.id))
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(orgInvitationsTable.createdAt))
+      .limit(200);
+
+    const invitations = rows
+      .map(r => ({
+        ...r,
+        status: invitationStatus(r),
+        // Se distingue "nunca se envió" (lastSentAt null) y "el último envío falló".
+        sendFailed: !!r.lastSendError,
+        expiresAt: r.expiresAt.toISOString(),
+        acceptedAt: r.acceptedAt?.toISOString() ?? null,
+        createdAt: r.createdAt.toISOString(),
+        lastSentAt: r.lastSentAt?.toISOString() ?? null,
+      }))
+      .filter(r => !status || r.status === status);
+
+    res.json({ invitations });
+  } catch (err) {
+    console.error("[invitations:list] Error:", String(err));
+    res.status(500).json({ error: "Error al listar las invitaciones." });
+  }
+});
+
+// POST /invitations/:id/resend — reenvía; si caducó, renueva token y fecha en la MISMA fila
+controlCenterRouter.post("/invitations/:id/resend", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  try {
+    const id = Number(req.params["id"]);
+    const [inv] = await db.select().from(orgInvitationsTable).where(eq(orgInvitationsTable.id, id));
+    if (!inv) { res.status(404).json({ error: "Invitación no encontrada." }); return; }
+
+    if (inv.acceptedAt) {
+      res.status(409).json({ error: "Esta invitación ya fue aceptada: el usuario debe entrar con su cuenta existente." });
+      return;
+    }
+
+    let current = inv;
+    let renewed = false;
+    if (inv.expiresAt < new Date()) {
+      const [updated] = await db.update(orgInvitationsTable)
+        .set({ token: randomUUID(), expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) })
+        .where(eq(orgInvitationsTable.id, inv.id))
+        .returning();
+      current = updated;
+      renewed = true;
+    }
+
+    const delivery = await deliverInvitation(current, req);
+
+    await logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:       "workspace_invitation_resent",
+      resource:     "workspace",
+      resourceId:   String(inv.orgId),
+      details:      { invitationId: inv.id, email: inv.email, renewed, emailSent: delivery.emailSent, emailError: delivery.emailError },
+      severity:     delivery.emailSent ? "info" : "warning",
+      req,
+    });
+
+    res.json({
+      ok: true,
+      renewed,
+      emailSent: delivery.emailSent,
+      emailError: delivery.emailError,
+      acceptUrl: delivery.acceptUrl,
+      message: delivery.emailSent
+        ? "Invitación reenviada."
+        : "No se pudo enviar el email. Copia el enlace y pásaselo al usuario.",
+    });
+  } catch (err) {
+    console.error("[invitations:resend] Error:", String(err));
+    res.status(500).json({ error: "Error al reenviar la invitación." });
+  }
+});
+
+// GET /invitations/:id/link — enlace de aceptación para copiarlo (solo pendientes)
+controlCenterRouter.get("/invitations/:id/link", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  try {
+    const id = Number(req.params["id"]);
+    const [inv] = await db.select().from(orgInvitationsTable).where(eq(orgInvitationsTable.id, id));
+    if (!inv) { res.status(404).json({ error: "Invitación no encontrada." }); return; }
+    if (invitationStatus(inv) !== "pending") {
+      res.status(409).json({ error: "Solo las invitaciones pendientes tienen enlace válido. Reenvíala para renovarla." });
+      return;
+    }
+    res.json({ acceptUrl: `${invitationBaseUrl(req)}/invite/${inv.token}`, expiresAt: inv.expiresAt.toISOString() });
+  } catch (err) {
+    console.error("[invitations:link] Error:", String(err));
+    res.status(500).json({ error: "Error al obtener el enlace." });
   }
 });
 

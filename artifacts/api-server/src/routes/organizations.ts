@@ -119,7 +119,8 @@ organizationsRouter.post("/invitations", async (req, res) => {
         acceptUrl,
         expiresAt:   inv.expiresAt,
       }),
-    ).catch(err => console.error("[Email] Invitation send failed:", String(err)));
+    ).then(r => { if (r && !r.ok) console.error("[Email] Invitation not sent:", r.error); })
+     .catch(err => console.error("[Email] Invitation send failed:", String(err)));
 
     res.status(201).json({ id: inv.id, email: inv.email, role: inv.role, token: inv.token, expiresAt: inv.expiresAt.toISOString(), createdAt: inv.createdAt.toISOString() });
   } catch (err) { res.status(500).json({ error: String(err) }); }

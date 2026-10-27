@@ -103,6 +103,9 @@ export const orgInvitationsTable = pgTable("org_invitations", {
   expiresAt:  timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt:  timestamp("created_at").defaultNow().notNull(),
+  // Último intento de envío del email (null = nunca se intentó) y su error, si lo hubo.
+  lastSentAt:    timestamp("last_sent_at"),
+  lastSendError: text("last_send_error"),
 });
 
 export type OrgInvitation = typeof orgInvitationsTable.$inferSelect;
