@@ -6,7 +6,7 @@ import { Mail, Search, Loader2, Send, Link2, CheckCircle2, Clock, XCircle, Alert
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type InvStatus = "pending" | "accepted" | "expired";
+type InvStatus = "pending" | "accepted" | "expired" | "cancelled";
 
 interface Invitation {
   id: number;
@@ -24,15 +24,16 @@ interface Invitation {
 }
 
 const STATUS_LABEL: Record<InvStatus, string> = {
-  pending: "Pendiente", accepted: "Aceptada", expired: "Caducada",
+  pending: "Pendiente", accepted: "Aceptada", expired: "Caducada", cancelled: "Cancelada",
 };
 const STATUS_STYLE: Record<InvStatus, string> = {
   pending:  "bg-amber-500/15 text-amber-400 border-amber-500/30",
   accepted: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   expired:  "bg-slate-500/15 text-slate-400 border-slate-500/30",
+  cancelled: "bg-red-500/10 text-red-400 border-red-500/30",
 };
 const STATUS_ICON: Record<InvStatus, React.ElementType> = {
-  pending: Clock, accepted: CheckCircle2, expired: XCircle,
+  pending: Clock, accepted: CheckCircle2, expired: XCircle, cancelled: XCircle,
 };
 
 function fmt(iso: string | null): string {
@@ -100,6 +101,20 @@ export default function InvitationsPage() {
     onError: (e: Error) => toast({ title: "Error al reenviar", description: e.message, variant: "destructive" }),
   });
 
+  const cancelMut = useMutation({
+    mutationFn: async (inv: Invitation) => {
+      const r = await authFetch(`${BASE}/api/control-center/invitations/${inv.id}/cancel`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error ?? "No se pudo cancelar");
+      return j;
+    },
+    onSuccess: (_r, inv) => {
+      qc.invalidateQueries({ queryKey: ["cc-invitations"] });
+      toast({ title: "Invitación cancelada", description: `El enlace enviado a ${inv.email} ya no se puede usar.` });
+    },
+    onError: (e: Error) => toast({ title: "Error al cancelar", description: e.message, variant: "destructive" }),
+  });
+
   const linkMut = useMutation({
     mutationFn: async (inv: Invitation) => {
       const r = await authFetch(`${BASE}/api/control-center/invitations/${inv.id}/link`);
@@ -145,6 +160,7 @@ export default function InvitationsPage() {
           <option value="pending">Pendientes</option>
           <option value="accepted">Aceptadas</option>
           <option value="expired">Caducadas</option>
+          <option value="cancelled">Canceladas</option>
         </select>
       </div>
 
@@ -157,7 +173,7 @@ export default function InvitationsPage() {
       <div className="space-y-3">
         {invitations.map(inv => {
           const Icon = STATUS_ICON[inv.status];
-          const canAct = inv.status !== "accepted";
+          const canAct = inv.status === "pending" || inv.status === "expired";
           return (
             <div key={inv.id} className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -203,7 +219,17 @@ export default function InvitationsPage() {
                       <Link2 size={12} /> Copiar enlace
                     </button>
                   )}
+                  <button
+                    onClick={() => { if (window.confirm(`¿Cancelar la invitación de ${inv.email} a ${inv.orgName}? El enlace dejará de funcionar.`)) cancelMut.mutate(inv); }}
+                    disabled={cancelMut.isPending}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs font-medium disabled:opacity-50"
+                  >
+                    <XCircle size={12} /> Cancelar
+                  </button>
                 </div>
+              )}
+              {inv.status === "cancelled" && (
+                <p className="mt-3 text-xs text-slate-500">Cancelada: el enlace ya no funciona. Crea una nueva desde «Asignar usuario».</p>
               )}
               {inv.status === "accepted" && (
                 <p className="mt-3 text-xs text-slate-500">Ya aceptada: el usuario debe entrar con su cuenta existente.</p>

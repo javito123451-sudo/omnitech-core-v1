@@ -12,13 +12,14 @@ invitationsRouter.get("/:token", async (req, res) => {
   try {
     const { token } = req.params;
     const [inv] = await db
-      .select({ id: orgInvitationsTable.id, email: orgInvitationsTable.email, role: orgInvitationsTable.role, expiresAt: orgInvitationsTable.expiresAt, acceptedAt: orgInvitationsTable.acceptedAt, orgName: organizationsTable.name, orgSlug: organizationsTable.slug, inviterName: usersTable.name, inviterEmail: usersTable.email })
+      .select({ id: orgInvitationsTable.id, email: orgInvitationsTable.email, role: orgInvitationsTable.role, expiresAt: orgInvitationsTable.expiresAt, acceptedAt: orgInvitationsTable.acceptedAt, orgName: organizationsTable.name, orgSlug: organizationsTable.slug, cancelledAt: orgInvitationsTable.cancelledAt, inviterName: usersTable.name, inviterEmail: usersTable.email })
       .from(orgInvitationsTable)
       .innerJoin(organizationsTable, eq(orgInvitationsTable.orgId, organizationsTable.id))
       .innerJoin(usersTable, eq(orgInvitationsTable.invitedBy, usersTable.id))
       .where(eq(orgInvitationsTable.token, token));
 
     if (!inv) { res.status(404).json({ error: "Invitación no encontrada." }); return; }
+    if (inv.cancelledAt) { res.status(410).json({ error: "Esta invitación fue cancelada." }); return; }
     if (inv.acceptedAt) { res.status(410).json({ error: "Esta invitación ya fue aceptada." }); return; }
     if (inv.expiresAt < new Date()) { res.status(410).json({ error: "Esta invitación ha expirado." }); return; }
 
@@ -70,7 +71,7 @@ invitationsRouter.post("/:token/accept", requireAuth, async (req, res) => {
     const [inv] = await db
       .select()
       .from(orgInvitationsTable)
-      .where(and(eq(orgInvitationsTable.token, token), isNull(orgInvitationsTable.acceptedAt)));
+      .where(and(eq(orgInvitationsTable.token, token), isNull(orgInvitationsTable.acceptedAt), isNull(orgInvitationsTable.cancelledAt)));
 
     if (!inv) { res.status(404).json({ error: "Invitación no encontrada o ya aceptada." }); return; }
     if (inv.expiresAt < new Date()) { res.status(410).json({ error: "Esta invitación ha expirado." }); return; }

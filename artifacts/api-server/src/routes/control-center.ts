@@ -325,6 +325,7 @@ controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) =
         eq(orgInvitationsTable.orgId, orgId),
         eq(orgInvitationsTable.email, cleanEmail),
         isNull(orgInvitationsTable.acceptedAt),
+        isNull(orgInvitationsTable.cancelledAt),
       ));
     if (pendingInv) {
       res.status(409).json({ error: "Ya hay una invitación pendiente para este email.", hasPendingInvitation: true });
@@ -418,8 +419,9 @@ async function deliverInvitation(
   return { emailSent, emailError, acceptUrl };
 }
 
-function invitationStatus(inv: Pick<InvitationRow, "acceptedAt" | "expiresAt">): "accepted" | "expired" | "pending" {
+function invitationStatus(inv: Pick<InvitationRow, "acceptedAt" | "expiresAt" | "cancelledAt">): "accepted" | "cancelled" | "expired" | "pending" {
   if (inv.acceptedAt) return "accepted";
+  if (inv.cancelledAt) return "cancelled";
   if (inv.expiresAt < new Date()) return "expired";
   return "pending";
 }
@@ -448,6 +450,7 @@ controlCenterRouter.get("/invitations", async (req, res) => {
         createdAt: orgInvitationsTable.createdAt,
         lastSentAt: orgInvitationsTable.lastSentAt,
         lastSendError: orgInvitationsTable.lastSendError,
+        cancelledAt: orgInvitationsTable.cancelledAt,
       })
       .from(orgInvitationsTable)
       .innerJoin(organizationsTable, eq(orgInvitationsTable.orgId, organizationsTable.id))
@@ -465,6 +468,7 @@ controlCenterRouter.get("/invitations", async (req, res) => {
         acceptedAt: r.acceptedAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
         lastSentAt: r.lastSentAt?.toISOString() ?? null,
+        cancelledAt: r.cancelledAt?.toISOString() ?? null,
       }))
       .filter(r => !status || r.status === status);
 
@@ -485,6 +489,10 @@ controlCenterRouter.post("/invitations/:id/resend", async (req, res) => {
 
     if (inv.acceptedAt) {
       res.status(409).json({ error: "Esta invitación ya fue aceptada: el usuario debe entrar con su cuenta existente." });
+      return;
+    }
+    if (inv.cancelledAt) {
+      res.status(409).json({ error: "Esta invitación fue cancelada. Crea una nueva desde «Asignar usuario»." });
       return;
     }
 
@@ -524,6 +532,34 @@ controlCenterRouter.post("/invitations/:id/resend", async (req, res) => {
   } catch (err) {
     console.error("[invitations:resend] Error:", String(err));
     res.status(500).json({ error: "Error al reenviar la invitación." });
+  }
+});
+
+// POST /invitations/:id/cancel — anula una invitación no aceptada (no borra la fila)
+controlCenterRouter.post("/invitations/:id/cancel", async (req, res) => {
+  if (!req.isSuperAdmin) { res.status(403).json({ error: "Solo SUPER_ADMIN" }); return; }
+  try {
+    const id = Number(req.params["id"]);
+    const [inv] = await db.select().from(orgInvitationsTable).where(eq(orgInvitationsTable.id, id));
+    if (!inv) { res.status(404).json({ error: "Invitación no encontrada." }); return; }
+    if (inv.acceptedAt) { res.status(409).json({ error: "Ya fue aceptada: no se puede cancelar. Quita al usuario del workspace si hace falta." }); return; }
+    if (inv.cancelledAt) { res.json({ ok: true, alreadyCancelled: true }); return; }
+
+    await db.update(orgInvitationsTable).set({ cancelledAt: new Date() }).where(eq(orgInvitationsTable.id, inv.id));
+
+    await logAudit({
+      actorClerkId: req.clerkUserId!,
+      action:       "workspace_invitation_cancelled",
+      resource:     "workspace",
+      resourceId:   String(inv.orgId),
+      details:      { invitationId: inv.id, email: inv.email, role: inv.role },
+      severity:     "warning",
+      req,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[invitations:cancel] Error:", String(err));
+    res.status(500).json({ error: "Error al cancelar la invitación." });
   }
 });
 

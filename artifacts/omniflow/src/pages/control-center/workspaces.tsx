@@ -305,12 +305,12 @@ function AssignUserModal({ ws, onClose }: { ws: Workspace; onClose: () => void }
 
         {search.stage === "not_found" && (
           <button
-            onClick={() => inviteMut.mutate()}
+            onClick={() => { if (window.confirm(`Vas a invitar a ${email} como ${role} del workspace «${ws.name}». ¿Es correcto?`)) inviteMut.mutate(); }}
             disabled={isInviting || !email.trim()}
             className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium flex items-center justify-center gap-2 transition-all"
           >
             {isInviting ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
-            Crear e invitar
+            Crear e invitar a {ws.name} ({role})
           </button>
         )}
       </div>

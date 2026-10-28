@@ -1243,6 +1243,13 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-BA: org_invitations send-tracking columns ensured");
 
+    // ── FIX BB: org_invitations — anulación de invitaciones ───────────────────
+    await db.execute(sql`
+      ALTER TABLE org_invitations
+      ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP
+    `);
+    logger.info("[Migration] ✅ FIX-BB: org_invitations.cancelled_at ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

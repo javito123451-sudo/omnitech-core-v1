@@ -75,7 +75,7 @@ organizationsRouter.get("/invitations", async (req, res) => {
       .select({ id: orgInvitationsTable.id, email: orgInvitationsTable.email, role: orgInvitationsTable.role, token: orgInvitationsTable.token, expiresAt: orgInvitationsTable.expiresAt, createdAt: orgInvitationsTable.createdAt, inviterName: usersTable.name, inviterEmail: usersTable.email })
       .from(orgInvitationsTable)
       .innerJoin(usersTable, eq(orgInvitationsTable.invitedBy, usersTable.id))
-      .where(and(eq(orgInvitationsTable.orgId, orgId), isNull(orgInvitationsTable.acceptedAt)));
+      .where(and(eq(orgInvitationsTable.orgId, orgId), isNull(orgInvitationsTable.acceptedAt), isNull(orgInvitationsTable.cancelledAt)));
     const now = new Date();
     res.json(rows.filter((r) => r.expiresAt > now).map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString(), createdAt: r.createdAt.toISOString() })));
   } catch (err) { res.status(500).json({ error: String(err) }); }
@@ -90,7 +90,7 @@ organizationsRouter.post("/invitations", async (req, res) => {
     if (!["admin", "member"].includes(role)) { res.status(400).json({ error: "role debe ser admin o member" }); return; }
 
     const existing = await db.select({ id: orgInvitationsTable.id, expiresAt: orgInvitationsTable.expiresAt }).from(orgInvitationsTable)
-      .where(and(eq(orgInvitationsTable.orgId, orgId), eq(orgInvitationsTable.email, email.trim().toLowerCase()), isNull(orgInvitationsTable.acceptedAt)));
+      .where(and(eq(orgInvitationsTable.orgId, orgId), eq(orgInvitationsTable.email, email.trim().toLowerCase()), isNull(orgInvitationsTable.acceptedAt), isNull(orgInvitationsTable.cancelledAt)));
     if (existing.length > 0 && existing[0].expiresAt > new Date()) {
       res.status(409).json({ error: "Ya hay una invitación pendiente para este email." }); return;
     }

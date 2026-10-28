@@ -106,6 +106,8 @@ export const orgInvitationsTable = pgTable("org_invitations", {
   // Último intento de envío del email (null = nunca se intentó) y su error, si lo hubo.
   lastSentAt:    timestamp("last_sent_at"),
   lastSendError: text("last_send_error"),
+  // Anulada por un SUPER_ADMIN: el enlace deja de poder aceptarse (no se borra la fila).
+  cancelledAt:   timestamp("cancelled_at"),
 });
 
 export type OrgInvitation = typeof orgInvitationsTable.$inferSelect;
