@@ -237,3 +237,27 @@ interface MetaWebhookPayload {
 // ── Register adapter ─────────────────────────────────────────────────────
 IntegrationRegistry.register("whatsapp", WhatsAppAdapter);
 console.log("[IntegrationHub] WhatsApp adapter registered");
+
+
+// ── AVA VOICE - sendVoice, añadido sin tocar sendMessage ──
+export async function sendVoice(to: string, audioBuffer: Buffer): Promise<boolean> {
+  try {
+    const token = process.env.WHATSAPP_ACCESS_TOKEN || "";
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+    if (!token || !phoneNumberId || !audioBuffer?.length) return false;
+    const form = new FormData();
+    const blob = new Blob([audioBuffer as any], { type: "audio/ogg" });
+    form.append("messaging_product", "whatsapp");
+    form.append("file", blob, "ava-voice.ogg");
+    const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/media`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form as any });
+    const uploadData: any = await uploadRes.json();
+    if (!uploadRes.ok || !uploadData?.id) return false;
+    const sendRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to, type: "audio", audio: { id: uploadData.id } }) });
+    if (!sendRes.ok) return false;
+    console.log(`[WhatsApp] Voice sent to +${String(to).slice(-9)}`);
+    return true;
+  } catch (err) {
+    console.error("[WhatsApp] sendVoice error:", String(err));
+    return false;
+  }
+}
