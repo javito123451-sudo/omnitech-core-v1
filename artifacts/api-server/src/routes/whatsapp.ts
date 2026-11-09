@@ -893,8 +893,17 @@ async function processIncomingMessage(payload: {
   const shouldUseVoice = AVA_VOICE_ENABLED && (AVA_VOICE_MODE === "always" || (AVA_VOICE_MODE === "audio_only" && incomingWasAudio));
   if (shouldUseVoice) {
     const audioBuffer = await textToSpeech(aiReply);
+    // AVA VOICE: usa las credenciales de la DB como hace el texto, no solo env vars
+    let voiceCreds: { accessToken?: string; phoneNumberId?: string } | undefined = undefined;
+    try {
+      if (phoneNumberId) {
+        const c = await resolveOrgFromPhoneNumberId(phoneNumberId);
+        if (c) voiceCreds = { accessToken: (c as any).accessToken ?? (c as any).token, phoneNumberId };
+      }
+    } catch {}
+
     if (audioBuffer) {
-      aiSent = await sendVoice(fromPhone, audioBuffer);
+      aiSent = await sendVoice(fromPhone, audioBuffer, voiceCreds);
       if (aiSent) console.log(`[WA] PASO 9 🎤 Respuesta enviada como VOZ a +${normalizedIncoming}`);
     }
     if (!aiSent) console.warn("[WA] PASO 9 ⚠ Voz falló, haciendo fallback a texto");

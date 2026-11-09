@@ -240,10 +240,10 @@ console.log("[IntegrationHub] WhatsApp adapter registered");
 
 
 // ── AVA VOICE - sendVoice, añadido sin tocar sendMessage ──
-export async function sendVoice(to: string, audioBuffer: Buffer): Promise<boolean> {
+export async function sendVoice(to: string, audioBuffer: Buffer, creds?: { accessToken?: string; phoneNumberId?: string }): Promise<boolean> {
   try {
-    const token = process.env.WHATSAPP_ACCESS_TOKEN || "";
-    const phoneNumberId = process.env.WHATSAPP_BUSINESS_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+    const token = creds?.accessToken || process.env.WHATSAPP_ACCESS_TOKEN || "";
+    const phoneNumberId = creds?.phoneNumberId || process.env.WHATSAPP_BUSINESS_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "";
     if (!token || !phoneNumberId || !audioBuffer?.length) return false;
     const form = new FormData();
     const blob = new Blob([audioBuffer as any], { type: "audio/ogg" });
