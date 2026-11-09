@@ -243,7 +243,7 @@ console.log("[IntegrationHub] WhatsApp adapter registered");
 export async function sendVoice(to: string, audioBuffer: Buffer): Promise<boolean> {
   try {
     const token = process.env.WHATSAPP_ACCESS_TOKEN || "";
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+    const phoneNumberId = process.env.WHATSAPP_BUSINESS_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "";
     if (!token || !phoneNumberId || !audioBuffer?.length) return false;
     const form = new FormData();
     const blob = new Blob([audioBuffer as any], { type: "audio/ogg" });

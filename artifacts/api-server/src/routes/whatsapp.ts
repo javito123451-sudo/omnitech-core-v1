@@ -30,6 +30,8 @@ import {
 } from "../utils/integrationCreds";
 import { logAuditSystem } from "../utils/auditLogger";
 import { transcribeAudio } from "../utils/transcribeAudio";
+import { textToSpeech } from "../utils/textToSpeech";
+import { sendVoice } from "../hub/adapters/whatsappAdapter";
 import { IntegrationManager } from "../hub";
 import { pauseAutopilotOnReply } from "../utils/autopilotPause";
 // OmniSeller Fase 5 — PASO 10/11/13: ramas ADITIVAS y aisladas, añadidas a
@@ -882,7 +884,23 @@ async function processIncomingMessage(payload: {
 
   // Send via WhatsApp Business API
   console.log(`[WA] PASO 9 — Enviando respuesta a +${normalizedIncoming} vía WhatsApp org=${orgId}…`);
-  const aiSent = await sendAutoReply(orgId, fromPhone, aiReply);
+  // ── AVA VOICE: si el usuario mandó audio y la voz está activada, manda voz ──
+  let aiSent = false;
+  const AVA_VOICE_ENABLED = process.env.AVA_VOICE_ENABLED === "true";
+  const AVA_VOICE_MODE = process.env.AVA_VOICE_MODE || "audio_only";
+  const incomingWasAudio = (msg as any)?.type === "audio" || (msg as any)?.type === "voice";
+  const shouldUseVoice = AVA_VOICE_ENABLED && (AVA_VOICE_MODE === "always" || (AVA_VOICE_MODE === "audio_only" && incomingWasAudio));
+  if (shouldUseVoice) {
+    const audioBuffer = await textToSpeech(aiReply);
+    if (audioBuffer) {
+      aiSent = await sendVoice(fromPhone, audioBuffer);
+      if (aiSent) console.log(`[WA] PASO 9 🎤 Respuesta enviada como VOZ a +${normalizedIncoming}`);
+    }
+    if (!aiSent) console.warn("[WA] PASO 9 ⚠ Voz falló, haciendo fallback a texto");
+  }
+  if (!aiSent) {
+    aiSent = await sendAutoReply(orgId, fromPhone, aiReply);
+  }
 
   // Update message status if send failed
   if (!aiSent) {
