@@ -164,8 +164,41 @@ const WhatsAppAdapter: IntegrationAdapter = {
     if (!creds) {
       return { success: false, error: "Missing WhatsApp credentials" };
     }
-
     const toClean = payload.to.replace(/\D/g, "");
+    // AVA VOICE: si viene audioBuffer, manda audio con las mismas credenciales de la DB
+    const audioBuffer = (payload as any).audioBuffer as Buffer | undefined;
+    if (audioBuffer?.length) {
+      try {
+        // 1. Subir audio a Meta
+        const form = new FormData();
+        const blob = new Blob([audioBuffer as any], { type: "audio/ogg" });
+        form.append("messaging_product", "whatsapp");
+        form.append("file", blob, "ava-voice.ogg");
+        const uploadRes = await fetch(`${META_API_BASE}/${creds.phoneNumberId}/media`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${creds.accessToken}` },
+          body: form as any,
+        });
+        const uploadData: any = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok || !uploadData?.id) {
+          return { success: false, error: `Audio upload failed: ${JSON.stringify(uploadData).slice(0,200)}` };
+        }
+        // 2. Mandar audio
+        const result = await metaApiPOST(ctx, `/${creds.phoneNumberId}/messages`, {
+          messaging_product: "whatsapp",
+          to: toClean,
+          type: "audio",
+          audio: { id: uploadData.id },
+        });
+        if (result.ok) {
+          const data = result.data as { messages?: { id: string }[] };
+          return { success: true, providerId: data?.messages?.[0]?.id };
+        }
+        return { success: false, error: result.error ?? `HTTP ${result.status}` };
+      } catch (e) {
+        return { success: false, error: `sendVoice error: ${String(e)}` };
+      }
+    }
     const result = await metaApiPOST(ctx, `/${creds.phoneNumberId}/messages`, {
       messaging_product: "whatsapp",
       to:   toClean,
