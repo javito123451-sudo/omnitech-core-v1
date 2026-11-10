@@ -18,7 +18,7 @@ async function ttsElevenLabs(text: string): Promise<Buffer | null> {
 async function ttsOpenAI(text: string): Promise<Buffer | null> {
   if (!OPENAI_API_KEY) return null;
   try {
-    const res = await fetch("https://api.openai.com/v1/audio/speech", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` }, body: JSON.stringify({ model: "gpt-4o-mini-tts", voice: "nova", input: text, format: "opus" }) });
+    const res = await fetch("https://api.openai.com/v1/audio/speech", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` }, body: JSON.stringify({ model: "gpt-4o-mini-tts", voice: "nova", input: text, format: "mp3" }) });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
   } catch { return null; }

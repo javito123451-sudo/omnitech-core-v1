@@ -171,9 +171,9 @@ const WhatsAppAdapter: IntegrationAdapter = {
       try {
         // 1. Subir audio a Meta
         const form = new FormData();
-        const blob = new Blob([audioBuffer as any], { type: "audio/ogg" });
+        const blob = new Blob([audioBuffer as any], { type: "audio/mpeg" });
         form.append("messaging_product", "whatsapp");
-        form.append("file", blob, "ava-voice.ogg");
+        form.append("file", blob, "ava-voice.mp3");
         const uploadRes = await fetch(`${META_API_BASE}/${creds.phoneNumberId}/media`, {
           method: "POST",
           headers: { Authorization: `Bearer ${creds.accessToken}` },
@@ -279,9 +279,9 @@ export async function sendVoice(to: string, audioBuffer: Buffer, creds?: { acces
     const phoneNumberId = creds?.phoneNumberId || process.env.WHATSAPP_BUSINESS_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "";
     if (!token || !phoneNumberId || !audioBuffer?.length) return false;
     const form = new FormData();
-    const blob = new Blob([audioBuffer as any], { type: "audio/ogg" });
+    const blob = new Blob([audioBuffer as any], { type: "audio/mpeg" });
     form.append("messaging_product", "whatsapp");
-    form.append("file", blob, "ava-voice.ogg");
+    form.append("file", blob, "ava-voice.mp3");
     const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/media`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form as any });
     const uploadData: any = await uploadRes.json();
     if (!uploadRes.ok || !uploadData?.id) return false;
