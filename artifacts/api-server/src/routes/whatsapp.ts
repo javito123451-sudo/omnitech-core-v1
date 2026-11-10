@@ -900,12 +900,12 @@ async function processIncomingMessage(payload: {
     if (audioBuffer) {
       try {
         // DIRECTO a Meta, sin pasar por la integracion escalable que falla con audio
-        const { sendVoice } = await import("../hub/adapters/whatsappAdapter");
-        const directCreds = { accessToken: process.env.WHATSAPP_ACCESS_TOKEN || "", phoneNumberId: process.env.WHATSAPP_BUSINESS_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "" };
+        // sendVoice ya esta importado arriba, linea 34
+        const dbCreds = await getWhatsAppCreds(orgId);
         // Si hay creds en env, usa directo. Si no, prueba IntegrationManager
-        if (directCreds.accessToken && directCreds.phoneNumberId) {
-          aiSent = await sendVoice(fromPhone, audioBuffer, directCreds);
-          console.log(`[AVA VOICE DEBUG] sendVoice directo success=${aiSent}`);
+        if (dbCreds) {
+          aiSent = await sendVoice(fromPhone, audioBuffer, { accessToken: dbCreds.accessToken, phoneNumberId: dbCreds.phoneNumberId });
+          console.log(`[AVA VOICE DEBUG] sendVoice DB creds source=${dbCreds.source} success=${aiSent}`);
         } else {
           const voiceResult = await IntegrationManager.send(orgId, "whatsapp", { to: fromPhone, message: "", audioBuffer } as any);
           aiSent = voiceResult.success;
