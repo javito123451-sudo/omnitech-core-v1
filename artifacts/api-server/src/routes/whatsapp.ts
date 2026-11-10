@@ -893,7 +893,17 @@ async function processIncomingMessage(payload: {
   const shouldUseVoice = AVA_VOICE_ENABLED && (AVA_VOICE_MODE === "always" || (AVA_VOICE_MODE === "audio_only" && incomingWasAudio));
   console.log(`[AVA VOICE DEBUG] AVA_VOICE_ENABLED=${AVA_VOICE_ENABLED} MODE=${AVA_VOICE_MODE} isAudio=${isAudio} incomingWasAudio=${incomingWasAudio} shouldUseVoice=${shouldUseVoice}`);
   if (shouldUseVoice) {
-    const audioBuffer = await textToSpeech(aiReply);
+    let audioBuffer: Buffer | null = null;
+    try {
+      console.log(`[AVA VOICE DEBUG] TTS start...`);
+      audioBuffer = await Promise.race([
+        textToSpeech(aiReply),
+        new Promise<null>((_, rej) => setTimeout(() => rej(new Error("TTS timeout 10s")), 10000)),
+      ]) as Buffer | null;
+    } catch (e) {
+      console.log(`[AVA VOICE DEBUG] TTS fallo/timeout, fallback a texto: ${String(e)}`);
+      audioBuffer = null;
+    }
     console.log(`[AVA VOICE DEBUG] TTS audioBuffer=${audioBuffer ? audioBuffer.length : "NULL"} bytes`);
     // AVA VOICE: usa IntegrationManager como el texto, con creds DB
 
