@@ -432,13 +432,6 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             </Link>
           )}
 
-          <a href="https://info.omnitech-core.com/" target="_blank" rel="noopener" className="flex items-center gap-3 px-3 py-2.5 rounded-md transition-all cursor-pointer group text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent">
-            <span className="font-medium text-sm">Para empresas</span>
-          </a>
-          <a href="https://hogar.omnitech-core.com/a-medida" target="_blank" rel="noopener" className="flex items-center gap-3 px-3 py-2.5 rounded-md transition-all cursor-pointer group text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent">
-            <span className="font-medium text-sm">Para el hogar</span>
-          </a>
-
           <button
             type="button"
             onClick={handleSignOut}
