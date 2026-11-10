@@ -273,19 +273,22 @@ console.log("[IntegrationHub] WhatsApp adapter registered");
 
 
 // ── AVA VOICE - sendVoice, añadido sin tocar sendMessage ──
-export async function sendVoice(to: string, audioBuffer: Buffer, creds?: { accessToken?: string; phoneNumberId?: string }): Promise<boolean> {
+export async function sendVoice(toRaw: string, audioBuffer: Buffer, creds?: { accessToken?: string; phoneNumberId?: string }): Promise<boolean> {
   try {
     const token = creds?.accessToken || process.env.WHATSAPP_ACCESS_TOKEN || "";
     const phoneNumberId = creds?.phoneNumberId || process.env.WHATSAPP_BUSINESS_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+    const to = String(toRaw).replace(/\D/g, "");
     if (!token || !phoneNumberId || !audioBuffer?.length) return false;
     const form = new FormData();
     const blob = new Blob([audioBuffer as any], { type: "audio/ogg" });
     form.append("messaging_product", "whatsapp");
     form.append("file", blob, "ava-voice.ogg");
-    const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/media`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form as any });
+    const uploadRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/media`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form as any });
     const uploadData: any = await uploadRes.json();
     if (!uploadRes.ok || !uploadData?.id) return false;
-    const sendRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to, type: "audio", audio: { id: uploadData.id } }) });
+    const sendRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ messaging_product: "whatsapp", to, type: "audio", audio: { id: uploadData.id } }) });
+    const sendData: any = await sendRes.json().catch(() => ({}));
+    console.log(`[WhatsApp] sendVoice Meta status=${sendRes.status} data=${JSON.stringify(sendData).slice(0,300)}`);
     if (!sendRes.ok) return false;
     console.log(`[WhatsApp] Voice sent to +${String(to).slice(-9)}`);
     return true;
