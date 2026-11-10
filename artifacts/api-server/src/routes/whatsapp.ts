@@ -891,13 +891,16 @@ async function processIncomingMessage(payload: {
   const AVA_VOICE_MODE = process.env.AVA_VOICE_MODE || "audio_only";
   const incomingWasAudio = isAudio === true;
   const shouldUseVoice = AVA_VOICE_ENABLED && (AVA_VOICE_MODE === "always" || (AVA_VOICE_MODE === "audio_only" && incomingWasAudio));
+  console.log(`[AVA VOICE DEBUG] AVA_VOICE_ENABLED=${AVA_VOICE_ENABLED} MODE=${AVA_VOICE_MODE} isAudio=${isAudio} incomingWasAudio=${incomingWasAudio} shouldUseVoice=${shouldUseVoice}`);
   if (shouldUseVoice) {
     const audioBuffer = await textToSpeech(aiReply);
+    console.log(`[AVA VOICE DEBUG] TTS audioBuffer=${audioBuffer ? audioBuffer.length : "NULL"} bytes`);
     // AVA VOICE: usa IntegrationManager como el texto, con creds DB
 
     if (audioBuffer) {
       const voiceResult = await IntegrationManager.send(orgId, "whatsapp", { to: fromPhone, message: "", audioBuffer } as any);
       aiSent = voiceResult.success;
+      console.log(`[AVA VOICE DEBUG] IntegrationManager.send voice success=${voiceResult.success} error=${(voiceResult as any).error ?? "none"}`);
       if (aiSent) console.log(`[WA] PASO 9 🎤 Respuesta enviada como VOZ a +${normalizedIncoming}`);
     }
     if (!aiSent) console.warn("[WA] PASO 9 ⚠ Voz falló, haciendo fallback a texto");
