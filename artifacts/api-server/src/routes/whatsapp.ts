@@ -490,6 +490,7 @@ async function processIncomingMessage(payload: {
   text:          string;
   waMessageId:   string;
   contactName?:  string; // from Meta contacts[] array
+  isAudio?: boolean; // AVA VOICE: true si el usuario mandó audio
   phoneNumberId?: string; // Meta business phone_number_id — used to resolve org
   // OmniSeller Fase 5 — PASO 13: true solo si X-Hub-Signature-256 se
   // verificó con éxito para ESTA petición. Nunca se aplican efectos de
@@ -498,7 +499,7 @@ async function processIncomingMessage(payload: {
   // (CRM/Autopilot), que sigue su comportamiento preexistente.
   signatureVerified?: boolean;
 }): Promise<void> {
-  const { fromPhone, text, contactName, phoneNumberId } = payload;
+  const { fromPhone, text, contactName, phoneNumberId, isAudio } = payload;
   const normalizedIncoming = normalizePhone(fromPhone);
 
   console.log(`[WA] ──────────────────────────────────────────────`);
@@ -888,12 +889,18 @@ async function processIncomingMessage(payload: {
   let aiSent = false;
   const AVA_VOICE_ENABLED = process.env.AVA_VOICE_ENABLED === "true";
   const AVA_VOICE_MODE = process.env.AVA_VOICE_MODE || "audio_only";
-  const incomingWasAudio = (msg as any)?.type === "audio" || (msg as any)?.type === "voice";
+  const incomingWasAudio = isAudio === true;
   const shouldUseVoice = AVA_VOICE_ENABLED && (AVA_VOICE_MODE === "always" || (AVA_VOICE_MODE === "audio_only" && incomingWasAudio));
+  console.log(`[AVA VOICE DEBUG] AVA_VOICE_ENABLED=${AVA_VOICE_ENABLED} MODE=${AVA_VOICE_MODE} isAudio=${isAudio} incomingWasAudio=${incomingWasAudio} shouldUseVoice=${shouldUseVoice}`);
   if (shouldUseVoice) {
     const audioBuffer = await textToSpeech(aiReply);
+    console.log(`[AVA VOICE DEBUG] TTS audioBuffer=${audioBuffer ? audioBuffer.length : "NULL"} bytes`);
+    // AVA VOICE: usa IntegrationManager como el texto, con creds DB
+
     if (audioBuffer) {
-      aiSent = await sendVoice(fromPhone, audioBuffer);
+      const voiceResult = await IntegrationManager.send(orgId, "whatsapp", { to: fromPhone, message: "", audioBuffer } as any);
+      aiSent = voiceResult.success;
+      console.log(`[AVA VOICE DEBUG] IntegrationManager.send voice success=${voiceResult.success} error=${(voiceResult as any).error ?? "none"}`);
       if (aiSent) console.log(`[WA] PASO 9 🎤 Respuesta enviada como VOZ a +${normalizedIncoming}`);
     }
     if (!aiSent) console.warn("[WA] PASO 9 ⚠ Voz falló, haciendo fallback a texto");
@@ -1095,6 +1102,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
             await processIncomingMessage({
               fromPhone:     msg.from,
               text:          msg.text?.body ?? "",
+              isAudio:       false,
               waMessageId:   msg.id,
               contactName:   contactNameMap[msg.from],
               phoneNumberId,
@@ -1139,6 +1147,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
                 await processIncomingMessage({
                   fromPhone:     msg.from,
                   text:          transcript,
+                  isAudio:       true,
                   waMessageId:   msg.id,
                   contactName:   contactNameMap[msg.from],
                   phoneNumberId: phoneNumberId ?? undefined,
