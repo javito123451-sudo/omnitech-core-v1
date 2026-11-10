@@ -898,10 +898,24 @@ async function processIncomingMessage(payload: {
     // AVA VOICE: usa IntegrationManager como el texto, con creds DB
 
     if (audioBuffer) {
-      const voiceResult = await IntegrationManager.send(orgId, "whatsapp", { to: fromPhone, message: "", audioBuffer } as any);
-      aiSent = voiceResult.success;
-      console.log(`[AVA VOICE DEBUG] IntegrationManager.send voice success=${voiceResult.success} error=${(voiceResult as any).error ?? "none"}`);
-      if (aiSent) console.log(`[WA] PASO 9 🎤 Respuesta enviada como VOZ a +${normalizedIncoming}`);
+      try {
+        // DIRECTO a Meta, sin pasar por la integracion escalable que falla con audio
+        const { sendVoice } = await import("../hub/adapters/whatsappAdapter");
+        const directCreds = { accessToken: process.env.WHATSAPP_ACCESS_TOKEN || "", phoneNumberId: process.env.WHATSAPP_BUSINESS_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "" };
+        // Si hay creds en env, usa directo. Si no, prueba IntegrationManager
+        if (directCreds.accessToken && directCreds.phoneNumberId) {
+          aiSent = await sendVoice(fromPhone, audioBuffer, directCreds);
+          console.log(`[AVA VOICE DEBUG] sendVoice directo success=${aiSent}`);
+        } else {
+          const voiceResult = await IntegrationManager.send(orgId, "whatsapp", { to: fromPhone, message: "", audioBuffer } as any);
+          aiSent = voiceResult.success;
+          console.log(`[AVA VOICE DEBUG] IntegrationManager.send voice success=${voiceResult.success} error=${(voiceResult as any).error ?? "none"}`);
+        }
+        if (aiSent) console.log(`[WA] PASO 9 🎤 Respuesta enviada como VOZ a +${normalizedIncoming}`);
+      } catch (e) {
+        console.log(`[AVA VOICE DEBUG] sendVoice directo error=${String(e)}`);
+        aiSent = false;
+      }
     }
     if (!aiSent) console.warn("[WA] PASO 9 ⚠ Voz falló, haciendo fallback a texto");
   }
