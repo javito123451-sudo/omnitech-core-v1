@@ -16,8 +16,11 @@ async function ttsElevenLabs(text: string): Promise<Buffer | null> {
   } catch { return null; }
 }
 async function ttsOpenAI(text: string): Promise<Buffer | null> {
-  if (!OPENAI_API_KEY) return null;
+  if (!OPENAI_API_KEY) { console.log(`[TTS] OpenAI sin API_KEY`); return null; }
+  console.log(`[TTS] OpenAI start, key len=${OPENAI_API_KEY.length}`);
   try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch("https://api.openai.com/v1/audio/speech", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` }, body: JSON.stringify({ model: "gpt-4o-mini-tts", voice: "nova", input: text, format: "opus" }) });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
@@ -26,8 +29,9 @@ async function ttsOpenAI(text: string): Promise<Buffer | null> {
 export async function textToSpeech(rawText: string): Promise<Buffer | null> {
   const text = cleanTextForSpeech(rawText);
   if (!text) return null;
-  const el = await ttsElevenLabs(text);
-  if (el) return el;
+  // SOLO OpenAI por ahora
+  // const el = await ttsElevenLabs(text);
+  // if (el) return el;
   const oai = await ttsOpenAI(text);
   if (oai) return oai;
   return null;
