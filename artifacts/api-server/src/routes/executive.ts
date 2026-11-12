@@ -373,7 +373,7 @@ executiveRouter.post("/report", requirePermission("analytics.read"), async (req,
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
 
-  const orgId = (req as Request & { orgId?: number }).orgId ?? 1;
+  const orgId = (req as unknown as Request & { orgId?: number }).orgId ?? 1;
   const now = new Date();
   const thirtyAgo    = new Date(now.getTime() - 30 * 86_400_000);
   const sevenFromNow = new Date(now.getTime() + 7  * 86_400_000);
@@ -507,7 +507,7 @@ executiveRouter.post("/ceo", requirePermission("analytics.read"), async (req, re
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "OPENAI_API_KEY no configurada" }); return; }
 
-  const orgId = (req as Request & { orgId?: number }).orgId ?? 1;
+  const orgId = (req as unknown as Request & { orgId?: number }).orgId ?? 1;
   const now = new Date();
   const thirtyAgo    = new Date(now.getTime() - 30 * 86_400_000);
   const sevenFromNow = new Date(now.getTime() + 7  * 86_400_000);
