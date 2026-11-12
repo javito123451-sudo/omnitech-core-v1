@@ -19,7 +19,8 @@ import { correlateInboundContact } from "../outreach/webhooks/inboundCorrelation
 //  Ava V2 imports
 // ═══════════════════════════════════════════════════════════════════════════
 import { executeSkill, getOpenAIFunctionsForChannel, isSkillAllowedForChannel } from "../skills";
-import { classifyIntent, intentToSkill, Intent, validateIntentParams } from "../intents/intentEngine";
+import { classifyIntent, intentToSkill, validateIntentParams } from "../intents/intentEngine";
+import { Intent } from "../intents/types";
 import { getProviderSingleton } from "../ai/types";
 
 // ── Two routers: one public (webhook), one authenticated ─────────────────────
@@ -218,7 +219,7 @@ async function generateTelegramAIReply(params: {
 
   const memoryBlock = memories.length > 0
     ? "\n\nCONTEXTO DEL NEGOCIO:\n" +
-      memories.map((m) => `- ${m.memoryKey}: ${String(m.content ?? "").slice(0, 120)}`).join("\n")
+      memories.map((m) => `- ${m.memoryKey}: ${String(m.memoryVal ?? "").slice(0, 120)}`).join("\n")
     : "";
 
   const clientBlock = client
@@ -1514,7 +1515,7 @@ telegramRouter.post("/test-send", requirePermission("telegram.write"), async (re
         orgId, integrationSlug: "telegram", direction: "outbound",
         eventType: "message_send_failed", status: "error",
         summary: `Prueba fallida → chat_id ${chatId}`,
-        payloadJson: JSON.stringify({ chatId }),
+        payloadJson: { chatId },
       });
       res.json({ success: false, message: "No se pudo enviar el mensaje. Verifica el Chat ID." });
       return;
@@ -1524,7 +1525,7 @@ telegramRouter.post("/test-send", requirePermission("telegram.write"), async (re
       orgId, integrationSlug: "telegram", direction: "outbound",
       eventType: "test_sent", status: "processed",
       summary: `Mensaje de prueba enviado → chat_id ${chatId}`,
-      payloadJson: JSON.stringify({ chatId }),
+      payloadJson: { chatId },
     });
 
     res.json({ success: true, message: "Mensaje enviado correctamente." });
@@ -1656,7 +1657,7 @@ telegramRouter.post("/send", requirePermission("telegram.write"), async (req, re
         orgId, integrationSlug: "telegram", direction: "outbound",
         eventType: "message_send_failed", status: "error",
         summary: `Envío fallido → chat_id ${chatId}`,
-        payloadJson: JSON.stringify({ chatId }),
+        payloadJson: { chatId },
       });
       res.json({ success: false, message: "No se pudo enviar el mensaje." });
       return;
@@ -1687,7 +1688,7 @@ telegramRouter.post("/send", requirePermission("telegram.write"), async (req, re
       orgId, integrationSlug: "telegram", direction: "outbound",
       eventType: "message_sent", status: "processed",
       summary: `Mensaje enviado desde CRM → chat_id ${chatId}`,
-      payloadJson: JSON.stringify({ chatId, preview: message.slice(0, 80) }),
+      payloadJson: { chatId, preview: message.slice(0, 80) },
     });
 
     res.json({ success: true, message: "Mensaje enviado correctamente." });
@@ -2007,7 +2008,7 @@ telegramRouter.post("/conversations/:clientId/reply", requirePermission("telegra
       eventType: sent ? "message_sent" : "message_send_failed",
       status:    sent ? "processed" : "error",
       summary:   `Respuesta manual desde CRM → ${client.name}: "${message.slice(0, 80)}"`,
-      payloadJson: JSON.stringify({ clientId, chatId: client.telegramChatId }),
+      payloadJson: { clientId, chatId: client.telegramChatId },
     });
 
     res.json({ success: sent });

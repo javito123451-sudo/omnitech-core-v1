@@ -129,7 +129,7 @@ marketingRouter.post("/campaigns", requirePermission("workspace.edit"), async (r
 marketingRouter.patch("/campaigns/:id", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     const { name, channel, subject, body, audience_filter, status } = req.body as Record<string, string>;
 
     const VALID_STATUSES = ["draft", "active", "paused", "sending", "sent", "sent_with_errors", "completed", "error"];
@@ -168,7 +168,7 @@ marketingRouter.patch("/campaigns/:id", requirePermission("workspace.edit"), asy
 marketingRouter.delete("/campaigns/:id", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     await db.execute(sql`DELETE FROM marketing_campaigns WHERE id = ${id} AND org_id = ${orgId}`);
     res.json({ ok: true });
   } catch (err) {
@@ -180,7 +180,7 @@ marketingRouter.delete("/campaigns/:id", requirePermission("workspace.edit"), as
 marketingRouter.post("/campaigns/:id/duplicate", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     const result = await db.execute(sql`
       INSERT INTO marketing_campaigns
         (org_id, name, status, channel, subject, body, audience_filter, created_by, created_at, updated_at)
@@ -202,7 +202,7 @@ marketingRouter.post("/campaigns/:id/duplicate", requirePermission("workspace.ed
 // phone normalisation, raw API response capture.
 marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"), async (req, res) => {
   const orgId = req.orgId!;
-  const id    = parseInt(req.params["id"]!, 10);
+  const id    = parseInt(String(req.params["id"]), 10);
   const startedAt = Date.now();
 
   try {
@@ -391,7 +391,7 @@ marketingRouter.post("/campaigns/:id/launch", requirePermission("workspace.edit"
 // the real launch — useful for verifying credentials + message format.
 marketingRouter.post("/campaigns/:id/test-send", requirePermission("workspace.edit"), async (req, res) => {
   const orgId = req.orgId!;
-  const id    = parseInt(req.params["id"]!, 10);
+  const id    = parseInt(String(req.params["id"]), 10);
   const { phone } = req.body as { phone?: string };
 
   if (!phone?.trim()) {
@@ -452,7 +452,7 @@ marketingRouter.post("/campaigns/:id/test-send", requirePermission("workspace.ed
 marketingRouter.get("/campaigns/:id/report", requirePermission("workspace.view"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id    = parseInt(req.params["id"]!, 10);
+    const id    = parseInt(String(req.params["id"]), 10);
 
     const [campRows, logRows] = await Promise.all([
       db.execute(sql`

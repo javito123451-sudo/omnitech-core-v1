@@ -119,8 +119,8 @@ dashboardRouter.get("/role", requirePermission("workspace.view"), async (req, re
 
       const myPipeline = pipelineSummary.map(s => ({
         ...s,
-        count: deals.filter(d => d.stageId === s.id && d.assignedToUserId === userId).length,
-        value: deals.filter(d => d.stageId === s.id && d.assignedToUserId === userId).reduce((sum, d) => sum + (d.value ?? 0), 0),
+        count: deals.filter(d => d.stageId === s.stageId && d.assignedToUserId === userId).length,
+        value: deals.filter(d => d.stageId === s.stageId && d.assignedToUserId === userId).reduce((sum, d) => sum + (d.value ?? 0), 0),
       }));
 
       res.json({

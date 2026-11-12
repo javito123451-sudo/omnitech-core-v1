@@ -82,14 +82,13 @@ async function createClient(
   const [client] = await db.insert(clientsTable).values({
     orgId,
     name,
-    email,
+    email: email ?? "",
     phone,
     company,
     status,
     value,
     tags,
     notes,
-    source: source as any,
   }).returning();
 
   if (!client) {
@@ -110,7 +109,7 @@ async function createClient(
     name,
     status,
     statusLabel: STATUS_LABEL[status] ?? status,
-    email,
+    email: email ?? "",
     phone,
     company,
     value,
@@ -133,17 +132,16 @@ async function getClients(
     sort === "value_desc"   ? desc(clientsTable.value)     :
     clientsTable.name;
 
-  let whereClause = eq(clientsTable.orgId, orgId);
+  const conditions = [eq(clientsTable.orgId, orgId)];
   if (status !== "all") {
     if (status === "followup") {
-      whereClause = and(whereClause, inArray(clientsTable.status, ["lead", "inactive"]));
+      conditions.push(inArray(clientsTable.status, ["lead", "inactive"]));
     } else {
-      whereClause = and(whereClause, eq(clientsTable.status, status));
+      conditions.push(eq(clientsTable.status, status as typeof clientsTable.$inferSelect.status));
     }
   }
-  if (search) {
-    whereClause = and(whereClause, ilike(clientsTable.name, `%${search}%`));
-  }
+  if (search) conditions.push(ilike(clientsTable.name, `%${search}%`));
+  const whereClause = and(...conditions)!;
 
   const rows = await db
     .select()

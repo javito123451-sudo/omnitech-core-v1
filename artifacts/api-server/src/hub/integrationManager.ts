@@ -38,7 +38,7 @@ async function getOrgIntegration(
         eq(orgIntegrationsTable.integrationSlug, slug),
       ),
     );
-  return row as IntegrationRecord | null;
+  return row ? ({ ...row, health: null, mode: "production" } as unknown as IntegrationRecord) : null;
 }
 
 function buildContext(row: IntegrationRecord): AdapterContext {
@@ -259,7 +259,7 @@ export const IntegrationManager = {
       return { success: false, error: err };
     }
 
-    const ctx = row ? buildContext(row) : { orgId, credentials: {}, config: {} };
+    const ctx: AdapterContext = row ? buildContext(row) : { orgId, credentials: {}, config: {} };
     const t0 = Date.now();
     const result = await adapter.send(ctx, payload);
     const durationMs = Date.now() - t0;
@@ -271,7 +271,7 @@ export const IntegrationManager = {
       summary: result.success
         ? `Message sent to ${payload.to} (${durationMs}ms)`
         : `Send failed: ${result.error}`,
-      errorMessage: result.error ?? null,
+      errorMessage: result.error ?? undefined,
       payloadJson: { to: payload.to, durationMs, providerId: result.providerId },
     });
 

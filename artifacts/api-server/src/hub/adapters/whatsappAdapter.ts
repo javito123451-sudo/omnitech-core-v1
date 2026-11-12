@@ -36,7 +36,7 @@ async function metaApiGET(
       headers: { Authorization: `Bearer ${creds.accessToken}` },
     });
     const data = await r.json().catch(() => null);
-    return { ok: r.ok, data, status: r.status, error: r.ok ? undefined : (data as Record<string, unknown>)?.error?.message as string };
+    return { ok: r.ok, data, status: r.status, error: r.ok ? undefined : ((data as { error?: { message?: string } } | null)?.error?.message) };
   } catch (e) {
     return { ok: false, data: null, status: 0, error: String(e) };
   }

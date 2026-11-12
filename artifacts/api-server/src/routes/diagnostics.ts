@@ -79,7 +79,7 @@ router.get("/latest", requirePermission("diagnostics.read"), async (req, res) =>
       ORDER BY created_at DESC
       LIMIT 1
     `);
-    const rows = result as { rows: Array<Record<string, unknown>> };
+    const rows = result as unknown as { rows: Array<Record<string, unknown>> };
     if (rows.rows.length === 0) {
       res.json({ report: null });
       return;
@@ -128,7 +128,7 @@ router.get("/:id", requirePermission("workspace.view"), async (req, res) => {
       FROM diagnostic_reports
       WHERE id = ${id} AND org_id = ${orgId}
     `);
-    const rows = result as { rows: Array<Record<string, unknown>> };
+    const rows = result as unknown as { rows: Array<Record<string, unknown>> };
     if (rows.rows.length === 0) {
       res.status(404).json({ error: "Report not found" });
       return;
@@ -180,7 +180,7 @@ router.get("/history", requirePermission("workspace.view"), async (req, res) => 
       ORDER BY created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `);
-    const rows = result as { rows: Array<Record<string, unknown>> };
+    const rows = result as unknown as { rows: Array<Record<string, unknown>> };
     const reports = rows.rows.map((row) => ({
       id: row.id,
       orgId: row.org_id,
@@ -200,7 +200,7 @@ router.get("/history", requirePermission("workspace.view"), async (req, res) => 
     const countResult = await db.execute(sql`
       SELECT COUNT(*) as count FROM diagnostic_reports WHERE org_id = ${orgId}
     `);
-    const total = Number((countResult as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
+    const total = Number((countResult as unknown as { rows: Array<{ count: string }> }).rows[0]?.count ?? 0);
 
     res.json({ reports, total, limit, offset });
   } catch (err) {

@@ -30,7 +30,7 @@ export async function runStartupMigrations(): Promise<void> {
     ];
     for (const { clerkId, email } of superAdmins) {
       const exists = await db.execute(sql`SELECT 1 FROM users WHERE clerk_id = ${clerkId} LIMIT 1`);
-      if ((exists as { rows: unknown[] }).rows.length === 0) continue;
+      if ((exists as unknown as { rows: unknown[] }).rows.length === 0) continue;
       await db.execute(sql`
         INSERT INTO platform_roles (clerk_user_id, role, display_name, email, is_active, granted_by, notes, created_at, updated_at)
         VALUES (${clerkId}, 'SUPER_ADMIN', 'Javier', ${email}, true, 'startup-migration', 'Auto-seeded', NOW(), NOW())
@@ -50,21 +50,21 @@ export async function runStartupMigrations(): Promise<void> {
     for (const { email, orgId, role } of missingMemberships) {
       // Guard 1: org must exist in this environment
       const orgExists = await db.execute(sql`SELECT 1 FROM organizations WHERE id = ${orgId} LIMIT 1`);
-      if ((orgExists as { rows: unknown[] }).rows.length === 0) {
+      if ((orgExists as unknown as { rows: unknown[] }).rows.length === 0) {
         logger.info(`[Migration] FIX-C: org_id=${orgId} not found in this environment — skipping`);
         continue;
       }
 
       // Guard 2: user must exist
       const userResult = await db.execute(sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`);
-      const userRows = (userResult as { rows: Array<{id: number}> }).rows;
+      const userRows = (userResult as unknown as { rows: Array<{id: number}> }).rows;
       if (userRows.length === 0) continue;
 
       const userId = userRows[0]!.id;
       const already = await db.execute(sql`
         SELECT 1 FROM org_members WHERE user_id = ${userId} AND org_id = ${orgId} LIMIT 1
       `);
-      if ((already as { rows: unknown[] }).rows.length > 0) {
+      if ((already as unknown as { rows: unknown[] }).rows.length > 0) {
         logger.info(`[Migration] FIX-C: membership ${email}→org${orgId} already exists`);
         continue;
       }
@@ -237,7 +237,7 @@ export async function runStartupMigrations(): Promise<void> {
       const credsEnc  = Buffer.from(credsJson).toString("base64");
 
       const orgsResult = await db.execute(sql`SELECT id FROM organizations`);
-      for (const org of (orgsResult as { rows: Array<{ id: number }> }).rows) {
+      for (const org of (orgsResult as unknown as { rows: Array<{ id: number }> }).rows) {
         // INSERT only — skip if a row already exists (UI-configured credentials take priority)
         await db.execute(sql`
           INSERT INTO org_integrations (org_id, integration_slug, status, credentials_enc, display_name)
@@ -320,7 +320,7 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     // Seed templates if empty
     const tplCount = await db.execute(sql`SELECT COUNT(*) AS cnt FROM onboard_templates`);
-    if (Number((tplCount as { rows: Array<{cnt: string}> }).rows?.[0]?.cnt ?? 0) === 0) {
+    if (Number((tplCount as unknown as { rows: Array<{cnt: string}> }).rows?.[0]?.cnt ?? 0) === 0) {
       const templates = [
         { slug: "autonomo", name: "Autonomo", description: "Freelance individual: CRM, facturacion, gestoria", icon: "User", default_modules: ["crm","quotes","omni_accounting","omni_tax"], default_fiscal: { companyType: "autonomo", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "starter", default_roles: [{ role: "admin", count: 1 }] },
         { slug: "pyme", name: "PYME", description: "Pequena empresa: todos los modulos esenciales", icon: "Building2", default_modules: ["crm","quotes","omni_accounting","omni_tax","ai_agents","whatsapp","automations"], default_fiscal: { companyType: "sociedad", regime: "estimacion_directa", vat: true, irpf: true, country: "ES" }, recommended_plan: "growth", default_roles: [{ role: "admin", count: 1 }, { role: "vendedor", count: 2 }, { role: "member", count: 2 }] },
@@ -513,14 +513,14 @@ export async function runStartupMigrations(): Promise<void> {
         SELECT COUNT(*)::int AS cnt FROM platform_roles
         WHERE role = 'SUPER_ADMIN' AND is_active = true
       `);
-      const activeCnt = Number((countResult as { rows: Array<{ cnt: number }> }).rows[0]?.cnt ?? 0);
+      const activeCnt = Number((countResult as unknown as { rows: Array<{ cnt: number }> }).rows[0]?.cnt ?? 0);
       if (activeCnt === 0) {
         const defaultEmail = process.env["DEFAULT_SUPER_ADMIN_EMAIL"];
         if (defaultEmail) {
           const userResult = await db.execute(
             sql`SELECT clerk_id FROM users WHERE email = ${defaultEmail} LIMIT 1`
           );
-          const userRows = (userResult as { rows: Array<{ clerk_id: string }> }).rows;
+          const userRows = (userResult as unknown as { rows: Array<{ clerk_id: string }> }).rows;
           if (userRows.length > 0) {
             const clerkId = userRows[0]!.clerk_id;
             await db.execute(sql`
@@ -554,7 +554,7 @@ export async function runStartupMigrations(): Promise<void> {
           AND clerk_user_id NOT LIKE 'pending:%'
           AND clerk_user_id NOT LIKE 'user_%'
       `);
-      const rows = (malformed as { rows: Array<{ id: number; clerk_user_id: string; email: string }> }).rows;
+      const rows = (malformed as unknown as { rows: Array<{ id: number; clerk_user_id: string; email: string }> }).rows;
       for (const row of rows) {
         const emailVal = row.email || row.clerk_user_id;
         const pendingKey = `pending:${emailVal}`;
@@ -670,7 +670,7 @@ export async function runStartupMigrations(): Promise<void> {
     // Bumping versions here ensures any stale localStorage cache is cleared on next load.
     {
       const orgs = await db.execute(sql`SELECT id FROM organizations`);
-      const orgRows = (orgs as { rows: { id: number }[] }).rows;
+      const orgRows = (orgs as unknown as { rows: { id: number }[] }).rows;
       for (const { id } of orgRows) {
         bumpOrgModuleVersion(id);
       }
@@ -692,7 +692,7 @@ export async function runStartupMigrations(): Promise<void> {
         logger.info(`[Migration] ✅ FIX-Y: omnitech-core plan → enterprise (${count} row updated)`);
         // bump version so sidebar cache clears immediately
         const orgRow = await db.execute(sql`SELECT id FROM organizations WHERE slug = 'omnitech-core' LIMIT 1`);
-        const rows = (orgRow as { rows: { id: number }[] }).rows;
+        const rows = (orgRow as unknown as { rows: { id: number }[] }).rows;
         if (rows[0]) bumpOrgModuleVersion(rows[0].id);
       } else {
         logger.info("[Migration] ✅ FIX-Y: omnitech-core already on enterprise plan — no change");
@@ -731,7 +731,7 @@ export async function runStartupMigrations(): Promise<void> {
       const constraintExists = await db.execute(sql`
         SELECT 1 FROM pg_constraint WHERE conname = 'module_configs_org_module_unique'
       `);
-      if ((constraintExists as { rows: unknown[] }).rows.length === 0) {
+      if ((constraintExists as unknown as { rows: unknown[] }).rows.length === 0) {
         await db.execute(sql`
           ALTER TABLE module_configs
           ADD CONSTRAINT module_configs_org_module_unique
@@ -781,7 +781,7 @@ export async function runStartupMigrations(): Promise<void> {
       };
 
       const orgRows = await db.execute(sql`SELECT id, plan FROM organizations`);
-      const orgs = (orgRows as { rows: { id: number; plan: string }[] }).rows;
+      const orgs = (orgRows as unknown as { rows: { id: number; plan: string }[] }).rows;
       let seeded = 0;
       let updated = 0;
 
@@ -1107,7 +1107,7 @@ export async function runStartupMigrations(): Promise<void> {
           GROUP BY org_id, place_id HAVING COUNT(*) > 1
         ) d
       `);
-      const dupGroups = Number((dupCheck as unknown as { rows: Array<{ cnt: number }> }).rows[0]?.cnt ?? 0);
+      const dupGroups = Number((dupCheck as unknown as unknown as { rows: Array<{ cnt: number }> }).rows[0]?.cnt ?? 0);
 
       if (dupGroups === 0) {
         await db.execute(sql`
@@ -1128,7 +1128,7 @@ export async function runStartupMigrations(): Promise<void> {
       const fkExists = await db.execute(sql`
         SELECT 1 FROM pg_constraint WHERE conname = 'lead_results_crm_client_id_fkey'
       `);
-      if ((fkExists as { rows: unknown[] }).rows.length === 0) {
+      if ((fkExists as unknown as { rows: unknown[] }).rows.length === 0) {
         await db.execute(sql`
           ALTER TABLE lead_results
           ADD CONSTRAINT lead_results_crm_client_id_fkey

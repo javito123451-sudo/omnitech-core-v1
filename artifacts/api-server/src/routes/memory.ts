@@ -105,12 +105,13 @@ memoryRouter.get("/search", requirePermission("memory.read"), async (req, res) =
       .where(and(eq(agentMemoryTable.orgId, orgId), eq(agentMemoryTable.agentSlug, AGENT_SLUG)))
       .orderBy(desc(agentMemoryTable.updatedAt));
 
-    const withEmbeddings = all.filter(r => r.embedding && (r.embedding as number[]).length > 0);
+    const memoryRows = all as unknown as Array<(typeof all)[number] & { embedding?: number[] | null }>;
+    const withEmbeddings = memoryRows.filter(r => r.embedding && r.embedding.length > 0);
 
     if (withEmbeddings.length > 0) {
       const qEmb = await generateEmbedding(q);
       if (qEmb) {
-        const scored = all
+        const scored = memoryRows
           .map(r => ({
             ...r,
             _score: r.embedding
@@ -210,7 +211,6 @@ memoryRouter.post("/", async (req, res) => {
         title: titleStr,
         category: cat,
         tags: tags?.trim() || null,
-        embedding: emb as number[] | null,
         source: "user_input",
       })
       .onConflictDoUpdate({

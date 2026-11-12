@@ -340,7 +340,7 @@ importAiRouter.post("/upload", requirePermission("crm.write"), upload.single("fi
     } else if (branch === "XLSX") {
       const { default: ExcelJS } = await import("exceljs");
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(file.buffer);
+      await workbook.xlsx.load(file.buffer as unknown as Buffer);
       const worksheet = workbook.worksheets[0];
       const rows: Record<string, unknown>[] = [];
       const headers: string[] = [];
@@ -443,7 +443,7 @@ importAiRouter.post("/upload", requirePermission("crm.write"), upload.single("fi
     res.json({ ...result, fileName: file.originalname, fileType: ext });
   } catch (err) {
     console.error("[ImportAI][CATCH]", err instanceof Error ? err.message : String(err));
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -575,7 +575,7 @@ importAiRouter.get("/history", requirePermission("crm.read"), async (req, res) =
     SELECT id, file_name, file_type, detected_type, confidence_pct, records_created, suggested_dest, created_at
     FROM import_jobs WHERE org_id=${orgId} ORDER BY created_at DESC LIMIT 50
   `);
-  res.json((rows as { rows: unknown[] }).rows);
+  res.json((rows as unknown as { rows: unknown[] }).rows);
 });
 
 // ── GET /dashboard ────────────────────────────────────────────────────────────
@@ -596,12 +596,12 @@ importAiRouter.get("/dashboard", requirePermission("analytics.read"), async (req
     `),
   ]);
 
-  const tot = ((totals as { rows: Array<Record<string, number>> }).rows[0]) ?? {};
+  const tot = ((totals as unknown as { rows: Array<Record<string, number>> }).rows[0]) ?? {};
   res.json({
     totalImports:  Number(tot.total_imports  ?? 0),
     totalRecords:  Number(tot.total_records  ?? 0),
     totalErrors:   Number(tot.total_errors   ?? 0),
     timeSavedMin:  Number(tot.total_records ?? 0) * 3,
-    byType: (byType as { rows: Array<{ detected_type: string; cnt: number }> }).rows,
+    byType: (byType as unknown as { rows: Array<{ detected_type: string; cnt: number }> }).rows,
   });
 });

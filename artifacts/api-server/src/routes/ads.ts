@@ -108,7 +108,7 @@ adsRouter.post("/campaigns", requirePermission("workspace.edit"), async (req, re
 adsRouter.get("/campaigns/:id", requirePermission("workspace.view"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     const rows = await db.execute(sql`
       SELECT * FROM ads_campaigns WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
     `);
@@ -124,7 +124,7 @@ adsRouter.get("/campaigns/:id", requirePermission("workspace.view"), async (req,
 adsRouter.patch("/campaigns/:id", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     const body = req.body as Record<string, unknown>;
     const { name, status, businessName, businessType, product, targetAudience,
             goal, budget, platforms, impressions, clicks, leads, conversions, roi, spend } = body;
@@ -170,7 +170,7 @@ adsRouter.patch("/campaigns/:id", requirePermission("workspace.edit"), async (re
 adsRouter.delete("/campaigns/:id", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     await db.execute(sql`DELETE FROM ads_campaigns WHERE id = ${id} AND org_id = ${orgId}`);
     res.json({ ok: true });
   } catch (err) {
@@ -182,7 +182,7 @@ adsRouter.delete("/campaigns/:id", requirePermission("workspace.edit"), async (r
 adsRouter.post("/campaigns/:id/generate", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
 
     const rows = await db.execute(sql`
       SELECT * FROM ads_campaigns WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
@@ -263,7 +263,7 @@ adsRouter.post("/creatives", requirePermission("workspace.edit"), async (req, re
 adsRouter.patch("/creatives/:id", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     const { title, content, status, platform } = req.body as Record<string, unknown>;
     const VALID = ["draft", "ready", "published"];
     if (status && !VALID.includes(status as string)) { res.status(400).json({ error: "Invalid status" }); return; }
@@ -290,7 +290,7 @@ adsRouter.patch("/creatives/:id", requirePermission("workspace.edit"), async (re
 adsRouter.delete("/creatives/:id", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id = parseInt(req.params["id"]!, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     await db.execute(sql`DELETE FROM ads_creatives WHERE id = ${id} AND org_id = ${orgId}`);
     res.json({ ok: true });
   } catch (err) {
@@ -304,7 +304,7 @@ adsRouter.delete("/creatives/:id", requirePermission("workspace.edit"), async (r
 adsRouter.post("/creatives/:id/generate", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const id    = parseInt(req.params["id"]!, 10);
+    const id    = parseInt(String(req.params["id"]), 10);
 
     const rows = await db.execute(sql`
       SELECT * FROM ads_creatives WHERE id = ${id} AND org_id = ${orgId} LIMIT 1

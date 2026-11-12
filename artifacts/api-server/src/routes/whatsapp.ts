@@ -20,7 +20,8 @@ import { eq, and, desc, asc, gt, isNotNull, isNull, ne, inArray } from "drizzle-
 // ═══════════════════════════════════════════════════════════════════════════
 import { getProviderSingleton } from "../ai/types";
 import { executeSkill, getOpenAIFunctionsForChannel, isSkillAllowedForChannel } from "../skills";
-import { classifyIntent, intentToSkill, Intent } from "../intents/intentEngine";
+import { classifyIntent, intentToSkill } from "../intents/intentEngine";
+import { Intent } from "../intents/types";
 
 import {
   getWhatsAppCreds,
@@ -1064,7 +1065,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
         contactName:   (received.metadata?.profileName as string) ?? undefined,
         // Pass the business phone_number_id so processIncomingMessage can resolve
         // the correct org — critical for multi-tenant and for new contacts.
-        phoneNumberId: (received.metadata?.phoneNumberId as string) ?? undefined,
+        phoneNumberId: String(received.metadata?.phoneNumberId ?? ""),
         signatureVerified,
       }).catch((err) => console.error("[WhatsApp Webhook] Processing error:", err));
       return;
@@ -1367,7 +1368,7 @@ whatsappRouter.post("/verify", requirePermission("whatsapp.write"), async (req, 
         eventType: "test_failed", status: "error",
         summary: "Verificación fallida — credenciales inválidas",
         errorMessage: metaData.error?.message ?? "Meta rechazó las credenciales",
-        payloadJson: JSON.stringify(metaData),
+        payloadJson: metaData,
       });
       res.json({ success: false, message: `Credenciales inválidas: ${metaData.error?.message ?? "Error desconocido"}` });
       return;
@@ -1380,7 +1381,7 @@ whatsappRouter.post("/verify", requirePermission("whatsapp.write"), async (req, 
       orgId, integrationSlug: "whatsapp", direction: "outbound",
       eventType: "test_ok", status: "processed",
       summary: `Número verificado — ${verifiedName} (+${displayPhone})`,
-      payloadJson: JSON.stringify(metaData),
+      payloadJson: metaData,
     });
 
     res.json({

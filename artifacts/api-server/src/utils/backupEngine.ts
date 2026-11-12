@@ -201,7 +201,7 @@ export async function verifyBackup(jobId: number): Promise<{
   valid: boolean; expectedChecksum: string; actualChecksum: string; fileExists: boolean; error?: string;
 }> {
   const rows = await db.execute(sql`SELECT * FROM backup_jobs WHERE id = ${jobId}`);
-  const job  = rows.rows[0] as BackupJobRow | undefined;
+  const job  = rows.rows[0] as unknown as BackupRow | undefined;
   if (!job)           throw new Error("Backup not found");
   if (!job.file_path) throw new Error("Backup has no associated file");
 
@@ -226,7 +226,7 @@ export async function verifyBackup(jobId: number): Promise<{
 
 export async function restoreBackup(jobId: number): Promise<void> {
   const rows = await db.execute(sql`SELECT * FROM backup_jobs WHERE id = ${jobId}`);
-  const job  = rows.rows[0] as BackupJobRow | undefined;
+  const job  = rows.rows[0] as unknown as BackupRow | undefined;
   if (!job) throw new Error("Backup not found");
   if (job.status !== "completed") throw new Error(`Cannot restore a backup with status: ${job.status}`);
   if (!job.file_path || !existsSync(job.file_path)) throw new Error("Backup file not found on disk");

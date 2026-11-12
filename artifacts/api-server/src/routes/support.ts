@@ -59,7 +59,7 @@ supportRouter.get("/tickets", requirePermission("workspace.view"), async (req, r
 supportRouter.get("/tickets/:id", requirePermission("workspace.view"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const ticketId = parseInt(req.params.id);
+    const ticketId = parseInt(String(req.params.id));
 
     const [ticket] = await db.select().from(supportTicketsTable)
       .where(and(eq(supportTicketsTable.id, ticketId), eq(supportTicketsTable.orgId, orgId)));
@@ -141,7 +141,7 @@ supportRouter.post("/tickets", requirePermission("workspace.view"), async (req, 
 supportRouter.patch("/tickets/:id", requirePermission("workspace.edit"), async (req, res) => {
   try {
     const orgId = req.orgId!;
-    const ticketId = parseInt(req.params.id);
+    const ticketId = parseInt(String(req.params.id));
     const { status, assignedToUserId, resolution } = req.body as {
       status?: string; assignedToUserId?: number | null; resolution?: string;
     };
@@ -192,7 +192,7 @@ supportRouter.post("/tickets/:id/comments", requirePermission("workspace.view"),
   try {
     const orgId = req.orgId!;
     const userId = req.userId!;
-    const ticketId = parseInt(req.params.id);
+    const ticketId = parseInt(String(req.params.id));
     const { body, isInternal = false } = req.body as { body: string; isInternal?: boolean };
 
     if (!body?.trim()) { res.status(400).json({ error: "Comentario requerido" }); return; }

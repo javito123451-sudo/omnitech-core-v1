@@ -62,7 +62,7 @@ export async function execute(
         action:     `ACTION_ENGINE:${actionName.toUpperCase().replace(/\./g, "_")}`,
         targetType: "action",
         targetId:   ctx.sourceEventId ?? actionName,
-        details:    `source=${ctx.source} duration=${durationMs}ms`,
+        details:    { source: ctx.source, durationMs },
       });
     }
 
