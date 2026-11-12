@@ -86,7 +86,7 @@ SKILL_MAP.set("get_pending_invoices", listPendingInvoicesSkill);
 // Public API
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function listSkills(): SkillDefinition[] {
+export function listSkills(): Array<Omit<SkillDefinition, "execute">> {
   return SKILLS.map(s => ({
     id:          s.id,
     name:        s.name,
