@@ -41,7 +41,7 @@ async function createMarketingCampaign(
   return JSON.stringify({
     success: true,
     campaign,
-    message: `Borrador de campaña #${campaign["id"]} creado correctamente.`,
+    message: `Borrador de campaña #${String(campaign["id"])} creado correctamente.`,
     requiresContent: !body,
     launchRequiresExplicitConfirmation: true,
   });
