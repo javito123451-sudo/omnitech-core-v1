@@ -82,14 +82,13 @@ async function createClient(
   const [client] = await db.insert(clientsTable).values({
     orgId,
     name,
-    email,
+    email: email ?? "",
     phone,
     company,
     status,
     value,
     tags,
     notes,
-    source: source as any,
   }).returning();
 
   if (!client) {
@@ -110,7 +109,7 @@ async function createClient(
     name,
     status,
     statusLabel: STATUS_LABEL[status] ?? status,
-    email,
+    email: email ?? "",
     phone,
     company,
     value,
