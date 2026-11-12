@@ -28,11 +28,12 @@ function advanceDate(base: Date, frequency: string): Date {
 // ── Invoice number helper (isolated copy to avoid circular import) ────────────
 async function nextInvoiceNumber(orgId: number): Promise<string> {
   const year = new Date().getFullYear();
-  const [row] = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT COUNT(*)::int AS cnt FROM invoices
     WHERE org_id = ${orgId} AND created_at >= ${`${year}-01-01`}::timestamp
-  `) as unknown as { rows: Array<{ cnt: number }> };
-  const seq = String(((row as unknown as { rows: Array<{ cnt: number }> }).rows?.[0]?.cnt ?? 0) + 1).padStart(4, "0");
+  `);
+  const countRows = result as unknown as { rows: Array<{ cnt: number }> };
+  const seq = String((countRows.rows?.[0]?.cnt ?? 0) + 1).padStart(4, "0");
   return `F${year}-${seq}`;
 }
 
@@ -57,7 +58,7 @@ export async function processDueTemplates(): Promise<void> {
     ORDER BY next_run_at ASC
     LIMIT 50
   `);
-  const rows = (result as { rows: RecurringRow[] }).rows;
+  const rows = (result as unknown as { rows: RecurringRow[] }).rows;
   if (!rows.length) return;
 
   logger.info(`[RecurringInvoices] Processing ${rows.length} due template(s)…`);
