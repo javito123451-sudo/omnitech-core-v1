@@ -199,7 +199,7 @@ export async function registerPaymentCore(input: RegisterPaymentInput): Promise<
     }
   }
 
-  return { payment: payment!, invoiceStatus: newStatus, invoiceId, totalPaid, balance };
+  return { payment: payment!, invoiceStatus: newStatus, invoiceId: invoiceId ?? undefined, totalPaid, balance };
 }
 
 // ── Validate ownership (orgId must match) ────────────────────────────────
