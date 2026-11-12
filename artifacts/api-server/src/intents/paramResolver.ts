@@ -150,6 +150,9 @@ export function extractParamFromText(
 // ═══════════════════════════════════════════════════════════════════════════
 
 const PARAM_PROMPTS: Record<string, Record<string, string>> = {
+  create_marketing_campaign: {
+    name: "📣 ¿Qué nombre quieres ponerle a la campaña? (por ejemplo: Promoción de noviembre)",
+  },
   create_appointment: {
     client_name: "👤 ¿Con qué cliente es la cita? Dime su nombre.",
     date:        "📅 ¿Para qué fecha la agendo? (ej: mañana, el viernes, 25/07/2026)",
