@@ -79,7 +79,7 @@ docsRouter.get("/:slug", requireAuth, async (req: AuthReq, res: Response) => {
     const [page] = await db
       .select()
       .from(docsPagesTable)
-      .where(eq(docsPagesTable.slug, req.params.slug));
+      .where(eq(docsPagesTable.slug, String(req.params.slug)));
 
     if (!page) return res.status(404).json({ error: "Página no encontrada" });
 
@@ -104,14 +104,14 @@ docsRouter.put("/:slug", requireAuth, async (req: AuthReq, res: Response) => {
     const [current] = await db
       .select({ currentVersion: docsPagesTable.currentVersion, content: docsPagesTable.content })
       .from(docsPagesTable)
-      .where(eq(docsPagesTable.slug, req.params.slug));
+      .where(eq(docsPagesTable.slug, String(req.params.slug)));
 
     if (!current) return res.status(404).json({ error: "Página no encontrada" });
 
     const nextVersion = (current.currentVersion ?? 1) + 1;
 
     await db.insert(docsVersionsTable).values({
-      pageSlug: req.params.slug,
+      pageSlug: String(req.params.slug),
       versionNumber: current.currentVersion ?? 1,
       content: current.content,
       authorClerkId: req.clerkUserId,
@@ -128,7 +128,7 @@ docsRouter.put("/:slug", requireAuth, async (req: AuthReq, res: Response) => {
         updatedByEmail: req.userEmail,
         currentVersion: nextVersion,
       })
-      .where(eq(docsPagesTable.slug, req.params.slug))
+      .where(eq(docsPagesTable.slug, String(req.params.slug)))
       .returning();
 
     res.json({ page: updated });
@@ -147,7 +147,7 @@ docsRouter.get("/:slug/versions", requireAuth, async (req: AuthReq, res: Respons
     const versions = await db
       .select()
       .from(docsVersionsTable)
-      .where(eq(docsVersionsTable.pageSlug, req.params.slug))
+      .where(eq(docsVersionsTable.pageSlug, String(req.params.slug)))
       .orderBy(desc(docsVersionsTable.versionNumber))
       .limit(20);
 
@@ -164,12 +164,12 @@ docsRouter.post("/:slug/restore/:version", requireAuth, async (req: AuthReq, res
     return res.status(403).json({ error: "Sin permiso para restaurar versiones" });
   }
   try {
-    const versionNum = parseInt(req.params.version, 10);
+    const versionNum = parseInt(String(req.params.version), 10);
     const [ver] = await db
       .select()
       .from(docsVersionsTable)
       .where(
-        sql`${docsVersionsTable.pageSlug} = ${req.params.slug} AND ${docsVersionsTable.versionNumber} = ${versionNum}`,
+        sql`${docsVersionsTable.pageSlug} = ${String(req.params.slug)} AND ${docsVersionsTable.versionNumber} = ${versionNum}`,
       );
 
     if (!ver) return res.status(404).json({ error: "Versión no encontrada" });
@@ -177,12 +177,12 @@ docsRouter.post("/:slug/restore/:version", requireAuth, async (req: AuthReq, res
     const [current] = await db
       .select({ currentVersion: docsPagesTable.currentVersion, content: docsPagesTable.content })
       .from(docsPagesTable)
-      .where(eq(docsPagesTable.slug, req.params.slug));
+      .where(eq(docsPagesTable.slug, String(req.params.slug)));
 
     if (!current) return res.status(404).json({ error: "Página no encontrada" });
 
     await db.insert(docsVersionsTable).values({
-      pageSlug: req.params.slug,
+      pageSlug: String(req.params.slug),
       versionNumber: current.currentVersion,
       content: current.content,
       authorClerkId: req.clerkUserId,
@@ -199,7 +199,7 @@ docsRouter.post("/:slug/restore/:version", requireAuth, async (req: AuthReq, res
         updatedByEmail: req.userEmail,
         currentVersion: (current.currentVersion ?? 1) + 1,
       })
-      .where(eq(docsPagesTable.slug, req.params.slug))
+      .where(eq(docsPagesTable.slug, String(req.params.slug)))
       .returning();
 
     res.json({ page: updated, restoredFrom: versionNum });
