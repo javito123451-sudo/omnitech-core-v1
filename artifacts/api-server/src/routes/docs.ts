@@ -38,7 +38,7 @@ docsRouter.get("/", requireAuth, async (req: AuthReq, res: Response) => {
     res.json({ pages, canEdit: canEdit(req) });
   } catch (err) {
     console.error("docs list error", err);
-    res.status(500).json({ error: "Error al obtener el manual" });
+    return res.status(500).json({ error: "Error al obtener el manual" });
   }
 });
 
@@ -69,7 +69,7 @@ docsRouter.get("/search", requireAuth, async (req: AuthReq, res: Response) => {
     res.json({ results });
   } catch (err) {
     console.error("docs search error", err);
-    res.status(500).json({ error: "Error en la búsqueda" });
+    return res.status(500).json({ error: "Error en la búsqueda" });
   }
 });
 
@@ -86,7 +86,7 @@ docsRouter.get("/:slug", requireAuth, async (req: AuthReq, res: Response) => {
     res.json({ page, canEdit: canEdit(req) });
   } catch (err) {
     console.error("docs get error", err);
-    res.status(500).json({ error: "Error al obtener la página" });
+    return res.status(500).json({ error: "Error al obtener la página" });
   }
 });
 
@@ -134,7 +134,7 @@ docsRouter.put("/:slug", requireAuth, async (req: AuthReq, res: Response) => {
     res.json({ page: updated });
   } catch (err) {
     console.error("docs update error", err);
-    res.status(500).json({ error: "Error al guardar los cambios" });
+    return res.status(500).json({ error: "Error al guardar los cambios" });
   }
 });
 
@@ -154,7 +154,7 @@ docsRouter.get("/:slug/versions", requireAuth, async (req: AuthReq, res: Respons
     res.json({ versions });
   } catch (err) {
     console.error("docs versions error", err);
-    res.status(500).json({ error: "Error al obtener versiones" });
+    return res.status(500).json({ error: "Error al obtener versiones" });
   }
 });
 
@@ -205,6 +205,6 @@ docsRouter.post("/:slug/restore/:version", requireAuth, async (req: AuthReq, res
     res.json({ page: updated, restoredFrom: versionNum });
   } catch (err) {
     console.error("docs restore error", err);
-    res.status(500).json({ error: "Error al restaurar la versión" });
+    return res.status(500).json({ error: "Error al restaurar la versión" });
   }
 });
