@@ -65,6 +65,8 @@ export function formatSkillResponse(
     case "list_quotes":
     case "get_quotes":             return formatListQuotes(data);
     case "create_task":            return formatCreateTask(data);
+    case "create_marketing_campaign": return formatCreateMarketingCampaign(data);
+    case "list_marketing_campaigns": return formatListMarketingCampaigns(data);
     case "list_tasks":
     case "get_tasks":              return formatListTasks(data);
     case "accounting_summary":     return formatAccountingSummary(data);
@@ -316,6 +318,33 @@ function formatListQuotes(data: Record<string, unknown>): string {
   if (total > 8) text += `\n*...y ${total - 8} más*\n`;
   text += `\n🔗 [Ver todos →](/quotes)`;
   return text;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Marketing formatters
+// ═══════════════════════════════════════════════════════════════════════════
+
+function formatCreateMarketingCampaign(data: Record<string, unknown>): string {
+  const campaign = (data["campaign"] ?? {}) as Record<string, unknown>;
+  const id = campaign["id"] ?? "—";
+  const name = String(campaign["name"] ?? "Campaña");
+  const channel = String(campaign["channel"] ?? "email");
+  const hasBody = Boolean(campaign["body"]);
+  let text = `✅ **Borrador de campaña creado**\n\n**${name}** · #${String(id)}\nCanal: ${channel}\nEstado: Borrador`;
+  if (!hasBody) text += "\n\nTodavía falta redactar el contenido del mensaje.";
+  text += "\n\nNo se ha enviado nada. Para lanzar la campaña tendrás que revisarla y confirmarlo desde Omni Marketing Hub.\n\n🔗 [Abrir Marketing Hub →](/marketing)";
+  return text;
+}
+
+function formatListMarketingCampaigns(data: Record<string, unknown>): string {
+  const campaigns = (data["campaigns"] as Record<string, unknown>[]) ?? [];
+  if (campaigns.length === 0) return "📣 **Campañas de marketing**\n\nTodavía no hay campañas creadas.\n\n🔗 [Abrir Marketing Hub →](/marketing)";
+  const lines = campaigns.slice(0, 20).map(c => {
+    const status = String(c["status"] ?? "draft");
+    const channel = String(c["channel"] ?? "email");
+    return `• **#${String(c["id"])} ${String(c["name"] ?? "Campaña")}** — ${status} · ${channel}`;
+  });
+  return `📣 **Campañas de marketing** — ${Number(data["total"] ?? campaigns.length)}\n\n${lines.join("\n")}\n\n🔗 [Abrir Marketing Hub →](/marketing)`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -683,6 +712,7 @@ export function buildFallbackResponse(query: string, memories: MemoryEntry[]): s
     `💡 **Puedo ayudarte con:**`,
     `- Citas: *"Ver citas de hoy"* · *"Agenda una cita con [cliente]"*`,
     `- Clientes: *"Mis clientes"* · *"Dar de alta a [nombre]"*`,
+    `- Marketing: *"Crear una campaña de marketing"* · *"Ver mis campañas"*`,
     `- Presupuestos: *"Ver mis presupuestos"*`,
     `- Tareas: *"Mis tareas pendientes"* · *"Crear tarea: [texto]"*`,
     `- Análisis: *"¿Cómo va mi negocio?"*`,

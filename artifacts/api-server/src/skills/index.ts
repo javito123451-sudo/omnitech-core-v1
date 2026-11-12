@@ -31,6 +31,7 @@ import {
 } from "./accountingSkills";
 
 import { createTaskSkill, getTasksSkill } from "./taskSkills";
+import { createMarketingCampaignSkill, listMarketingCampaignsSkill } from "./marketingSkills";
 
 import { escalateToHumanSkill } from "./escalationSkills";
 
@@ -65,6 +66,8 @@ const SKILLS: SkillDefinition[] = [
   getRepairStatusSkill,
   createRepairOrderSkill,
   updateRepairStageSkill,
+  createMarketingCampaignSkill,
+  listMarketingCampaignsSkill,
 ];
 
 const SKILL_MAP: Map<string, SkillDefinition> = new Map(SKILLS.map(s => [s.id, s]));
