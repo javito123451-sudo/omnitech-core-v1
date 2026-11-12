@@ -22,7 +22,7 @@ import { OpenAIProvider } from "../ai/openaiProvider";
 import { ClaudeProvider } from "../ai/claudeProvider";
 import { GeminiProvider } from "../ai/geminiProvider";
 
-export const DEFAULT_MODEL = "gpt-4o-mini";
+export const DEFAULT_MODEL = process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna";
 
 export interface ModelChoice { provider?: string; model?: string }
 export interface RoutingPolicy extends ModelChoice { fallbacks?: ModelChoice[] }
@@ -56,10 +56,10 @@ export const PROVIDER_CONFIG: Record<string, { implemented: boolean; apiKeyEnv: 
 // Per-plan defaults. Same for every plan today; the hook exists so a plan can
 // be pinned to a cheaper/pricier model without touching callers.
 export const PLAN_DEFAULTS: Record<string, ModelChoice> = {
-  starter:      { provider: "openai", model: "gpt-4o-mini" },
-  professional: { provider: "openai", model: "gpt-4o-mini" },
-  business:     { provider: "openai", model: "gpt-4o-mini" },
-  enterprise:   { provider: "openai", model: "gpt-4o-mini" },
+  starter:      { provider: "openai", model: process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna" },
+  professional: { provider: "openai", model: process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna" },
+  business:     { provider: "openai", model: process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna" },
+  enterprise:   { provider: "openai", model: process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna" },
 };
 
 export function isProviderAvailable(providerId: string): boolean {

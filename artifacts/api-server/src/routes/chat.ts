@@ -1997,7 +1997,7 @@ ${existingList}`,
         content: aiResponse.slice(0, 800),
       },
     ], {
-      model:       "gpt-4o-mini",
+      model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
       maxTokens:   400,
       temperature: 0.1,
       tools:       [SAVE_MEMORY_TOOL],

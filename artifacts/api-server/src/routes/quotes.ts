@@ -388,7 +388,7 @@ El array actions debe tener exactamente los mismos IDs en el mismo orden. Solo J
     },
     { role: "user", content: "Presupuestos a analizar (ordenados por score):\n" + listForAI },
   ], {
-    model:       "gpt-4o-mini",
+    model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     temperature: 0.3,
     maxTokens:   600,
   });
@@ -397,7 +397,7 @@ El array actions debe tener exactamente los mismos IDs en el mismo orden. Solo J
     orgId:        (req as import("express").Request & { orgId?: number }).orgId ?? null,
     userClerkId:  (req as import("express").Request & { clerkUserId?: string }).clerkUserId ?? null,
     functionName: "quotes_ai_rank",
-    model:        "gpt-4o-mini",
+    model:        (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     tokensInput:  result.usage?.promptTokens     ?? 0,
     tokensOutput: result.usage?.completionTokens ?? 0,
   }).catch(() => {});
@@ -488,7 +488,7 @@ Reglas:
     },
     { role: "user", content: prompt },
   ], {
-    model:       "gpt-4o-mini",
+    model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
     temperature: 0.2,
   });
 

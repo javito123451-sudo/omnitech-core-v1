@@ -15,6 +15,11 @@ describe("Cost Engine — coste técnico", () => {
     expect(computeCost({ provider: "openai", model: "gpt-4o", inputTokens: 1000, outputTokens: 500 }).technicalCostUsd).toBeCloseTo(0.0125, 6);
   });
 
+  it("usa los precios oficiales estándar de GPT-6 Luna en el fallback heredado", () => {
+    expect(PRICING["openai"]!["gpt-6-luna"]).toEqual({ inputPer1M: 0.10, outputPer1M: 0.50, cachedInputPer1M: 0.01 });
+    expect(computeCost({ provider: "openai", model: "gpt-6-luna", inputTokens: 1000, outputTokens: 1000 }).technicalCostUsd).toBeCloseTo(0.0006, 8);
+  });
+
   it("calculateCost (API antigua) da lo mismo que el motor", () => {
     expect(calculateCost("gpt-4o-mini", 1000, 500)).toBeCloseTo(0.00045, 6);
   });

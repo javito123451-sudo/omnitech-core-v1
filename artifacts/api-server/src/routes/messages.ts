@@ -90,7 +90,7 @@ messagesRouter.post("/ai-reply", requirePermission("messages.write"), async (req
       { role: "system", content: systemPrompt },
       { role: "user", content: `Contexto del cliente: ${body.context || "Ninguno"}. \n\nMensaje del cliente: "${body.message}". \n\nGenera una respuesta profesional apropiada.` },
     ], {
-      model:       "gpt-4o-mini",
+      model:       (process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna"),
       temperature: 0.7,
       maxTokens:   250,
     });

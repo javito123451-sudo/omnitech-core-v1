@@ -261,9 +261,10 @@ Score bajo (0-35) = muchas señales = BAJA oportunidad.`;
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna",
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 500,
+      max_completion_tokens: 500,
+      reasoning_effort: "none",
       temperature: 0.3,
     });
     const raw    = completion.choices[0]?.message?.content ?? "{}";
@@ -739,9 +740,10 @@ IMPORTANTE: Escribe como una persona real. Cita detalles específicos de la empr
 Escribe SOLO el mensaje.`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: process.env["OPENAI_DEFAULT_MODEL"] ?? "gpt-6-luna",
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 600,
+      max_completion_tokens: 600,
+      reasoning_effort: "none",
       temperature: 0.75,
     });
     const content = completion.choices[0]?.message?.content ?? "";
