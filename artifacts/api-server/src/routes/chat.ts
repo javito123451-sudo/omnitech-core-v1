@@ -27,7 +27,7 @@ import { eq, and, asc, desc, gte, lt, inArray, ilike, sum, count, sql } from "dr
 const router = Router();
 const AGENT_SLUG = "operator";
 
-import { requirePermission } from "../middlewares/permissions";
+import { requirePermission, hasPermission } from "../middlewares/permissions";
 type AgentMemoryRow = typeof agentMemoryTable.$inferSelect;
 
 // ── Intent Engine + deterministic response formatters (no LLM) ────────────────
@@ -2371,6 +2371,20 @@ router.post("/", requirePermission("ai.write"), async (req, res) => {
     // ── ACTION — route to Skill Engine ──────────────────────────────────────
     const skillId = intentToSkill(intent);
     if (skillId) {
+      // Omni Marketing Hub is a separately licensed module with its own RBAC.
+      // Ava must enforce the same module and workspace permissions as the REST API.
+      if (skillId === "create_marketing_campaign" || skillId === "list_marketing_campaigns") {
+        const marketingEnabled = await isModuleEnabled(orgId, "omni_marketing");
+        if (!marketingEnabled) {
+          await streamText("El módulo Omni Marketing Hub no está habilitado en este workspace. Puedes pedir a un administrador que lo active en Control Center → Módulos.");
+          return;
+        }
+        const requiredPermission = skillId === "create_marketing_campaign" ? "workspace.edit" : "workspace.view";
+        if (!hasPermission(req, requiredPermission)) {
+          await streamText(`No tienes permisos para ${skillId === "create_marketing_campaign" ? "crear" : "consultar"} campañas de marketing en este workspace.`);
+          return;
+        }
+      }
       const skill           = getSkill(skillId);
       // Required params missing from what the Intent Engine extracted
       const missingRequired = skill
