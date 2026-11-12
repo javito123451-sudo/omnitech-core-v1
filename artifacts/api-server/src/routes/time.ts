@@ -49,7 +49,7 @@ timeRouter.get("/dashboard", async (req, res) => {
     });
   } catch (err) {
     console.error("[time/dashboard]", err);
-    res.status(500).json({ error: "Error al cargar el dashboard" });
+    return res.status(500).json({ error: "Error al cargar el dashboard" });
   }
 });
 
@@ -71,7 +71,7 @@ timeRouter.get("/workers", async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("[time/workers GET]", err);
-    res.status(500).json({ error: "Error al listar trabajadores" });
+    return res.status(500).json({ error: "Error al listar trabajadores" });
   }
 });
 
@@ -92,7 +92,7 @@ timeRouter.post("/workers", async (req, res) => {
     res.status(201).json({ id: rows[0]!.id });
   } catch (err) {
     console.error("[time/workers POST]", err);
-    res.status(500).json({ error: "Error al crear trabajador" });
+    return res.status(500).json({ error: "Error al crear trabajador" });
   }
 });
 
@@ -109,7 +109,7 @@ timeRouter.get("/workers/:id", async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: "Trabajador no encontrado" });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: "Error al obtener trabajador" });
+    return res.status(500).json({ error: "Error al obtener trabajador" });
   }
 });
 
@@ -132,7 +132,7 @@ timeRouter.patch("/workers/:id", async (req, res) => {
     `);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: "Error al actualizar trabajador" });
+    return res.status(500).json({ error: "Error al actualizar trabajador" });
   }
 });
 
@@ -180,7 +180,7 @@ timeRouter.post("/clock-in", async (req, res) => {
     res.status(201).json({ id: entryId });
   } catch (err) {
     console.error("[time/clock-in]", err);
-    res.status(500).json({ error: "Error al fichar entrada" });
+    return res.status(500).json({ error: "Error al fichar entrada" });
   }
 });
 
@@ -246,7 +246,7 @@ timeRouter.post("/clock-out", async (req, res) => {
     res.json({ id: entry.id, totalMinutes: totalMin, overtimeMinutes: overtimeMin });
   } catch (err) {
     console.error("[time/clock-out]", err);
-    res.status(500).json({ error: "Error al fichar salida" });
+    return res.status(500).json({ error: "Error al fichar salida" });
   }
 });
 
@@ -271,7 +271,7 @@ timeRouter.get("/entries", async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("[time/entries GET]", err);
-    res.status(500).json({ error: "Error al listar fichajes" });
+    return res.status(500).json({ error: "Error al listar fichajes" });
   }
 });
 
@@ -294,7 +294,7 @@ timeRouter.patch("/entries/:id", async (req, res) => {
     `);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: "Error al actualizar fichaje" });
+    return res.status(500).json({ error: "Error al actualizar fichaje" });
   }
 });
 
@@ -307,7 +307,7 @@ timeRouter.delete("/entries/:id", async (req, res) => {
     `);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: "Error al eliminar fichaje" });
+    return res.status(500).json({ error: "Error al eliminar fichaje" });
   }
 });
 
@@ -339,7 +339,7 @@ timeRouter.get("/incidents", async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("[time/incidents GET]", err);
-    res.status(500).json({ error: "Error al listar incidencias" });
+    return res.status(500).json({ error: "Error al listar incidencias" });
   }
 });
 
@@ -368,7 +368,7 @@ timeRouter.post("/incidents", async (req, res) => {
 
     res.status(201).json({ id: rows[0]!.id });
   } catch (err) {
-    res.status(500).json({ error: "Error al crear incidencia" });
+    return res.status(500).json({ error: "Error al crear incidencia" });
   }
 });
 
@@ -382,7 +382,7 @@ timeRouter.patch("/incidents/:id/resolve", async (req, res) => {
     `);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: "Error al resolver incidencia" });
+    return res.status(500).json({ error: "Error al resolver incidencia" });
   }
 });
 
@@ -411,7 +411,7 @@ timeRouter.get("/time-off", async (req, res) => {
     `));
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: "Error al listar solicitudes" });
+    return res.status(500).json({ error: "Error al listar solicitudes" });
   }
 });
 
@@ -445,7 +445,7 @@ timeRouter.post("/time-off", async (req, res) => {
 
     res.status(201).json({ id: rows[0]!.id });
   } catch (err) {
-    res.status(500).json({ error: "Error al crear solicitud" });
+    return res.status(500).json({ error: "Error al crear solicitud" });
   }
 });
 
@@ -476,6 +476,6 @@ timeRouter.patch("/time-off/:id/review", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: "Error al revisar solicitud" });
+    return res.status(500).json({ error: "Error al revisar solicitud" });
   }
 });
