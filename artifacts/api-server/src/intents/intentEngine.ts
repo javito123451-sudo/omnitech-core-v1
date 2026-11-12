@@ -145,36 +145,36 @@ const PATTERNS: Pattern[] = [
     intent: Intent.CREATE_MARKETING_CAMPAIGN,
     confidence: 0.96,
     patterns: [
-      /\\b(crea[r]?|prepara[r]?|monta[r]?|diseña[r]?|lanza[r]?)\\s+(una?\\s+)?campa[nñ]a\\b/i,
-      /\\b(nueva|crear|preparar|diseñar)\\s+campa[nñ]a(s)?\\s+(de\\s+)?marketing\\b/i,
-      /\\bquiero\\s+(una?\\s+)?campa[nñ]a\\s+(de\\s+)?marketing\\b/i,
+      /\b(crea[r]?|prepara[r]?|monta[r]?|diseña[r]?|lanza[r]?)\s+(una?\s+)?campa[nñ]a\b/i,
+      /\b(nueva|crear|preparar|diseñar)\s+campa[nñ]a(s)?\s+(de\s+)?marketing\b/i,
+      /\bquiero\s+(una?\s+)?campa[nñ]a\s+(de\s+)?marketing\b/i,
     ],
     paramExtractors: {
       name: (_m, text) => {
-        const quoted = text.match(/\\bcampa[nñ]a\\s+(?:llamada|titulada|denominada)\\s+["']([^"']{2,100})["']/i);
+        const quoted = text.match(/\bcampa[nñ]a\s+(?:llamada|titulada|denominada)\s+["']([^"']{2,100})["']/i);
         if (quoted?.[1]) return quoted[1].trim();
-        const named = text.match(/\\bcampa[nñ]a\\s+(?:llamada|titulada|denominada)\\s+([^,.!?]{2,80})/i);
+        const named = text.match(/\bcampa[nñ]a\s+(?:llamada|titulada|denominada)\s+([^,.!?]{2,80})/i);
         if (named?.[1]) return named[1].trim();
-        const product = text.match(/\\bcampa[nñ]a\\s+(?:para\\s+promocionar|para\\s+promover|para\\s+vender)\\s+([^,.!?]{2,80})/i);
+        const product = text.match(/\bcampa[nñ]a\s+(?:para\s+promocionar|para\s+promover|para\s+vender)\s+([^,.!?]{2,80})/i);
         if (product?.[1]) return product[1].trim();
         return undefined;
       },
       channel: (_m, text) => {
-        if (/\\bwhatsapp\\b/i.test(text)) return "whatsapp";
-        if (/\\bsms\\b/i.test(text)) return "sms";
+        if (/\bwhatsapp\b/i.test(text)) return "whatsapp";
+        if (/\bsms\b/i.test(text)) return "sms";
         return "email";
       },
       subject: (_m, text) => {
-        const match = text.match(/\\basunto\\s*[:=]\\s*([^,.!?]{2,120})/i);
+        const match = text.match(/\basunto\s*[:=]\s*([^,.!?]{2,120})/i);
         return match?.[1]?.trim();
       },
       body: (_m, text) => {
-        const match = text.match(/\\bmensaje\\s*[:=]\\s*["']?(.{5,500})["']?$/i);
+        const match = text.match(/\bmensaje\s*[:=]\s*["']?(.{5,500})["']?$/i);
         return match?.[1]?.trim();
       },
       audience_filter: (_m, text) => {
-        if (/\\b(todos|toda)\\s+(mis\\s+)?clientes\\b/i.test(text)) return "all";
-        if (/\\b(leads|prospectos)\\b/i.test(text)) return "leads";
+        if (/\b(todos|toda)\s+(mis\s+)?clientes\b/i.test(text)) return "all";
+        if (/\b(leads|prospectos)\b/i.test(text)) return "leads";
         return "all";
       },
     },
@@ -183,8 +183,8 @@ const PATTERNS: Pattern[] = [
     intent: Intent.GET_MARKETING_CAMPAIGNS,
     confidence: 0.94,
     patterns: [
-      /\\b(ver|lista[r]?|mostrar|consultar)\\s+(mis\\s+)?campa[nñ]as\\b/i,
-      /\\b(campa[nñ]as\\s+(de\\s+)?marketing)\\b/i,
+      /\b(ver|lista[r]?|mostrar|consultar)\s+(mis\s+)?campa[nñ]as\b/i,
+      /\b(campa[nñ]as\s+(de\s+)?marketing)\b/i,
     ],
   },
   // ── CREATE_CLIENT ──
