@@ -195,7 +195,7 @@ async function generateTelegramAIReply(params: {
     .reverse()
     .map((m) => ({
       role:    m.direction === "outbound" ? ("assistant" as const) : ("user" as const),
-      content: m.memoryVal,
+      content: m.content,
     }));
 
   // ── Debug logging ────────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ async function generateTelegramAIReply(params: {
   );
   if (convHistory.length > 0) {
     console.log(`[TG Memoria] Historial (${convHistory.length} msgs):`,
-      convHistory.map((m, i) => `[${i}] ${m.role}: "${m.memoryVal.slice(0, 60)}"`).join(" | "),
+      convHistory.map((m, i) => `[${i}] ${m.role}: "${m.content.slice(0, 60)}"`).join(" | "),
     );
   } else {
     console.log(`[TG Memoria] ⚠️  Historial VACÍO — primera interacción o sin mensajes previos`);
@@ -214,7 +214,7 @@ async function generateTelegramAIReply(params: {
   // ── 2. Build context blocks ──────────────────────────────────────────────────
   const kbBlock = kbEntries.length > 0
     ? "\n\nBASE DE CONOCIMIENTO DE LA EMPRESA:\n" +
-      kbEntries.map((e) => `[${e.category.toUpperCase()}] **${e.title}**\n${e.memoryVal.slice(0, 400)}`).join("\n\n")
+      kbEntries.map((e) => `[${e.category.toUpperCase()}] **${e.title}**\n${e.content.slice(0, 400)}`).join("\n\n")
     : "";
 
   const memoryBlock = memories.length > 0
@@ -1732,7 +1732,7 @@ telegramRouter.get("/debug/:clientId", requirePermission("telegram.read"), async
       .reverse()
       .map((m) => ({
         role:      m.direction === "outbound" ? "assistant" : "user",
-        content:   m.memoryVal,
+        content:   m.content,
         isAi:      m.isAi,
         createdAt: m.createdAt,
         id:        m.id,
@@ -1757,7 +1757,7 @@ telegramRouter.get("/debug/:clientId", requirePermission("telegram.read"), async
         id:        m.id,
         direction: m.direction,
         isAi:      m.isAi,
-        content:   m.memoryVal.slice(0, 200),
+        content:   m.content.slice(0, 200),
         createdAt: m.createdAt,
       })),
       contextSentToModel: {
@@ -1819,7 +1819,7 @@ telegramRouter.get("/conversations", requirePermission("telegram.read"), async (
         company:             c.company,
         phone:               c.phone,
         email:               c.email,
-        lastMessage:         lastMsg?.memoryVal ?? null,
+        lastMessage:         lastMsg?.content ?? null,
         lastMessageAt:       lastMsg?.createdAt ?? null,
         lastMessageDirection: lastMsg?.direction ?? null,
         lastMessageIsAi:     lastMsg?.isAi ?? null,
@@ -1861,7 +1861,7 @@ telegramRouter.get("/conversations", requirePermission("telegram.read"), async (
         company:              null as string | null,
         phone:                null as string | null,
         email:                null as string | null,
-        lastMessage:          lastMsg?.memoryVal ?? null,
+        lastMessage:          lastMsg?.content ?? null,
         lastMessageAt:        lastMsg?.createdAt ?? null,
         lastMessageDirection: lastMsg?.direction ?? null,
         lastMessageIsAi:      lastMsg?.isAi ?? null,
