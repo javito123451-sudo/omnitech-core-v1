@@ -50,7 +50,7 @@ registerAction<AuditLogPayload>({
       action:     payload.action,
       targetType: payload.targetType,
       targetId:   payload.targetId !== undefined ? String(payload.targetId) : undefined,
-      details:    payload.details,
+      details:    payload.details ? { message: payload.details } : undefined,
     });
   },
 });
