@@ -340,7 +340,7 @@ importAiRouter.post("/upload", requirePermission("crm.write"), upload.single("fi
     } else if (branch === "XLSX") {
       const { default: ExcelJS } = await import("exceljs");
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(file.buffer);
+      await workbook.xlsx.load(file.buffer as unknown as Buffer);
       const worksheet = workbook.worksheets[0];
       const rows: Record<string, unknown>[] = [];
       const headers: string[] = [];
@@ -602,6 +602,6 @@ importAiRouter.get("/dashboard", requirePermission("analytics.read"), async (req
     totalRecords:  Number(tot.total_records  ?? 0),
     totalErrors:   Number(tot.total_errors   ?? 0),
     timeSavedMin:  Number(tot.total_records ?? 0) * 3,
-    byType: (byType as { rows: Array<{ detected_type: string; cnt: number }> }).rows,
+    byType: (byType as unknown as { rows: Array<{ detected_type: string; cnt: number }> }).rows,
   });
 });
