@@ -3,7 +3,7 @@ import { Router } from "express";
 import { clerkClient } from "@clerk/express";
 import { db, orgInvitationsTable, organizationsTable, usersTable, orgMembersTable } from "@workspace/db";
 import { eq, and, isNull, count } from "drizzle-orm";
-import { requireAuth, requireSuperAdmin, resolveOrg } from "../middlewares/auth";
+import { requireAuth, resolveOrg } from "../middlewares/auth";
 import { requirePermission, resolvePermissions } from "../middlewares/permissions";
 
 export const invitationsRouter = Router();
