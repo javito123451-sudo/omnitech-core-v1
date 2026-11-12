@@ -330,7 +330,7 @@ function formatCreateMarketingCampaign(data: Record<string, unknown>): string {
   const name = String(campaign["name"] ?? "Campaña");
   const channel = String(campaign["channel"] ?? "email");
   const hasBody = Boolean(campaign["body"]);
-  let text = `✅ **Borrador de campaña creado**\n\n**${name}** · #${id}\nCanal: ${channel}\nEstado: Borrador`;
+  let text = `✅ **Borrador de campaña creado**\n\n**${name}** · #${String(id)}\nCanal: ${channel}\nEstado: Borrador`;
   if (!hasBody) text += "\n\nTodavía falta redactar el contenido del mensaje.";
   text += "\n\nNo se ha enviado nada. Para lanzar la campaña tendrás que revisarla y confirmarlo desde Omni Marketing Hub.\n\n🔗 [Abrir Marketing Hub →](/marketing)";
   return text;
@@ -342,7 +342,7 @@ function formatListMarketingCampaigns(data: Record<string, unknown>): string {
   const lines = campaigns.slice(0, 20).map(c => {
     const status = String(c["status"] ?? "draft");
     const channel = String(c["channel"] ?? "email");
-    return `• **#${c["id"]} ${String(c["name"] ?? "Campaña")}** — ${status} · ${channel}`;
+    return `• **#${String(c["id"])} ${String(c["name"] ?? "Campaña")}** — ${status} · ${channel}`;
   });
   return `📣 **Campañas de marketing** — ${Number(data["total"] ?? campaigns.length)}\n\n${lines.join("\n")}\n\n🔗 [Abrir Marketing Hub →](/marketing)`;
 }
