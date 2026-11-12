@@ -917,10 +917,10 @@ accountingRouter.get("/summary", requirePermission("accounting.read"), async (re
       thisYear:  parseFloat(String(yearRevenue   ?? 0)) - parseFloat(String(yearExpenses  ?? 0)),
     },
     charts: {
-      monthlyRevenue:  (monthlyRevenue  as { rows: { month: string; revenue: string }[] }).rows.map(r => ({
+      monthlyRevenue:  (monthlyRevenue  as unknown as { rows: { month: string; revenue: string }[] }).rows.map(r => ({
         month: r.month, revenue: parseFloat(r.revenue ?? "0"),
       })),
-      monthlyExpenses: (monthlyExpenses as { rows: { month: string; amount: string }[] }).rows.map(r => ({
+      monthlyExpenses: (monthlyExpenses as unknown as { rows: { month: string; amount: string }[] }).rows.map(r => ({
         month: r.month, amount: parseFloat(r.amount ?? "0"),
       })),
     },
@@ -1144,7 +1144,7 @@ accountingRouter.patch("/invoices/:id/resolve-payment-notification", requirePerm
     await db.execute(sql`
       INSERT INTO audit_logs (actor_clerk_id, action, resource, resource_id, org_id, severity, meta, created_at)
       VALUES (
-        ${req.clerkId ?? 'unknown'},
+        ${req.clerkUserId ?? 'unknown'},
         ${action === "confirm" ? "payment_notification_confirmed" : "payment_notification_rejected"},
         'invoice',
         ${id},
@@ -1302,8 +1302,8 @@ publicAccountingRouter.get("/invoices/:token/pdf", async (req, res) => {
       paidAt:        inv.paidAt   ? new Date(inv.paidAt)   : null,
       createdAt:     new Date(inv.createdAt),
     },
-    client: inv.client ?? null,
-    items:  inv.items,
+    client: inv.client ? { ...inv.client, email: inv.client.email ?? "" } : null,
+    items:  inv.items.map((item, index) => ({ ...item, orderIndex: "orderIndex" in item ? Number(item.orderIndex) : index })),
   });
 
   res.setHeader("Content-Type", "application/pdf");
