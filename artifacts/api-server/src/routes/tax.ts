@@ -192,7 +192,7 @@ taxRouter.post("/obligations", requirePermission("tax.write"), async (req, res) 
       dueDate: new Date(dueDate), status: status || "pending",
     }).returning();
 
-    logAudit({ req, action: "tax_obligation_created", resource: "tax_obligation", resourceId: String(row.id), result: "success" });
+    logAudit({ req, action: "tax_obligation_created", resource: "tax_obligation", resourceId: String(row.id), result: "success", details: {} });
 
     res.json({ ...row, dueDate: row.dueDate.toISOString(), createdAt: row.createdAt.toISOString() });
   } catch (err) {
@@ -594,7 +594,7 @@ taxRouter.post("/documents", requirePermission("tax.write"), async (req, res) =>
       orgId, name, fileType, fileUrl, fileSize, category, fiscalYear, quarter,
     }).returning();
 
-    logAudit({ req, action: "tax_document_uploaded", resource: "tax_document", resourceId: String(row.id), result: "success" });
+    logAudit({ req, action: "tax_document_uploaded", resource: "tax_document", resourceId: String(row.id), result: "success", details: {} });
 
     res.json({ ...row, createdAt: row.createdAt.toISOString() });
   } catch (err) {
@@ -623,7 +623,7 @@ taxRouter.post("/documents/upload", requirePermission("tax.write"), taxDocUpload
       INSERT INTO tax_documents (org_id, name, file_type, file_size, file_data, category, fiscal_year, quarter, status)
       VALUES (${orgId}, ${file.originalname}, ${ext}, ${file.size}, ${base64}, ${category}, ${fiscalYear}, ${quarter}, 'pending')
       RETURNING id, org_id, name, file_type, file_size, category, fiscal_year, quarter, status, created_at
-    `) as unknown as { rows: Array<{ id: number; created_at: string }> };
+    `) as unknown as unknown as { rows: Array<{ id: number; created_at: string }> };
 
     const inserted = insertResult.rows[0];
 
@@ -663,7 +663,7 @@ taxRouter.get("/documents/:id/file", requirePermission("tax.read"), async (req, 
     const rows = await db.execute(sql`
       SELECT name, file_type, file_data FROM tax_documents
       WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
-    `) as unknown as { rows: Array<{ name: string; file_type: string; file_data: string | null }> };
+    `) as unknown as unknown as { rows: Array<{ name: string; file_type: string; file_data: string | null }> };
 
     const doc = rows.rows[0];
     if (!doc || !doc.file_data) { res.status(404).json({ error: "Documento no encontrado" }); return; }
@@ -785,7 +785,7 @@ taxRouter.get("/verifactu", requirePermission("tax.read"), async (req, res) => {
       WHERE org_id = ${orgId}
       ORDER BY created_at DESC
     `);
-    const invoices = (rows as { rows: any[] }).rows;
+    const invoices = (rows as unknown as { rows: any[] }).rows;
 
     const registered = invoices.filter(i => i.verifactu_registered_at !== null);
     const pending     = invoices.filter(i => i.verifactu_registered_at === null);
@@ -832,7 +832,7 @@ taxRouter.post("/verifactu/register/:invoiceId", requirePermission("tax.write"),
       WHERE id = ${invoiceId} AND org_id = ${orgId}
       LIMIT 1
     `);
-    const invoice = (invRows as { rows: any[] }).rows[0];
+    const invoice = (invRows as unknown as { rows: any[] }).rows[0];
     if (!invoice) {
       return res.status(404).json({ error: "Factura no encontrada" });
     }
@@ -848,12 +848,12 @@ taxRouter.post("/verifactu/register/:invoiceId", requirePermission("tax.write"),
       ORDER BY verifactu_registered_at DESC
       LIMIT 1
     `);
-    const prevHash = (prevRows as { rows: Array<{ verifactu_hash: string }> }).rows[0]?.verifactu_hash ?? "";
+    const prevHash = (prevRows as unknown as { rows: Array<{ verifactu_hash: string }> }).rows[0]?.verifactu_hash ?? "";
 
     const orgRows = await db.execute(sql`
       SELECT tax_id, legal_name, name FROM organizations WHERE id = ${orgId} LIMIT 1
     `);
-    const org = (orgRows as { rows: any[] }).rows[0];
+    const org = (orgRows as unknown as { rows: any[] }).rows[0];
     const nif = org?.tax_id ?? "";
 
     const timestamp = new Date().toISOString();
