@@ -330,21 +330,21 @@ function formatCreateMarketingCampaign(data: Record<string, unknown>): string {
   const name = String(campaign["name"] ?? "Campaña");
   const channel = String(campaign["channel"] ?? "email");
   const hasBody = Boolean(campaign["body"]);
-  let text = `✅ **Borrador de campaña creado**\\n\\n**${name}** · #${id}\\nCanal: ${channel}\\nEstado: Borrador`;
-  if (!hasBody) text += "\\n\\nTodavía falta redactar el contenido del mensaje.";
-  text += "\\n\\nNo se ha enviado nada. Para lanzar la campaña tendrás que revisarla y confirmarlo desde Omni Marketing Hub.\\n\\n🔗 [Abrir Marketing Hub →](/marketing)";
+  let text = `✅ **Borrador de campaña creado**\n\n**${name}** · #${id}\nCanal: ${channel}\nEstado: Borrador`;
+  if (!hasBody) text += "\n\nTodavía falta redactar el contenido del mensaje.";
+  text += "\n\nNo se ha enviado nada. Para lanzar la campaña tendrás que revisarla y confirmarlo desde Omni Marketing Hub.\n\n🔗 [Abrir Marketing Hub →](/marketing)";
   return text;
 }
 
 function formatListMarketingCampaigns(data: Record<string, unknown>): string {
   const campaigns = (data["campaigns"] as Record<string, unknown>[]) ?? [];
-  if (campaigns.length === 0) return "📣 **Campañas de marketing**\\n\\nTodavía no hay campañas creadas.\\n\\n🔗 [Abrir Marketing Hub →](/marketing)";
+  if (campaigns.length === 0) return "📣 **Campañas de marketing**\n\nTodavía no hay campañas creadas.\n\n🔗 [Abrir Marketing Hub →](/marketing)";
   const lines = campaigns.slice(0, 20).map(c => {
     const status = String(c["status"] ?? "draft");
     const channel = String(c["channel"] ?? "email");
     return `• **#${c["id"]} ${String(c["name"] ?? "Campaña")}** — ${status} · ${channel}`;
   });
-  return `📣 **Campañas de marketing** — ${Number(data["total"] ?? campaigns.length)}\\n\\n${lines.join("\\n")}\\n\\n🔗 [Abrir Marketing Hub →](/marketing)`;
+  return `📣 **Campañas de marketing** — ${Number(data["total"] ?? campaigns.length)}\n\n${lines.join("\n")}\n\n🔗 [Abrir Marketing Hub →](/marketing)`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -712,6 +712,7 @@ export function buildFallbackResponse(query: string, memories: MemoryEntry[]): s
     `💡 **Puedo ayudarte con:**`,
     `- Citas: *"Ver citas de hoy"* · *"Agenda una cita con [cliente]"*`,
     `- Clientes: *"Mis clientes"* · *"Dar de alta a [nombre]"*`,
+    `- Marketing: *"Crear una campaña de marketing"* · *"Ver mis campañas"*`,
     `- Presupuestos: *"Ver mis presupuestos"*`,
     `- Tareas: *"Mis tareas pendientes"* · *"Crear tarea: [texto]"*`,
     `- Análisis: *"¿Cómo va mi negocio?"*`,
