@@ -89,7 +89,7 @@ function buildMonthlyForecast(
 
 // ── Main endpoint ─────────────────────────────────────────────────────────────
 executiveRouter.get("/", requirePermission("analytics.read"), async (req, res) => {
-  const orgId = (req as Request & { orgId?: number }).orgId;
+  const orgId = (req as unknown as Request & { orgId?: number }).orgId;
   if (!orgId) { res.status(403).json({ error: "Sin organización" }); return; }
   const now   = new Date();
   const thirtyAgo      = new Date(now.getTime() - 30  * 86_400_000);
