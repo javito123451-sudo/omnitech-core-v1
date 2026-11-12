@@ -20,7 +20,8 @@ import { eq, and, desc, asc, gt, isNotNull, isNull, ne, inArray } from "drizzle-
 // ═══════════════════════════════════════════════════════════════════════════
 import { getProviderSingleton } from "../ai/types";
 import { executeSkill, getOpenAIFunctionsForChannel, isSkillAllowedForChannel } from "../skills";
-import { classifyIntent, intentToSkill, Intent } from "../intents/intentEngine";
+import { classifyIntent, intentToSkill } from "../intents/intentEngine";
+import { Intent } from "../intents/types";
 
 import {
   getWhatsAppCreds,
@@ -1064,7 +1065,7 @@ whatsappWebhookRouter.post("/webhook", (req, res) => {
         contactName:   (received.metadata?.profileName as string) ?? undefined,
         // Pass the business phone_number_id so processIncomingMessage can resolve
         // the correct org — critical for multi-tenant and for new contacts.
-        phoneNumberId: (received.metadata?.phoneNumberId as string) ?? undefined,
+        phoneNumberId: (received.metadata?.phoneNumberId as string) as string,
         signatureVerified,
       }).catch((err) => console.error("[WhatsApp Webhook] Processing error:", err));
       return;
