@@ -37,7 +37,7 @@ async function storeReport(
       )
       RETURNING id
     `);
-    const rows = result as { rows: Array<{ id: number }> };
+    const rows = result as unknown as { rows: Array<{ id: number }> };
     const id = rows.rows[0]?.id;
     if (id) return id;
   } catch (e) {
