@@ -143,7 +143,7 @@ export async function sendInvitationEmail(p: InvitationEmailParams): Promise<Sen
   }
 
   const from      = process.env["EMAIL_FROM"] ?? "OmniTech Core <onboarding@resend.dev>";
-  const roleLabel = p.role === "admin" ? "Administrador" : "Miembro";
+  const roleLabel = p.role === "owner" ? "Propietario" : p.role === "admin" ? "Administrador" : "Miembro";
   const expStr    = p.expiresAt.toLocaleDateString("es-ES", {
     day: "numeric", month: "long", year: "numeric",
   });
