@@ -8,27 +8,52 @@ import { sendInvitationEmail } from "../lib/email";
 export const billingRouter = Router();
 
 const STRIPE_API = "https://api.stripe.com/v1";
-const PLAN_CONFIG = {
-  starter: {
-    upfrontPrice: "price_1UbMxyR9AWvOm3bbLpfYwJmY",
-    monthlyPrice: "price_1UbMqGR9AWvOm3bbSwwafXBq",
-    amount: 29700,
-  },
-  professional: {
-    upfrontPrice: "price_1UbMy0R9AWvOm3bb09TiHws5",
-    monthlyPrice: "price_1UbMriR9AWvOm3bbqNkNX8Px",
-    amount: 74700,
-  },
-  enterprise: {
-    upfrontPrice: "price_1UbMy2R9AWvOm3bbno00rRoC",
-    monthlyPrice: "price_1UbMrkR9AWvOm3bbDVrnrewa",
-    annualPrice: "price_1UbMx3R9AWvOm3bbp9dkFSZk",
-    amount: 300000,
-    annualAmount: 1000000,
-  },
-} as const;
 
-type Plan = keyof typeof PLAN_CONFIG;
+type Plan = "starter" | "professional" | "enterprise";
+type PlanConfig = {
+  upfrontPrice: string;
+  monthlyPrice: string;
+  annualPrice?: string;
+};
+
+/**
+ * Stripe mode and price IDs are deliberately supplied per deployment.
+ * Never fall back to LIVE price IDs: a missing TEST configuration must fail
+ * closed instead of accidentally creating a real Checkout session.
+ */
+function stripeMode(): "test" | "live" {
+  const mode = process.env.STRIPE_MODE;
+  if (mode !== "test" && mode !== "live") {
+    throw new Error("STRIPE_MODE debe ser 'test' o 'live'");
+  }
+  return mode;
+}
+
+function stripePrice(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value || !value.startsWith("price_")) {
+    throw new Error(`Falta configurar un identificador Stripe válido en ${name}`);
+  }
+  return value;
+}
+
+function getPlanConfig(): Record<Plan, PlanConfig> {
+  return {
+    starter: {
+      upfrontPrice: stripePrice("STRIPE_PRICE_STARTER_UPFRONT"),
+      monthlyPrice: stripePrice("STRIPE_PRICE_STARTER_MONTHLY"),
+    },
+    professional: {
+      upfrontPrice: stripePrice("STRIPE_PRICE_PROFESSIONAL_UPFRONT"),
+      monthlyPrice: stripePrice("STRIPE_PRICE_PROFESSIONAL_MONTHLY"),
+    },
+    enterprise: {
+      upfrontPrice: stripePrice("STRIPE_PRICE_ENTERPRISE_UPFRONT"),
+      monthlyPrice: stripePrice("STRIPE_PRICE_ENTERPRISE_MONTHLY"),
+      annualPrice: stripePrice("STRIPE_PRICE_ENTERPRISE_ANNUAL"),
+    },
+  };
+}
 
 
 async function provisionPaidCustomer(session: Record<string, unknown>, metadata: Record<string, string>, plan: Plan): Promise<void> {
@@ -134,8 +159,14 @@ function addUtcMonthsClamped(from: Date, months: number): Date {
 }
 
 function stripeKey(): string {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) throw new Error("STRIPE_SECRET_KEY no está configurada");
+
+  const mode = stripeMode();
+  const validPrefixes = mode === "test" ? ["sk_test_", "rk_test_"] : ["sk_live_", "rk_live_"];
+  if (!validPrefixes.some((prefix) => key.startsWith(prefix))) {
+    throw new Error(`STRIPE_MODE='${mode}' no coincide con el tipo de clave STRIPE_SECRET_KEY`);
+  }
   return key;
 }
 
@@ -202,7 +233,9 @@ billingRouter.post("/checkout", requireAuth, resolveOrg, async (req, res) => {
       return;
     }
 
-    const config = PLAN_CONFIG[plan];
+    // Validate the API key/mode pair and load only the price IDs for this deployment.
+    stripeKey();
+    const config = getPlanConfig()[plan];
     const params = new URLSearchParams();
     params.set("mode", annual ? "subscription" : "payment");
     params.set("success_url", `${process.env.STRIPE_CHECKOUT_SUCCESS_URL ?? "https://app.omnitech-core.com/billing/success"}?session_id={CHECKOUT_SESSION_ID}`);
