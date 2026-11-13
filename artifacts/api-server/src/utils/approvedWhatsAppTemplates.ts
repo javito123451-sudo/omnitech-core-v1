@@ -19,7 +19,7 @@ export async function sendApprovedWhatsAppTemplate(
     logger.warn({ orgId, kind, hasCredentials: !!creds, hasTemplate: !!templateName }, "[WhatsAppAutomation] not configured; message skipped");
     return false;
   }
-  const to = toRaw.replace(/\\D/g, "");
+  const to = toRaw.replace(/\D/g, "");
   if (to.length < 8) return false;
   const response = await fetch(`https://graph.facebook.com/v19.0/${creds.phoneNumberId}/messages`, {
     method: "POST",
