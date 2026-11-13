@@ -7,6 +7,7 @@ import {
   organizationsTable,
 } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { sendApprovedWhatsAppTemplate } from "../utils/approvedWhatsAppTemplates";
 
 // Captación pública B2B de info.omnitech-core.com.
 // El workspace receptor se configura exclusivamente en el servidor mediante
@@ -24,6 +25,7 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
     const telefono = typeof body.telefono === "string" && body.telefono.trim()
       ? body.telefono.trim()
       : null;
+    const consentimientoWhatsapp = body.consentimientoWhatsapp === true;
 
     const missing: string[] = [];
     if (!nombre) missing.push("nombre");
@@ -62,6 +64,11 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
         error: "lead_destination_not_configured",
         message: "La captación no está disponible temporalmente.",
       });
+      return;
+    }
+
+    if (consentimientoWhatsapp && !telefono) {
+      res.status(400).json({ error: "phone_required_for_whatsapp_consent", message: "Indica un móvil para recibir mensajes por WhatsApp." });
       return;
     }
 
@@ -104,6 +111,7 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
             contactPerson: nombre,
             dolorPrincipal: necesidad,
             observaciones: necesidad,
+            notes: consentimientoWhatsapp ? "[WHATSAPP_OPT_IN]" : undefined,
             status: "lead",
             commercialStatus: "prospecto",
             updatedAt: new Date(),
@@ -128,7 +136,7 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
             fuenteLead: "info.omnitech-core.com",
             dolorPrincipal: necesidad,
             observaciones: necesidad,
-            notes: "Captado desde el formulario público de diagnóstico de info.omnitech-core.com",
+            notes: `Captado desde el formulario público de diagnóstico de info.omnitech-core.com${consentimientoWhatsapp ? "\\n[WHATSAPP_OPT_IN]" : ""}`,
           })
           .returning({ id: clientsTable.id });
         clientId = created.id;
@@ -142,10 +150,22 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
       "[publicDiagnosticLeadCapture] lead B2B guardado como prospecto en CRM",
     );
 
+    let whatsapp = "not_requested";
+    if (telefono && consentimientoWhatsapp) {
+      try {
+        const sent = await sendApprovedWhatsAppTemplate(orgId, telefono, "lead_welcome", [nombre, empresa]);
+        whatsapp = sent ? "sent" : "not_sent";
+      } catch (error) {
+        whatsapp = "not_sent";
+        logger.warn({ err: error, clientId: result.clientId }, "[publicDiagnosticLeadCapture] WhatsApp welcome failed");
+      }
+    }
+
     res.status(201).json({
       id: result.diagnosticId,
       clientId: result.clientId,
       status: "prospecto",
+      whatsapp,
     });
   } catch (err) {
     logger.error({ err }, "[publicDiagnosticLeadCapture] error al crear lead B2B");
