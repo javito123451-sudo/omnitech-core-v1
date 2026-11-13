@@ -116,6 +116,10 @@ billingRouter.post("/checkout", requireAuth, resolveOrg, async (req, res) => {
       params.set("line_items[0][price]", config.annualPrice!);
       params.set("line_items[0][quantity]", "1");
       params.set("subscription_data[metadata][omni_flow]", "enterprise_annual");
+      params.set("subscription_data[metadata][org_id]", String(orgId));
+      params.set("subscription_data[metadata][quote_id]", String(quoteId));
+      params.set("subscription_data[metadata][client_id]", String(client.id));
+      params.set("subscription_data[metadata][plan]", plan);
     }
     params.set("metadata[org_id]", String(orgId));
     params.set("metadata[quote_id]", String(quoteId));
