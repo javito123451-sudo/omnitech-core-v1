@@ -1250,6 +1250,16 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-BB: org_invitations.cancelled_at ensured");
 
+    // ── FIX-BC: Stripe webhook idempotency ─────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+        event_id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        processed_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    logger.info("[Migration] ✅ FIX-BC: stripe_webhook_events table ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");
