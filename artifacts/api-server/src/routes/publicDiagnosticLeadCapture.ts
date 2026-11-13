@@ -89,7 +89,7 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
         .returning({ id: b2bDiagnosticLeadsTable.id });
 
       const [existingClient] = await tx
-        .select({ id: clientsTable.id })
+        .select({ id: clientsTable.id, notes: clientsTable.notes })
         .from(clientsTable)
         .where(and(
           eq(clientsTable.orgId, orgId),
@@ -111,7 +111,7 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
             contactPerson: nombre,
             dolorPrincipal: necesidad,
             observaciones: necesidad,
-            notes: consentimientoWhatsapp ? "[WHATSAPP_OPT_IN]" : undefined,
+            notes: consentimientoWhatsapp ? `${existingClient.notes ?? ""}\\n[WHATSAPP_OPT_IN]`.trim() : existingClient.notes,
             status: "lead",
             commercialStatus: "prospecto",
             updatedAt: new Date(),
