@@ -72,12 +72,12 @@ async function provisionPaidCustomer(session: Record<string, unknown>, metadata:
   if (!checkoutEmail) throw new Error("Checkout pagado sin email de destinatario");
 
   const outcome = await db.transaction(async (tx) => {
-    await tx.execute(sql\`INSERT INTO stripe_customer_provisioning
+    await tx.execute(sql`INSERT INTO stripe_customer_provisioning
       (checkout_session_id, seller_org_id, client_id, customer_email, plan, status)
-      VALUES (\${sessionId}, \${sellerOrgId}, \${clientId}, \${checkoutEmail}, \${plan}, 'provisioning')
-      ON CONFLICT (checkout_session_id) DO NOTHING\`);
-    const locked = await tx.execute(sql\`SELECT customer_org_id, customer_email, status FROM stripe_customer_provisioning
-      WHERE checkout_session_id = \${sessionId} FOR UPDATE\`);
+      VALUES (${sessionId}, ${sellerOrgId}, ${clientId}, ${checkoutEmail}, ${plan}, 'provisioning')
+      ON CONFLICT (checkout_session_id) DO NOTHING`);
+    const locked = await tx.execute(sql`SELECT customer_org_id, customer_email, status FROM stripe_customer_provisioning
+      WHERE checkout_session_id = ${sessionId} FOR UPDATE`);
     const row = (locked as { rows: Array<{ customer_org_id: number | null; customer_email: string; status: string }> }).rows[0];
     if (!row) throw new Error("No se pudo reservar el aprovisionamiento del cliente");
 
@@ -98,8 +98,8 @@ async function provisionPaidCustomer(session: Record<string, unknown>, metadata:
         .where(and(eq(orgInvitationsTable.orgId, row.customer_org_id), eq(orgInvitationsTable.email, crmEmail)));
       if (!invitation) throw new Error("El workspace ya existe, pero no se encuentra su invitación; requiere revisión manual");
       if (invitation.acceptedAt) {
-        await tx.execute(sql\`UPDATE stripe_customer_provisioning SET status = 'provisioned', updated_at = NOW()
-          WHERE checkout_session_id = \${sessionId}\`);
+        await tx.execute(sql`UPDATE stripe_customer_provisioning SET status = 'provisioned', updated_at = NOW()
+          WHERE checkout_session_id = ${sessionId}`);
         return { action: "complete" as const };
       }
       if (invitation.cancelledAt || invitation.expiresAt <= new Date()) {
@@ -127,9 +127,9 @@ async function provisionPaidCustomer(session: Record<string, unknown>, metadata:
     await tx.insert(orgInvitationsTable).values({
       orgId: org.id, invitedBy: sellerUserId, email: crmEmail, role: "owner", token, expiresAt,
     });
-    await tx.execute(sql\`UPDATE stripe_customer_provisioning
-      SET customer_org_id = \${org.id}, customer_email = \${crmEmail}, status = 'email_pending', updated_at = NOW()
-      WHERE checkout_session_id = \${sessionId}\`);
+    await tx.execute(sql`UPDATE stripe_customer_provisioning
+      SET customer_org_id = ${org.id}, customer_email = ${crmEmail}, status = 'email_pending', updated_at = NOW()
+      WHERE checkout_session_id = ${sessionId}`);
     return { action: "send" as const, email: crmEmail, orgName, token, expiresAt, inviterName: seller.name };
   });
 
@@ -140,12 +140,12 @@ async function provisionPaidCustomer(session: Record<string, unknown>, metadata:
     role: "owner", acceptUrl: appUrl + "/invite/" + outcome.token, expiresAt: outcome.expiresAt,
   });
   if (!sent.ok) {
-    await db.execute(sql\`UPDATE stripe_customer_provisioning SET status = 'email_pending', updated_at = NOW()
-      WHERE checkout_session_id = \${sessionId}\`);
+    await db.execute(sql`UPDATE stripe_customer_provisioning SET status = 'email_pending', updated_at = NOW()
+      WHERE checkout_session_id = ${sessionId}`);
     throw new Error("Workspace creado, pero no se pudo enviar la invitación: " + (sent.error ?? "error de email"));
   }
-  await db.execute(sql\`UPDATE stripe_customer_provisioning SET status = 'invited', updated_at = NOW()
-    WHERE checkout_session_id = \${sessionId}\`);
+  await db.execute(sql`UPDATE stripe_customer_provisioning SET status = 'invited', updated_at = NOW()
+    WHERE checkout_session_id = ${sessionId}`);
 }
 
 function addUtcMonthsClamped(from: Date, months: number): Date {
