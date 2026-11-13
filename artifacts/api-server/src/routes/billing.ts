@@ -29,6 +29,16 @@ const PLAN_CONFIG = {
 
 type Plan = keyof typeof PLAN_CONFIG;
 
+function addUtcMonthsClamped(from: Date, months: number): Date {
+  const target = new Date(from.getTime());
+  const day = target.getUTCDate();
+  target.setUTCDate(1);
+  target.setUTCMonth(target.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target;
+}
+
 function stripeKey(): string {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("STRIPE_SECRET_KEY no está configurada");
@@ -170,8 +180,12 @@ billingRouter.post("/webhook", async (req, res) => {
         const intent = await stripeRequest(`/payment_intents/${paymentIntentId}`, "GET");
         const paymentMethod = String(intent.payment_method ?? "");
         if (!paymentMethod) throw new Error("No se ha guardado un método de pago para la renovación");
-        const trialEnd = new Date();
-        trialEnd.setUTCMonth(trialEnd.getUTCMonth() + 4);
+        // Anchor renewal to Checkout creation, not webhook delivery/retry time.
+        const checkoutCreated = Number(session.created ?? 0);
+        if (!Number.isFinite(checkoutCreated) || checkoutCreated <= 0) {
+          throw new Error("Checkout sin fecha de creación válida");
+        }
+        const trialEnd = addUtcMonthsClamped(new Date(checkoutCreated * 1000), 4);
         const subscriptionParams = new URLSearchParams();
         subscriptionParams.set("customer", customerId);
         subscriptionParams.set("default_payment_method", paymentMethod);
