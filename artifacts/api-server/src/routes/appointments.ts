@@ -9,6 +9,7 @@ import {
   DeleteAppointmentParams,
 } from "@workspace/api-zod";
 import { requirePermission } from "../middlewares/permissions";
+import { sendApprovedWhatsAppTemplate } from "../utils/approvedWhatsAppTemplates";
 
 export const appointmentsRouter = Router();
 
@@ -68,7 +69,7 @@ appointmentsRouter.post("/", requirePermission("calendar.write"), async (req, re
     const body = CreateAppointmentBody.parse(req.body);
 
     const [client] = await db
-      .select({ name: clientsTable.name, company: clientsTable.company })
+      .select({ name: clientsTable.name, company: clientsTable.company, phone: clientsTable.phone, notes: clientsTable.notes })
       .from(clientsTable)
       .where(and(eq(clientsTable.id, body.clientId), eq(clientsTable.orgId, orgId)));
 
@@ -101,6 +102,20 @@ appointmentsRouter.post("/", requirePermission("calendar.write"), async (req, re
       clientName: client.name,
       userId: req.userId,
     });
+
+    // Confirmación automática solo si el contacto dio consentimiento en el formulario.
+    if (client.phone && client.notes?.includes("[WHATSAPP_OPT_IN]")) {
+      try {
+        const dateTime = new Intl.DateTimeFormat("es-ES", {
+          dateStyle: "long", timeStyle: "short", timeZone: "Europe/Madrid",
+        }).format(appt.startTime);
+        await sendApprovedWhatsAppTemplate(orgId, client.phone, "appointment_confirmation", [
+          client.name, appt.title, dateTime,
+        ]);
+      } catch (error) {
+        console.warn("[appointments] WhatsApp confirmation failed:", String(error));
+      }
+    }
 
     res.status(201).json({
       ...appt,
