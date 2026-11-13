@@ -36,62 +36,92 @@ async function provisionPaidCustomer(session: Record<string, unknown>, metadata:
   const sellerOrgId = Number(metadata.org_id);
   const clientId = Number(metadata.client_id);
   const sellerUserId = Number(metadata.seller_user_id);
-  if (!sessionId || !Number.isInteger(sellerOrgId) || !Number.isInteger(clientId) || !Number.isInteger(sellerUserId)) {
+  if (!sessionId || !Number.isInteger(sellerOrgId) || sellerOrgId <= 0 ||
+      !Number.isInteger(clientId) || clientId <= 0 ||
+      !Number.isInteger(sellerUserId) || sellerUserId <= 0) {
     throw new Error("Checkout pagado sin identificadores válidos para crear el workspace del cliente");
   }
 
-  const emailFromCheckout = String(session.customer_email ?? ((session.customer_details as Record<string, unknown> | undefined)?.email ?? ""));
+  const details = session.customer_details as Record<string, unknown> | null | undefined;
+  const checkoutEmail = String(details?.email ?? session.customer_email ?? "").trim().toLowerCase();
+  if (!checkoutEmail) throw new Error("Checkout pagado sin email de destinatario");
+
   const outcome = await db.transaction(async (tx) => {
     await tx.execute(sql\`INSERT INTO stripe_customer_provisioning
       (checkout_session_id, seller_org_id, client_id, customer_email, plan, status)
-      VALUES (\${sessionId}, \${sellerOrgId}, \${clientId}, \${emailFromCheckout}, \${plan}, 'provisioning')
+      VALUES (\${sessionId}, \${sellerOrgId}, \${clientId}, \${checkoutEmail}, \${plan}, 'provisioning')
       ON CONFLICT (checkout_session_id) DO NOTHING\`);
-    const locked = await tx.execute(sql\`SELECT customer_org_id, customer_email FROM stripe_customer_provisioning
+    const locked = await tx.execute(sql\`SELECT customer_org_id, customer_email, status FROM stripe_customer_provisioning
       WHERE checkout_session_id = \${sessionId} FOR UPDATE\`);
-    const row = (locked as { rows: Array<{ customer_org_id: number | null; customer_email: string }> }).rows[0];
+    const row = (locked as { rows: Array<{ customer_org_id: number | null; customer_email: string; status: string }> }).rows[0];
     if (!row) throw new Error("No se pudo reservar el aprovisionamiento del cliente");
-    if (row.customer_org_id) return { already: true as const };
 
     const [client] = await tx.select().from(clientsTable)
       .where(and(eq(clientsTable.id, clientId), eq(clientsTable.orgId, sellerOrgId)));
     if (!client) throw new Error("No se encuentra el cliente asociado al Checkout");
+    const crmEmail = String(client.email ?? "").trim().toLowerCase();
+    if (!crmEmail || crmEmail !== checkoutEmail || crmEmail !== String(row.customer_email).trim().toLowerCase()) {
+      throw new Error("El email del Checkout no coincide con el email del cliente registrado en el CRM");
+    }
+
     const [seller] = await tx.select({ name: usersTable.name }).from(usersTable)
       .where(eq(usersTable.id, sellerUserId));
     if (!seller) throw new Error("No se encuentra el usuario vendedor que inició el Checkout");
 
-    const email = String(client.email || row.customer_email || "").trim().toLowerCase();
-    if (!email) throw new Error("El cliente no tiene un email válido");
-    const orgName = String(client.company || client.name || email.split("@")[0]).trim();
+    if (row.customer_org_id) {
+      const [invitation] = await tx.select().from(orgInvitationsTable)
+        .where(and(eq(orgInvitationsTable.orgId, row.customer_org_id), eq(orgInvitationsTable.email, crmEmail)));
+      if (!invitation) throw new Error("El workspace ya existe, pero no se encuentra su invitación; requiere revisión manual");
+      if (invitation.acceptedAt) {
+        await tx.execute(sql\`UPDATE stripe_customer_provisioning SET status = 'provisioned', updated_at = NOW()
+          WHERE checkout_session_id = \${sessionId}\`);
+        return { action: "complete" as const };
+      }
+      if (invitation.cancelledAt || invitation.expiresAt <= new Date()) {
+        throw new Error("La invitación del cliente está cancelada o caducada; requiere regeneración segura");
+      }
+      if (row.status === "invited" || row.status === "provisioned") return { action: "complete" as const };
+      return {
+        action: "send" as const, email: crmEmail, orgName: String(client.company || client.name),
+        token: invitation.token, expiresAt: invitation.expiresAt, inviterName: seller.name,
+      };
+    }
+
+    const orgName = String(client.company || client.name || crmEmail.split("@")[0]).trim();
     const slugBase = orgName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 42) || "cliente";
     const slug = slugBase + "-" + randomUUID().slice(0, 8);
     const [org] = await tx.insert(organizationsTable).values({
       name: orgName, slug, plan, status: "active", onboardingStatus: "pending",
-      email, country: "ES", timezone: "Europe/Madrid", language: "es", currency: "EUR",
+      email: crmEmail, country: "ES", timezone: "Europe/Madrid", language: "es", currency: "EUR",
     }).returning();
+    if (!org) throw new Error("No se pudo crear el workspace del cliente");
+
     const token = randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await tx.insert(orgInvitationsTable).values({
-      orgId: org.id, invitedBy: sellerUserId, email, role: "owner", token, expiresAt,
+      orgId: org.id, invitedBy: sellerUserId, email: crmEmail, role: "owner", token, expiresAt,
     });
     await tx.execute(sql\`UPDATE stripe_customer_provisioning
-      SET customer_org_id = \${org.id}, customer_email = \${email}, status = 'email_pending', updated_at = NOW()
+      SET customer_org_id = \${org.id}, customer_email = \${crmEmail}, status = 'email_pending', updated_at = NOW()
       WHERE checkout_session_id = \${sessionId}\`);
-    return { already: false as const, email, orgName, token, expiresAt, inviterName: seller.name };
+    return { action: "send" as const, email: crmEmail, orgName, token, expiresAt, inviterName: seller.name };
   });
 
-  if (outcome.already) return;
+  if (outcome.action === "complete") return;
   const appUrl = (process.env.APP_URL || process.env.FRONTEND_URL || "https://app.omnitech-core.com").replace(/\/$/, "");
   const sent = await sendInvitationEmail({
     to: outcome.email, inviterName: outcome.inviterName, orgName: outcome.orgName,
     role: "owner", acceptUrl: appUrl + "/invite/" + outcome.token, expiresAt: outcome.expiresAt,
   });
-  await db.execute(sql\`UPDATE stripe_customer_provisioning
-    SET status = \${sent.ok ? "invited" : "email_pending"}, updated_at = NOW()
+  if (!sent.ok) {
+    await db.execute(sql\`UPDATE stripe_customer_provisioning SET status = 'email_pending', updated_at = NOW()
+      WHERE checkout_session_id = \${sessionId}\`);
+    throw new Error("Workspace creado, pero no se pudo enviar la invitación: " + (sent.error ?? "error de email"));
+  }
+  await db.execute(sql\`UPDATE stripe_customer_provisioning SET status = 'invited', updated_at = NOW()
     WHERE checkout_session_id = \${sessionId}\`);
-  if (!sent.ok) console.error("[Stripe provisioning] Workspace creado; invitación pendiente de envío:", sent.error);
 }
-
 
 function addUtcMonthsClamped(from: Date, months: number): Date {
   const target = new Date(from.getTime());
@@ -189,6 +219,7 @@ billingRouter.post("/checkout", requireAuth, resolveOrg, async (req, res) => {
     } else {
       params.set("line_items[0][price]", config.annualPrice!);
       params.set("line_items[0][quantity]", "1");
+      params.set("metadata[omni_flow]", "enterprise_annual");
       params.set("subscription_data[metadata][omni_flow]", "enterprise_annual");
       params.set("subscription_data[metadata][org_id]", String(orgId));
       params.set("subscription_data[metadata][quote_id]", String(quoteId));
@@ -265,7 +296,7 @@ billingRouter.post("/webhook", async (req, res) => {
         subscriptionParams.set("metadata[omni_flow]", "quarterly_then_monthly");
         await stripeRequest("/subscriptions", "POST", subscriptionParams, `omni-subscription-${event.id}`);
         await provisionPaidCustomer(session, metadata, metadata.plan as Plan);
-      } else if (session.mode === "subscription" && session.payment_status === "paid" && metadata.plan === "enterprise") {
+      } else if (session.mode === "subscription" && session.payment_status === "paid" && metadata.omni_flow === "enterprise_annual" && metadata.plan === "enterprise") {
         await provisionPaidCustomer(session, metadata, "enterprise");
       }
     }
