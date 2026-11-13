@@ -111,7 +111,7 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
             contactPerson: nombre,
             dolorPrincipal: necesidad,
             observaciones: necesidad,
-            notes: consentimientoWhatsapp ? `${existingClient.notes ?? ""}\\n[WHATSAPP_OPT_IN]`.trim() : existingClient.notes,
+            notes: consentimientoWhatsapp ? `${existingClient.notes ?? ""}\n[WHATSAPP_OPT_IN]`.trim() : existingClient.notes,
             status: "lead",
             commercialStatus: "prospecto",
             updatedAt: new Date(),
@@ -136,7 +136,7 @@ publicDiagnosticLeadCaptureRouter.post("/", async (req, res) => {
             fuenteLead: "info.omnitech-core.com",
             dolorPrincipal: necesidad,
             observaciones: necesidad,
-            notes: `Captado desde el formulario público de diagnóstico de info.omnitech-core.com${consentimientoWhatsapp ? "\\n[WHATSAPP_OPT_IN]" : ""}`,
+            notes: `Captado desde el formulario público de diagnóstico de info.omnitech-core.com${consentimientoWhatsapp ? "\n[WHATSAPP_OPT_IN]" : ""}`,
           })
           .returning({ id: clientsTable.id });
         clientId = created.id;
