@@ -52,6 +52,7 @@ import { avaCoreRouter } from "./ava-core";
 import { agentsRouter } from "./agents";
 import { tasksRouter } from "./tasks";
 import { internalCronRouter } from "./internalCron";
+import { billingRouter } from "./billing";
 
 const router: IRouter = Router();
 
@@ -62,6 +63,9 @@ router.use("/auth", authRouter);
 // ── Client portal — public GET endpoints (no Clerk auth on reads) ─────────────
 // POST /portal/token uses its own requireAuth internally
 router.use("/portal", portalRouter);
+
+// Stripe Checkout and signed webhooks
+router.use("/billing", billingRouter);
 
 // ── Public invoice viewer — no auth, token-gated ──────────────────────────────
 router.use("/accounting-public", publicAccountingRouter);

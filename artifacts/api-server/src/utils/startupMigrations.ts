@@ -1250,6 +1250,32 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-BB: org_invitations.cancelled_at ensured");
 
+    // ── FIX-BC: Stripe webhook idempotency ─────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+        event_id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        processed_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    logger.info("[Migration] ✅ FIX-BC: stripe_webhook_events table ensured");
+
+
+    // FIX-BD: persist paid customer workspace provisioning, idempotent by Checkout session.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS stripe_customer_provisioning (
+      checkout_session_id TEXT PRIMARY KEY,
+      seller_org_id INTEGER NOT NULL REFERENCES organizations(id),
+      client_id INTEGER NOT NULL REFERENCES clients(id),
+      customer_org_id INTEGER REFERENCES organizations(id),
+      customer_email TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'provisioning',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS stripe_customer_provisioning_status_idx ON stripe_customer_provisioning(status, created_at)`);
+    logger.info("[Migration] FIX-BD: Stripe customer provisioning table ensured");
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

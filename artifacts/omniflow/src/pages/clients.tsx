@@ -2,6 +2,7 @@ import { useState, Component, type ErrorInfo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { AIQuoteModal } from "@/components/ai-quote-modal";
+import { BillingCheckoutModal } from "@/components/billing-checkout-modal";
 import { WhatsAppModal } from "@/components/whatsapp-modal";
 import {
   useListClients, useCreateClient, useUpdateClient, useDeleteClient,
@@ -983,6 +984,7 @@ function ClientProfileDialog({
   const deleteClient = useDeleteClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showQuote, setShowQuote]         = useState(false);
+  const [billingQuoteId, setBillingQuoteId] = useState<number | null>(null);
   const [showWhatsApp, setShowWhatsApp]   = useState(false);
   const [activeTab, setActiveTab] = useState<"info" | "prospeccion" | "autopilot" | "messages" | "historial" | "finanzas">("info");
   const [portalState, setPortalState] = useState<"idle" | "loading" | "copied" | "sent">("idle");
@@ -1323,6 +1325,15 @@ function ClientProfileDialog({
         clientCompany={client.company}
         defaultValue={client.value ? Number(client.value) : null}
         onClose={() => setShowQuote(false)}
+        onSaved={(quoteId) => { setShowQuote(false); setBillingQuoteId(quoteId); }}
+      />,
+      document.body
+    )}
+
+    {billingQuoteId !== null && createPortal(
+      <BillingCheckoutModal
+        quoteId={billingQuoteId}
+        onClose={() => setBillingQuoteId(null)}
       />,
       document.body
     )}

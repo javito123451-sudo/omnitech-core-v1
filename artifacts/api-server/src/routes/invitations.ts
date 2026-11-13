@@ -102,11 +102,18 @@ invitationsRouter.post("/:token/accept", requireAuth, async (req, res) => {
       } catch { /* non-fatal */ }
     }
 
-    const existing = await db.select({ id: orgMembersTable.id }).from(orgMembersTable).where(eq(orgMembersTable.userId, user.id));
+    const signedInEmail = (user.email ?? "").trim().toLowerCase();
+    if (!signedInEmail || signedInEmail !== inv.email.trim().toLowerCase()) {
+      res.status(403).json({ error: "La invitación solo puede aceptarse con la cuenta del email destinatario." }); return;
+    }
+    const existing = await db.select({ id: orgMembersTable.id }).from(orgMembersTable)
+      .where(and(eq(orgMembersTable.userId, user.id), eq(orgMembersTable.orgId, inv.orgId)));
     if (existing.length > 0) {
-      res.status(409).json({ error: "Ya perteneces a una organización. Para unirte a este equipo, necesitas una cuenta nueva." }); return;
+      res.status(409).json({ error: "Ya perteneces a este workspace." }); return;
     }
 
+    // A user can belong to multiple workspaces; the auth middleware resolves
+    // the active workspace through x-active-workspace.
     await db.insert(orgMembersTable).values({ orgId: inv.orgId, userId: user.id, role: inv.role });
     await db.update(orgInvitationsTable).set({ acceptedAt: new Date() }).where(eq(orgInvitationsTable.id, inv.id));
 
