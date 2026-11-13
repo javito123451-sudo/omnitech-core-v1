@@ -129,11 +129,13 @@ billingRouter.post("/checkout", requireAuth, resolveOrg, async (req, res) => {
       params.set("subscription_data[metadata][org_id]", String(orgId));
       params.set("subscription_data[metadata][quote_id]", String(quoteId));
       params.set("subscription_data[metadata][client_id]", String(client.id));
+      params.set("subscription_data[metadata][seller_user_id]", String(req.userId));
       params.set("subscription_data[metadata][plan]", plan);
     }
     params.set("metadata[org_id]", String(orgId));
     params.set("metadata[quote_id]", String(quoteId));
     params.set("metadata[client_id]", String(client.id));
+    params.set("metadata[seller_user_id]", String(req.userId));
     params.set("metadata[plan]", plan);
     params.set("metadata[recurring_consent]", "true");
     const session = await stripeRequest("/checkout/sessions", "POST", params, `omni-checkout-${orgId}-${quoteId}-${plan}-${annual ? "annual" : "quarterly"}`);
