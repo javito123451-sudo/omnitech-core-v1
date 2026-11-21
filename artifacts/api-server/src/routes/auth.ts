@@ -6,6 +6,7 @@ import { requireAuth } from "../middlewares/auth";
 import { hasPlatformRole, clearRoleCache } from "../middlewares/superAdmin";
 import { logAudit, shouldLogLogin } from "../utils/auditLogger";
 import { getOrgModuleVersion } from "../lib/moduleVersion";
+import { ALL_MODULE_SLUGS, PLAN_MODULES } from "../lib/planModules";
 
 // ── Blocklist check — returns true if the Clerk ID is permanently blocked ─────
 async function isBlockedClerkId(clerkUserId: string): Promise<boolean> {
@@ -117,33 +118,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     const primaryMembership = memberships.find(m => !m.isSuspended) ?? memberships[0] ?? null;
 
     // ── Plan-based module gating ───────────────────────────────────────────
-    // Canonical list of all known module slugs.
-    const ALL_MODULE_SLUGS = [
-      "crm", "ai_agents", "omni_agent_factory", "analytics", "integrations", "automations",
-      "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
-      "omni_marketing", "omni_ads", "omni_leads", "omni_seller", "omni_diagnostics",
-      "omni_security", "omni_docs", "quotes", "portal_cliente",
-      "knowledge_base", "a_medida", "omni_fleet", "omni_taller",
-    ] as const;
-
-    // Each plan defines which slugs are ALLOWED. DB configs can only RESTRICT
-    // within-plan modules; they cannot GRANT access beyond the plan limit.
-    const PLAN_MODULES: Record<string, readonly string[]> = {
-      // ── Current plans ─────────────────────────────────────────────────────
-      starter:         ["crm", "whatsapp", "omni_marketing", "knowledge_base",
-                        "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente"],
-      professional:    ["crm", "whatsapp", "omni_marketing", "knowledge_base",
-                        "omni_accounting", "ai_agents", "omni_agent_factory", "quotes", "portal_cliente",
-                        "automations", "integrations", "analytics", "omni_docs"],
-      business:        ALL_MODULE_SLUGS,
-      enterprise:      ALL_MODULE_SLUGS,
-      enterprise_plus: ALL_MODULE_SLUGS,
-      // ── Legacy plan names (backward compat) ───────────────────────────────
-      free:            ["crm"],
-      growth:          ["crm", "ai_agents", "omni_agent_factory", "analytics", "integrations", "automations", "omni_marketing"],
-      scale:           ALL_MODULE_SLUGS,
-    };
-
+    // Mapeo plan → módulos: fuente única en lib/planModules.ts (lo comparte OmniCommerce).
     const plan = primaryMembership?.orgPlan ?? "starter";
     const allowedSet = new Set<string>(PLAN_MODULES[plan] ?? ALL_MODULE_SLUGS);
 

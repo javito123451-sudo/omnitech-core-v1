@@ -12,9 +12,10 @@ import { aiCenterRouter } from "./ai-center-routes";
 import { clearModuleCache } from "../middlewares/requireModule";
 import { bumpOrgModuleVersion } from "../lib/moduleVersion";
 import { logAudit as _logAudit } from "../utils/auditLogger";
-import { sendInvitationEmail } from "../lib/email";
+import { deliverInvitation } from "../lib/invitationDelivery";
 import { randomUUID } from "crypto";
 import { creditsAdminRouter } from "./credits-admin";
+import { commerceAdminRouter } from "./commerce-admin";
 
 export const controlCenterRouter = Router();
 
@@ -348,7 +349,7 @@ controlCenterRouter.post("/workspaces/:id/invite-and-assign", async (req, res) =
     // Envío esperado (no fire-and-forget): el resultado real del proveedor se
     // guarda en la invitación y se devuelve a la UI. Un fallo de email NO
     // deshace la invitación — el admin puede reenviarla o copiar el enlace.
-    const delivery = await deliverInvitation(inv, req);
+    const delivery = await deliverInvitation(inv, invitationBaseUrl(req));
 
     await logAudit({
       actorClerkId: req.clerkUserId!,
@@ -386,38 +387,6 @@ function invitationBaseUrl(req: import("express").Request): string {
 }
 
 type InvitationRow = typeof orgInvitationsTable.$inferSelect;
-
-/** Envía el email de una invitación pendiente y guarda el resultado real. */
-async function deliverInvitation(
-  inv: InvitationRow,
-  req: import("express").Request,
-): Promise<{ emailSent: boolean; emailError: string | null; acceptUrl: string }> {
-  const acceptUrl = `${invitationBaseUrl(req)}/invite/${inv.token}`;
-  let emailSent = false;
-  let emailError: string | null = null;
-  try {
-    const [[org], [inviter]] = await Promise.all([
-      db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, inv.orgId)),
-      db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, inv.invitedBy)),
-    ]);
-    const result = await sendInvitationEmail({
-      to:          inv.email,
-      inviterName: inviter?.name ?? null,
-      orgName:     org?.name ?? "Tu organización",
-      role:        inv.role,
-      acceptUrl,
-      expiresAt:   inv.expiresAt,
-    });
-    emailSent = result.ok;
-    emailError = result.ok ? null : (result.error ?? "Error desconocido del proveedor de email");
-  } catch (err) {
-    emailError = String(err instanceof Error ? err.message : err);
-  }
-  await db.update(orgInvitationsTable)
-    .set({ lastSentAt: new Date(), lastSendError: emailError })
-    .where(eq(orgInvitationsTable.id, inv.id));
-  return { emailSent, emailError, acceptUrl };
-}
 
 function invitationStatus(inv: Pick<InvitationRow, "acceptedAt" | "expiresAt" | "cancelledAt">): "accepted" | "cancelled" | "expired" | "pending" {
   if (inv.acceptedAt) return "accepted";
@@ -507,7 +476,7 @@ controlCenterRouter.post("/invitations/:id/resend", async (req, res) => {
       renewed = true;
     }
 
-    const delivery = await deliverInvitation(current, req);
+    const delivery = await deliverInvitation(current, invitationBaseUrl(req));
 
     await logAudit({
       actorClerkId: req.clerkUserId!,
@@ -922,6 +891,9 @@ controlCenterRouter.post("/licenses", async (req, res) => {
 
 // ── OmniCredits: administración (consumo global, planes, precios, movimientos) ─
 controlCenterRouter.use("/credits", creditsAdminRouter);
+
+// ── OmniCommerce Control (pedidos, suscripciones, activación manual) ───────────
+controlCenterRouter.use("/commerce", commerceAdminRouter);
 
 // ── GET /audit ────────────────────────────────────────────────────────────────
 export interface AuditLogsFilter {

@@ -52,6 +52,7 @@ import { avaCoreRouter } from "./ava-core";
 import { agentsRouter } from "./agents";
 import { tasksRouter } from "./tasks";
 import { internalCronRouter } from "./internalCron";
+import { commerceWebhooksRouter } from "./commerceWebhooks";
 
 const router: IRouter = Router();
 
@@ -84,6 +85,8 @@ router.use("/fleet", fleetWebhookRouter);
 // ── OmniSeller Fase 5 — webhooks de Outreach (Resend) — public, autenticado
 // por firma Svix (no por sesión) ───────────────────────────────────────────────
 router.use("/outreach/webhooks", outreachWebhooksRouter);
+// OmniCommerce Bridge — webhooks de Shopify (públicos: autenticados por HMAC + dominio de tienda).
+router.use("/commerce/webhooks", commerceWebhooksRouter);
 
 // ── Public lead capture — formulario web de la landing, sin auth ──────────────
 // Prefijo propio "/leads-public", NO "/leads": evitamos deliberadamente

@@ -20,7 +20,8 @@ describe("módulo omni_agent_factory", () => {
   });
 
   it("el estado por plan y el módulo enviado al frontend lo incluyen; la migración hereda de ai_agents sin sobrescribir", () => {
-    const auth = src("routes/auth.ts");
+    // El mapeo plan → módulos vive en lib/planModules.ts (compartido por /auth/me y OmniCommerce).
+    const auth = src("routes/auth.ts") + src("lib/planModules.ts");
     expect(auth.match(/"omni_agent_factory"/g)!.length).toBeGreaterThanOrEqual(4);
     const mig = src("utils/startupMigrations.ts");
     expect(mig).toMatch(/SELECT mc\.org_id, 'omni_agent_factory', mc\.is_enabled, 'system-fix-ag'/);

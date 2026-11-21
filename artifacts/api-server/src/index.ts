@@ -7,6 +7,7 @@ import { startAutopilotScheduler } from "./utils/autopilotScheduler";
 import { startFollowupScheduler } from "./outreach/followup/followupEngine";
 import { startRecurringInvoiceScheduler } from "./utils/recurringInvoiceScheduler";
 import { initAIE } from "./aie";
+import { startCommercePolicyScheduler } from "./commerce/bridge";
 
 const rawPort = process.env["PORT"];
 
@@ -37,6 +38,8 @@ app.listen(port, (err) => {
       startRecurringInvoiceScheduler();
       // AIE starts after migrations so event handlers can safely query DB tables
       initAIE();
+      // OmniCommerce — necesita las tablas commerce_* (migración 0018).
+      if (process.env["NODE_ENV"] !== "test") startCommercePolicyScheduler();
     });
   scheduleAutoBackups();
   if (process.env["NODE_ENV"] !== "test") startAutopilotScheduler();

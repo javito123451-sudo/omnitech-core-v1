@@ -21,6 +21,7 @@ import { runAutopilotTick } from "../utils/autopilotScheduler";
 import { runDailyBackupJob } from "../utils/backupEngine";
 import { runFollowupTick } from "../outreach/followup/followupEngine";
 import { logger } from "../lib/logger";
+import { runCommercePolicyTick } from "../commerce/bridge";
 
 export const internalCronRouter: IRouter = Router();
 
@@ -86,6 +87,19 @@ internalCronRouter.post("/omniseller-followup", async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     logger.error({ err }, "[InternalCron] omniseller-followup falló");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// OmniCommerce — aplica políticas de suscripción (fin de gracia, cancelaciones).
+// Nunca borra datos: solo suspende la empresa. Frecuencia recomendada: cada hora.
+internalCronRouter.post("/commerce-policies", async (req, res) => {
+  if (!requireCronSecret(req, res)) return;
+  try {
+    const out = await runCommercePolicyTick();
+    res.json({ ok: true, ...out });
+  } catch (err) {
+    logger.error({ err }, "[InternalCron] commerce-policies falló");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

@@ -52,6 +52,7 @@ import RolesPage from "@/pages/control-center/roles";
 import InvitationsPage from "@/pages/control-center/invitations";
 import CCIntegrationsPage from "@/pages/control-center/integrations";
 import LicensesPage from "@/pages/control-center/licenses";
+import CommerceControlPage from "@/pages/control-center/commerce";
 import DiagnosticsPage from "@/pages/control-center/diagnostics";
 import AiCenterPage from "@/pages/control-center/ai-center";
 import BackupsPage from "@/pages/control-center/backups";
@@ -695,6 +696,13 @@ function AppRoutes() {
         <SuperAdminRoute>
           <ControlCenterLayout>
             <AuditPage />
+          </ControlCenterLayout>
+        </SuperAdminRoute>
+      </Route>
+      <Route path="/control-center/commerce">
+        <SuperAdminRoute>
+          <ControlCenterLayout>
+            <CommerceControlPage />
           </ControlCenterLayout>
         </SuperAdminRoute>
       </Route>

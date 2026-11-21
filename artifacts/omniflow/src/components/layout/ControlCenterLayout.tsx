@@ -4,7 +4,7 @@ import {
   Shield, LayoutDashboard, Building2, Users, Puzzle,
   Lock, ChevronRight, LogOut, Menu, X, Hexagon,
   Crown, Bot, Plug, ClipboardList, HardDrive,
-  Key, Activity, ShieldCheck, Rocket, Mail,
+  Key, Activity, ShieldCheck, Rocket, Mail, ShoppingBag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClerk } from "@clerk/react";
@@ -37,6 +37,12 @@ const ccNav = [
       { icon: Bot,          label: "IA",               href: "/control-center/ai-center"      },
       { icon: Plug,         label: "Integraciones",    href: "/control-center/integrations"   },
       { icon: Key,          label: "Licencias",        href: "/control-center/licenses"       },
+    ],
+  },
+  {
+    section: "Comercial",
+    items: [
+      { icon: ShoppingBag,  label: "OmniCommerce",     href: "/control-center/commerce"       },
     ],
   },
   {
