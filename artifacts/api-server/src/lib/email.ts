@@ -32,14 +32,26 @@ export interface SendEmailResult {
   error?: string;
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<SendEmailResult> {
+/** Opciones adicionales (todas opcionales; los llamadores existentes no las usan). */
+export interface SendEmailOptions {
+  /** Cabeceras extra, p. ej. List-Unsubscribe / List-Unsubscribe-Post (RFC 8058). */
+  headers?: Record<string, string>;
+  /** Versión en texto plano. */
+  text?: string;
+}
+
+export async function sendEmail(to: string, subject: string, html: string, opts: SendEmailOptions = {}): Promise<SendEmailResult> {
   const resend = getResend();
   if (!resend) {
     console.warn("[Email] RESEND_API_KEY no configurado — envío omitido.");
     return { ok: false, error: "RESEND_API_KEY no configurado" };
   }
   const from = process.env["EMAIL_FROM"] ?? "OmniTech Core <onboarding@resend.dev>";
-  const result = await resend.emails.send({ from, to, subject, html });
+  const result = await resend.emails.send({
+    from, to, subject, html,
+    ...(opts.headers ? { headers: opts.headers } : {}),
+    ...(opts.text ? { text: opts.text } : {}),
+  });
   if (result.error) return { ok: false, error: result.error.message ?? String(result.error) };
   return { ok: true, id: result.data?.id };
 }

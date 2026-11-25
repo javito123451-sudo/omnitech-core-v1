@@ -14,6 +14,11 @@ import { ImportFileError, MAX_IMPORT_BYTES, parseContactsFile } from "./importPa
 import { importContacts, ImportInputError } from "./importer";
 import { getContact, getImport, listContacts, listImports } from "./contacts";
 import { eraseContact, listConsents, unsubscribeContact } from "./consent";
+import { createTemplate, getTemplate, listTemplates, updateTemplate } from "./templates";
+import {
+  audiencePreview, campaignResults, cancelCampaign, CampaignError, createCampaign, duplicateCampaign, getCampaign, launchCampaign, listCampaignMessages,
+  listCampaigns, pauseCampaign, resumeCampaign, retryFailed, updateCampaign, type CampaignInput,
+} from "./engine/campaigns";
 
 export const reviewRouter: IRouter = Router();
 reviewRouter.use(requireReviewModule);
@@ -32,6 +37,7 @@ function pgCode(err: unknown): string | undefined {
 
 function bad(res: Response, err: unknown): boolean {
   if (err instanceof ValidationError) { res.status(400).json({ error: "invalid_input", issues: err.issues }); return true; }
+  if (err instanceof CampaignError) { res.status(err.status).json({ error: err.code, message: err.message, ...(err.detail ? { detail: err.detail } : {}) }); return true; }
   if (err instanceof ReviewInputError) { res.status(400).json({ error: "invalid_input", field: err.field, message: err.message }); return true; }
   return false;
 }
@@ -178,4 +184,119 @@ reviewRouter.post("/contacts/:id/erase", requirePermission("review.admin"), asyn
   if (!ok) { res.status(404).json({ error: "not_found" }); return; }
   await logAudit({ actorClerkId: req.clerkUserId ?? "unknown", action: "review.contact_erased", resource: "review_contact", resourceId: id, orgId: orgOf(req), severity: "warning", req });
   res.status(204).end();
+});
+
+// ── Plantillas ───────────────────────────────────────────────────────────────
+const templateSpec = {
+  channel: { type: "string", min: 1, max: 20, required: true }, name: { type: "string", min: 1, max: 200, required: true },
+  subject: { type: "string", max: 300, nullable: true }, body: { type: "string", min: 1, max: 5000, required: true },
+  waTemplateName: { type: "string", max: 512, nullable: true }, waLanguage: { type: "string", max: 10, nullable: true },
+} as const;
+type TemplateBody = { channel: string; name: string; subject?: string | null; body: string; waTemplateName?: string | null; waLanguage?: string | null };
+
+reviewRouter.get("/templates", requirePermission("review.read"), async (req, res) => { res.json({ templates: await listTemplates(orgOf(req)) }); });
+reviewRouter.get("/templates/:id", requirePermission("review.read"), async (req, res) => {
+  const id = parseId(req.params["id"]); if (id === null) { res.status(400).json({ error: "invalid_input" }); return; }
+  const t = await getTemplate(orgOf(req), id); if (!t) { res.status(404).json({ error: "not_found" }); return; }
+  res.json({ template: t });
+});
+reviewRouter.post("/templates", requirePermission("review.write"), async (req, res) => {
+  try {
+    const t = await createTemplate(orgOf(req), req.userId ?? null, parseObject<TemplateBody>(req.body, templateSpec));
+    await logAudit({ actorClerkId: req.clerkUserId ?? "unknown", action: "review.template_created", resource: "review_template", resourceId: t.id, orgId: orgOf(req), req });
+    res.status(201).json({ template: t });
+  } catch (err) { if (!bad(res, err)) throw err; }
+});
+reviewRouter.put("/templates/:id", requirePermission("review.write"), async (req, res) => {
+  try {
+    const id = parseId(req.params["id"]); if (id === null) { res.status(400).json({ error: "invalid_input" }); return; }
+    const t = await updateTemplate(orgOf(req), id, parseObject<TemplateBody>(req.body, templateSpec));
+    if (!t) { res.status(404).json({ error: "not_found" }); return; }
+    await logAudit({ actorClerkId: req.clerkUserId ?? "unknown", action: "review.template_updated", resource: "review_template", resourceId: id, orgId: orgOf(req), req });
+    res.json({ template: t });
+  } catch (err) { if (!bad(res, err)) throw err; }
+});
+
+// ── Campañas ─────────────────────────────────────────────────────────────────
+const CAMPAIGN_KEYS = ["name", "locationId", "templateId", "channel", "scheduleAt", "sendWindow", "ratePerMinute", "maxReminders", "reminderAfterDays", "audienceFilter"];
+function campaignInput(body: unknown): CampaignInput {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) throw new ValidationError([{ path: "", message: "Se esperaba un objeto JSON" }]);
+  const b = body as Record<string, unknown>;
+  const issues = Object.keys(b).filter((k) => !CAMPAIGN_KEYS.includes(k)).map((k) => ({ path: k, message: "Campo no permitido" }));
+  const num = (k: string) => { if (b[k] !== undefined && b[k] !== null && typeof b[k] !== "number") issues.push({ path: k, message: "Debe ser un número" }); };
+  ["locationId", "templateId", "ratePerMinute", "maxReminders", "reminderAfterDays"].forEach(num);
+  for (const k of ["name", "channel", "scheduleAt"]) if (b[k] !== undefined && b[k] !== null && typeof b[k] !== "string") issues.push({ path: k, message: "Debe ser texto" });
+  if (issues.length) throw new ValidationError(issues);
+  return b as CampaignInput;
+}
+const campaignId = (req: Request, res: Response): number | null => { const id = parseId(req.params["id"]); if (id === null) res.status(400).json({ error: "invalid_input" }); return id; };
+const auditCampaign = (req: Request, action: string, id: number, details?: Record<string, unknown>) =>
+  logAudit({ actorClerkId: req.clerkUserId ?? "unknown", action, resource: "review_campaign", resourceId: id, orgId: orgOf(req), details, req });
+
+reviewRouter.get("/campaigns", requirePermission("review.read"), async (req, res) => { res.json({ campaigns: await listCampaigns(orgOf(req)) }); });
+reviewRouter.post("/campaigns", requirePermission("review.write"), async (req, res) => {
+  try {
+    const c = await createCampaign(orgOf(req), req.userId ?? null, campaignInput(req.body));
+    await auditCampaign(req, "review.campaign_created", c.id, { name: c.name, channel: c.channel });
+    res.status(201).json({ campaign: c });
+  } catch (err) { if (!bad(res, err)) throw err; }
+});
+reviewRouter.get("/campaigns/:id", requirePermission("review.read"), async (req, res) => {
+  const id = campaignId(req, res); if (id === null) return;
+  const c = await getCampaign(orgOf(req), id); if (!c) { res.status(404).json({ error: "not_found" }); return; }
+  res.json({ campaign: c });
+});
+reviewRouter.put("/campaigns/:id", requirePermission("review.write"), async (req, res) => {
+  try {
+    const id = campaignId(req, res); if (id === null) return;
+    const c = await updateCampaign(orgOf(req), id, campaignInput(req.body)); if (!c) { res.status(404).json({ error: "not_found" }); return; }
+    await auditCampaign(req, "review.campaign_updated", id);
+    res.json({ campaign: c });
+  } catch (err) { if (!bad(res, err)) throw err; }
+});
+reviewRouter.post("/campaigns/:id/duplicate", requirePermission("review.write"), async (req, res) => {
+  const id = campaignId(req, res); if (id === null) return;
+  const c = await duplicateCampaign(orgOf(req), id, req.userId ?? null); if (!c) { res.status(404).json({ error: "not_found" }); return; }
+  await auditCampaign(req, "review.campaign_duplicated", c.id, { from: id });
+  res.status(201).json({ campaign: c });
+});
+reviewRouter.get("/campaigns/:id/audience", requirePermission("review.read"), async (req, res) => {
+  const id = campaignId(req, res); if (id === null) return;
+  const p = await audiencePreview(orgOf(req), id); if (!p) { res.status(404).json({ error: "not_found" }); return; }
+  res.json({ audience: p });
+});
+reviewRouter.post("/campaigns/:id/launch", requirePermission("review.write"), async (req, res) => {
+  try {
+    const id = campaignId(req, res); if (id === null) return;
+    const r = await launchCampaign(orgOf(req), id); if (!r) { res.status(404).json({ error: "not_found" }); return; }
+    await auditCampaign(req, "review.campaign_launched", id, { enqueued: r.enqueued, status: r.status });
+    res.json({ launch: r });
+  } catch (err) { if (!bad(res, err)) throw err; }
+});
+for (const [path, fn, action] of [["pause", pauseCampaign, "paused"], ["resume", resumeCampaign, "resumed"], ["cancel", cancelCampaign, "cancelled"]] as const) {
+  reviewRouter.post(`/campaigns/:id/${path}`, requirePermission("review.write"), async (req, res) => {
+    const id = campaignId(req, res); if (id === null) return;
+    const c = await fn(orgOf(req), id);
+    if (!c) { res.status(409).json({ error: "invalid_state", message: "La campaña no existe o su estado no permite esta acción." }); return; }
+    await auditCampaign(req, `review.campaign_${action}`, id);
+    res.json({ campaign: c });
+  });
+}
+reviewRouter.get("/campaigns/:id/results", requirePermission("review.read"), async (req, res) => {
+  const id = campaignId(req, res); if (id === null) return;
+  const r = await campaignResults(orgOf(req), id); if (!r) { res.status(404).json({ error: "not_found" }); return; }
+  res.json(r);
+});
+reviewRouter.get("/campaigns/:id/messages", requirePermission("review.read"), async (req, res) => {
+  const id = campaignId(req, res); if (id === null) return;
+  if (!(await getCampaign(orgOf(req), id))) { res.status(404).json({ error: "not_found" }); return; }
+  const q = req.query;
+  res.json(await listCampaignMessages(orgOf(req), id, { status: typeof q["status"] === "string" ? q["status"] : undefined, limit: asInt(q["limit"]), offset: asInt(q["offset"]) }));
+});
+reviewRouter.post("/campaigns/:id/retry-failed", requirePermission("review.write"), async (req, res) => {
+  const id = campaignId(req, res); if (id === null) return;
+  if (!(await getCampaign(orgOf(req), id))) { res.status(404).json({ error: "not_found" }); return; }
+  const n = await retryFailed(orgOf(req), id);
+  await auditCampaign(req, "review.campaign_retry_failed", id, { requeued: n });
+  res.json({ requeued: n });
 });

@@ -53,6 +53,7 @@ import { agentsRouter } from "./agents";
 import { tasksRouter } from "./tasks";
 import { internalCronRouter } from "./internalCron";
 import { reviewRouter } from "../review/routes";
+import { reviewPublicRouter } from "../review/publicRoutes";
 
 const router: IRouter = Router();
 
@@ -103,6 +104,13 @@ router.use("/leads-public", publicLeadCaptureLimiter, publicLeadCaptureRouter);
 // Leads B2B del propio SaaS (info.omnitech-core.com) — bajo el mismo
 // prefijo "/leads-public" para heredar su bypass de CORS (ver app.ts).
 router.use("/leads-public/diagnostico", publicLeadCaptureLimiter, publicDiagnosticLeadCaptureRouter);
+
+// Omni Review — enlaces públicos de seguimiento (clic) y baja; el token aleatorio de cada mensaje es la credencial.
+const reviewPublicLimiter = rateLimit({
+  windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false,
+  message: { error: "Demasiadas solicitudes. Inténtalo de nuevo en un minuto." },
+});
+router.use("/review-public", reviewPublicLimiter, reviewPublicRouter);
 
 router.use(requireAuth, resolveOrg, resolvePermissions);
 

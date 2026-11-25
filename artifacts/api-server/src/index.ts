@@ -5,6 +5,7 @@ import { autoSetupTelegramWebhooks } from "./routes/telegram";
 import { runStartupMigrations } from "./utils/startupMigrations";
 import { startAutopilotScheduler } from "./utils/autopilotScheduler";
 import { startFollowupScheduler } from "./outreach/followup/followupEngine";
+import { startReviewScheduler } from "./review/engine/worker";
 import { startRecurringInvoiceScheduler } from "./utils/recurringInvoiceScheduler";
 import { initAIE } from "./aie";
 
@@ -37,6 +38,8 @@ app.listen(port, (err) => {
       startRecurringInvoiceScheduler();
       // AIE starts after migrations so event handlers can safely query DB tables
       initAIE();
+      // Omni Review Bot — la cola de envíos arranca tras las migraciones (usa las tablas review_*).
+      if (process.env["NODE_ENV"] !== "test") startReviewScheduler();
     });
   scheduleAutoBackups();
   if (process.env["NODE_ENV"] !== "test") startAutopilotScheduler();
