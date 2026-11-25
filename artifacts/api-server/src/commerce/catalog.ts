@@ -12,6 +12,12 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
+/**
+ * DECISIÓN (25-nov-2026): el plan `business` NO se comercializa. En el código da acceso a TODOS los módulos
+ * (igual que enterprise), así que a 699 € canibalizaría a Enterprise (1.000 €). Sigue existiendo en BD
+ * (credit_plans / organizations.plan) solo como plan heredado para empresas que ya lo tengan: no se toca ni se borra.
+ * Autorizar o activar un plan fuera de PLAN_PRODUCTS se rechaza (ver capture.ts y activation.ts).
+ */
 export const PLAN_PRODUCTS = [
   { code: "plan_starter",      plan: "starter",      name: "Omnitech-Core Starter",      list: 14900,  promo: 9900 as number | null },
   { code: "plan_professional", plan: "professional", name: "Omnitech-Core Professional", list: 24900,  promo: null },
