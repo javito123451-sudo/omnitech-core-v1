@@ -208,6 +208,31 @@ DROP TABLE IF EXISTS commerce_capture_requests, activation_audit_logs, billing_h
 DROP FUNCTION IF EXISTS activation_audit_logs_immutable();
 `;
 
+/**
+ * Decisión (25-nov-2026): el plan `business` no se comercializa y se desactiva en credit_plans.
+ * ATENCIÓN: un plan inactivo deja de conceder créditos incluidos mensuales y de aplicar límites/alertas a las
+ * empresas que lo tengan. Por eso SOLO se desactiva si ninguna empresa (organizations.plan) ni licencia activa
+ * (license_plans) usa `business`; si alguna lo usa, no se toca y se avisa (se reintenta en cada arranque).
+ * Una sola vez: tras desactivarlo deja una marca y NO vuelve a forzarlo (un SUPER_ADMIN puede reactivarlo).
+ */
+export async function deactivateBusinessPlanOnce(): Promise<"done" | "already_done" | "skipped_in_use" | "no_plan"> {
+  const marker = (await db.execute(sql`SELECT 1 FROM commerce_settings WHERE key='business_plan_deactivated'`) as { rows: unknown[] }).rows;
+  if (marker.length) return "already_done";
+  const exists = (await db.execute(sql`SELECT 1 FROM credit_plans WHERE plan='business'`) as { rows: unknown[] }).rows;
+  if (!exists.length) return "no_plan";
+  const inUse = (await db.execute(sql`
+    SELECT (SELECT COUNT(*) FROM organizations WHERE plan='business')::int AS orgs,
+           (SELECT COUNT(*) FROM license_plans WHERE plan='business' AND is_active)::int AS licenses`) as { rows: { orgs: number; licenses: number }[] }).rows[0]!;
+  if (inUse.orgs > 0 || inUse.licenses > 0) {
+    console.warn(`[Commerce] plan business NO desactivado: en uso (${inUse.orgs} empresas, ${inUse.licenses} licencias activas)`);
+    return "skipped_in_use";
+  }
+  await db.execute(sql`UPDATE credit_plans SET active=FALSE, updated_at=NOW() WHERE plan='business'`);
+  await db.execute(sql`INSERT INTO commerce_settings (key, value) VALUES ('business_plan_deactivated','true') ON CONFLICT (key) DO NOTHING`);
+  return "done";
+}
+
 export async function runCommerceMigration(): Promise<void> {
   for (const stmt of COMMERCE_MIGRATION_SQL) await db.execute(sql.raw(stmt));
+  await deactivateBusinessPlanOnce().catch((e) => console.error("[Commerce] no se pudo evaluar la desactivación de business:", e));
 }

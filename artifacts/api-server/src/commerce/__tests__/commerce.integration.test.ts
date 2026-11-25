@@ -19,7 +19,7 @@ vi.mock("../../middlewares/superAdmin", () => ({
   },
 }));
 
-import { runCommerceMigration } from "../migration";
+import { runCommerceMigration, deactivateBusinessPlanOnce } from "../migration";
 import { seedCatalog } from "../catalog";
 import { signShopifyBody } from "../hmac";
 import { commerceWebhookRouter } from "../../routes/commerceWebhook";
@@ -479,5 +479,32 @@ describe.skipIf(!hasRealDb)("OmniCommerce Bridge — escenarios", () => {
     const r = await call("PATCH", "/settings", { key: "auto_activate_when_paid_and_authorized", value: true });
     expect(r.status).toBe(200); expect(r.json.policy.autoActivateWhenPaidAndAuthorized).toBe(true);
     await setAuto(false);
+  });
+
+  // ── Plan Business: no se comercializa y se desactiva (solo si nadie lo usa) ──
+  const bizActive = async () => (await rows(sql`SELECT active FROM credit_plans WHERE plan='business'`))[0].active;
+  const resetBiz = async () => { await db.execute(sql`DELETE FROM commerce_settings WHERE key='business_plan_deactivated'`); await db.execute(sql`UPDATE credit_plans SET active=TRUE WHERE plan='business'`); };
+
+  it("D1. Business se desactiva una sola vez; no se vuelve a forzar si un admin lo reactiva", async () => {
+    await resetBiz();
+    expect(await deactivateBusinessPlanOnce()).toBe("done"); expect(await bizActive()).toBe(false);
+    expect(await deactivateBusinessPlanOnce()).toBe("already_done");
+    await db.execute(sql`UPDATE credit_plans SET active=TRUE WHERE plan='business'`);   // reactivación por un SUPER_ADMIN
+    await runCommerceMigration(); expect(await bizActive()).toBe(true);                 // el arranque no lo vuelve a desactivar
+    // el catálogo comercial nunca lo ofrece
+    expect((await rows(sql`SELECT COUNT(*)::int c FROM commerce_products WHERE plan='business'`))[0].c).toBe(0);
+    await db.execute(sql`UPDATE credit_plans SET active=FALSE WHERE plan='business'`);
+  });
+
+  it("D2. Si una empresa o licencia activa usa Business, NO se desactiva (evita quitarle créditos y límites)", async () => {
+    await resetBiz();
+    const slug = `biz-test-${Date.now()}`;
+    const org = (await rows(sql`INSERT INTO organizations (name, slug, plan) VALUES (${slug}, ${slug}, 'business') RETURNING id`))[0];
+    expect(await deactivateBusinessPlanOnce()).toBe("skipped_in_use"); expect(await bizActive()).toBe(true);
+    await db.execute(sql`UPDATE organizations SET plan='starter' WHERE id=${org.id}`);
+    await db.execute(sql`INSERT INTO license_plans (org_id, plan, is_active) VALUES (${org.id}, 'business', TRUE)`);
+    expect(await deactivateBusinessPlanOnce()).toBe("skipped_in_use"); expect(await bizActive()).toBe(true);
+    await db.execute(sql`UPDATE license_plans SET is_active=FALSE WHERE org_id=${org.id}`);
+    expect(await deactivateBusinessPlanOnce()).toBe("done"); expect(await bizActive()).toBe(false);
   });
 });

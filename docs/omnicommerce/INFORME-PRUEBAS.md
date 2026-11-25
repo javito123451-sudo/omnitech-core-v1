@@ -1,7 +1,7 @@
 # Informe de pruebas — OmniCommerce Bridge (2026-11-25)
 
 Entorno: PostgreSQL 16 local desechable con las migraciones Drizzle del proyecto (0000–0017) + migración comercial. Webhooks firmados con HMAC de **prueba**. Sin Shopify real, sin cobros, email simulado.
-Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec vitest run src/commerce` → **35/35 correctos**, repetido 3 veces seguidas sobre la misma BD (idempotencia de migración y de pruebas). Suite existente sin BD real: 332 correctos, 0 fallos. `tsc`: sin errores nuevos (base previa de 185).
+Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec vitest run src/commerce` → **37/37 correctos**, repetido 3 veces seguidas sobre la misma BD (idempotencia de migración y de pruebas). Suite existente sin BD real: 332 correctos, 0 fallos. `tsc`: sin errores nuevos (base previa de 185).
 
 | # | Escenario | Resultado |
 |---|---|---|
@@ -42,6 +42,12 @@ Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec v
 | A6 | No puede activarse ⇒ queda pendiente, se audita una vez, el admin la resuelve | ✅ |
 | A7 | Ajuste editable solo por SUPER_ADMIN, con validación | ✅ |
 Nota de pruebas: los escenarios 1–15 y C1–C7 se ejecutan con el ajuste desactivado (para probar la activación manual); A1–A7 lo activan.
+
+### Plan Business
+| # | Escenario | Resultado |
+|---|---|---|
+| D1 | Se desactiva una sola vez; si un admin lo reactiva, el arranque no lo vuelve a forzar; el catálogo comercial no lo ofrece | ✅ |
+| D2 | Con una empresa o licencia activa en Business NO se desactiva; cuando ya no se usa, sí | ✅ |
 
 ## Errores encontrados y corregidos durante las pruebas
 1. La restricción `sellable` dejaba vender módulos "a presupuesto" sin precio → endurecida (`NOT sellable OR list_price_cents IS NOT NULL`).
