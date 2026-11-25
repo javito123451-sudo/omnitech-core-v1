@@ -1,0 +1,8 @@
+src/__tests__/no-spinner-flash.test.tsx: error TS2554: Expected 1 arguments, but got 2.
+src/__tests__/setup.ts: error TS2304: Cannot find name 'afterEach'.
+src/__tests__/setup.ts: error TS2304: Cannot find name 'beforeEach'.
+src/lib/aceContext.tsx: error TS2339: Property 'isLoaded' does not exist on type 'OrgContextValue'.
+src/pages/marketing.tsx: error TS2322: Type '{ icon: Element; label: string; onClick: () => void; danger: true; }' is not assignable to type 'IntrinsicAttributes & { icon?: ReactNode; label: string; onClick: () => void; variant?: "default" | "warning" | "danger" | undefined; }'.
+src/pages/marketing.tsx: error TS2322: Type '{ icon: Element; label: string; onClick: () => void; disabled: boolean; }' is not assignable to type 'IntrinsicAttributes & { icon?: ReactNode; label: string; onClick: () => void; variant?: "default" | "warning" | "danger" | undefined; }'.
+src/pages/marketing.tsx: error TS2322: Type '{ icon: Element; label: string; onClick: () => void; disabled: true; }' is not assignable to type 'IntrinsicAttributes & { icon?: ReactNode; label: string; onClick: () => void; variant?: "default" | "warning" | "danger" | undefined; }'.
+src/pages/tax/index.tsx: error TS2353: Object literal may only specify known properties, and 'color' does not exist in type '{ id: Tab; label: string; icon: ElementType<any, keyof IntrinsicElements>; minRole: string; }'.

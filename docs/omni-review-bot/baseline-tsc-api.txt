@@ -1,0 +1,185 @@
+src/action-engine/actions/builtins.ts: error TS2322: Type 'string | undefined' is not assignable to type 'Record<string, unknown> | undefined'.
+src/action-engine/executor.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/diagnostics/diagnosticEngine.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/hub/adapters/whatsappAdapter.ts: error TS2339: Property 'message' does not exist on type '{}'.
+src/hub/adapters/whatsappAdapter.ts: error TS2339: Property 'message' does not exist on type '{}'.
+src/hub/integrationManager.ts: error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+src/hub/integrationManager.ts: error TS2352: Conversion of type '{ id: number; orgId: number; integrationSlug: string; status: string; config: string | null; credentialsEnc: string | null; displayName: string | null; externalId: string | null; lastSyncedAt: Date | null; expiresAt: Date | null; errorMessage: string | null; createdAt: Date; updatedAt: Date; }' to type 'IntegrationRecord' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/accounting.ts: error TS2322: Type '{ id: number; description: string; quantity: number; unitPrice: number; total: number; }[]' is not assignable to type '{ description: string; quantity: number; unitPrice: number; total: number; orderIndex: number; }[]'.
+src/routes/accounting.ts: error TS2322: Type '{ name: string; company: string | null; email: string | null; phone: string | null; } | null' is not assignable to type '{ name: string; company: string | null; email: string; phone: string | null; } | null'.
+src/routes/accounting.ts: error TS2339: Property 'clerkId' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+src/routes/accounting.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { month: string; amount: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/accounting.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { month: string; revenue: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/ads.ts: error TS18046: 'acc.clicks' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'acc.conversions' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'acc.impressions' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'acc.leads' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'acc.spend' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'totals.clicks' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'totals.clicks' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'totals.clicks' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'totals.impressions' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'totals.impressions' is of type 'unknown'.
+src/routes/ads.ts: error TS18046: 'totals.leads' is of type 'unknown'.
+src/routes/ads.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/ads.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/ads.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/ads.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/ads.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/ads.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/ads.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/ai-center-routes.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { model: string; calls: number; cost_usd: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/auth.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; clerk_user_id: string; role: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/auth.ts: error TS2769: No overload matches this call.
+src/routes/calendar-ai.ts: error TS2352: Conversion of type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>' to type 'Request & { clerkUserId?: string | undefined; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/calendar-ai.ts: error TS2352: Conversion of type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>' to type 'Request & { orgId?: number | undefined; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/chat.ts: error TS2304: Cannot find name 'h'.
+src/routes/chat.ts: error TS2304: Cannot find name 'm'.
+src/routes/chat.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/chat.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/chat.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/chat.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/chat.ts: error TS2339: Property 'page' does not exist on type 'ClientContext'.
+src/routes/chat.ts: error TS2339: Property 'page' does not exist on type 'ClientContext'.
+src/routes/chat.ts: error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+src/routes/chat.ts: error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+src/routes/chat.ts: error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+src/routes/chat.ts: error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+src/routes/chat.ts: error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+src/routes/chat.ts: error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+src/routes/chat.ts: error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+src/routes/chat.ts: error TS2353: Object literal may only specify known properties, and 'embedding' does not exist in type 'PgUpdateSetSource<PgTableWithColumns<{ name: "agent_memory"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "agent_memory"; dataType: "number"; columnType: "PgSerial"; data: number; driverParam: number; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 9 more ...; updatedAt: P...'.
+src/routes/chat.ts: error TS2503: Cannot find namespace 'OpenAI'.
+src/routes/chat.ts: error TS2503: Cannot find namespace 'OpenAI'.
+src/routes/chat.ts: error TS2769: No overload matches this call.
+src/routes/chat.ts: error TS2769: No overload matches this call.
+src/routes/chat.ts: error TS2769: No overload matches this call.
+src/routes/clients.ts: error TS7030: Not all code paths return a value.
+src/routes/clients.ts: error TS7030: Not all code paths return a value.
+src/routes/clients.ts: error TS7030: Not all code paths return a value.
+src/routes/control-center.ts: error TS2304: Cannot find name 'expensesTable'.
+src/routes/control-center.ts: error TS2304: Cannot find name 'expensesTable'.
+src/routes/control-center.ts: error TS2304: Cannot find name 'invoicesTable'.
+src/routes/control-center.ts: error TS2304: Cannot find name 'invoicesTable'.
+src/routes/control-center.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { calls: string; tokens: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/control-center.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { cnt: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/control-center.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { cnt: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/control-center.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { cnt: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/control-center.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { role: string; scope: string; description: string; priority: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/control-center.ts: error TS2353: Object literal may only specify known properties, and 'ownerId' does not exist in type '{ name?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; slug?: string | SQL<unknown> | PgColumn<...> | undefined; ... 25 more ...; language?: string | ... 3 more ... | undefined; }'.
+src/routes/control-center.ts: error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type 'PgUpdateSetSource<PgTableWithColumns<{ name: "org_members"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "org_members"; dataType: "number"; columnType: "PgSerial"; data: number; driverParam: number; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 4 more ...; joinedAt: PgCo...'.
+src/routes/control-center.ts: error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type 'PgUpdateSetSource<PgTableWithColumns<{ name: "org_members"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "org_members"; dataType: "number"; columnType: "PgSerial"; data: number; driverParam: number; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 4 more ...; joinedAt: PgCo...'.
+src/routes/control-center.ts: error TS2769: No overload matches this call.
+src/routes/control-center.ts: error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type '{ count: number; }'.
+src/routes/dashboard.ts: error TS2339: Property 'id' does not exist on type '{ stageId: number; name: string; color: string | null; count: number; value: number; }'.
+src/routes/dashboard.ts: error TS2339: Property 'id' does not exist on type '{ stageId: number; name: string; color: string | null; count: number; value: number; }'.
+src/routes/diagnostics.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { count: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/docs.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS2769: No overload matches this call.
+src/routes/docs.ts: error TS7030: Not all code paths return a value.
+src/routes/docs.ts: error TS7030: Not all code paths return a value.
+src/routes/docs.ts: error TS7030: Not all code paths return a value.
+src/routes/docs.ts: error TS7030: Not all code paths return a value.
+src/routes/docs.ts: error TS7030: Not all code paths return a value.
+src/routes/executive.ts: error TS2339: Property 'quoteNumber' does not exist on type '{ id: number; orgId: number; clientId: number; title: string; status: string; currency: string; subtotal: number; taxRate: number; taxAmount: number; total: number; notes: string | null; validUntil: Date | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/executive.ts: error TS2352: Conversion of type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>' to type 'Request & { orgId?: number | undefined; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/executive.ts: error TS2352: Conversion of type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>' to type 'Request & { orgId?: number | undefined; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/executive.ts: error TS2352: Conversion of type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>' to type 'Request & { orgId?: number | undefined; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/import-ai.ts: error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'Buffer'.
+src/routes/import-ai.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { detected_type: string; cnt: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/import-ai.ts: error TS2769: No overload matches this call.
+src/routes/import-ai.ts: error TS7030: Not all code paths return a value.
+src/routes/invitations.ts: error TS2305: Module '"../middlewares/auth"' has no exported member 'requireSuperAdmin'.
+src/routes/invitations.ts: error TS2769: No overload matches this call.
+src/routes/invitations.ts: error TS2769: No overload matches this call.
+src/routes/marketing.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/marketing.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/marketing.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/marketing.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/marketing.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/marketing.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/memory.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/memory.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/memory.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/memory.ts: error TS2339: Property 'embedding' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/memory.ts: error TS2353: Object literal may only specify known properties, and 'embedding' does not exist in type 'PgUpdateSetSource<PgTableWithColumns<{ name: "agent_memory"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "agent_memory"; dataType: "number"; columnType: "PgSerial"; data: number; driverParam: number; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 9 more ...; updatedAt: P...'.
+src/routes/memory.ts: error TS2353: Object literal may only specify known properties, and 'embedding' does not exist in type '{ orgId?: number | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; agentSlug?: string | SQL<...> | PgColumn<...> | undefined; ... 8 more ...; category?: string | ... 3 more ... | undefined; }'.
+src/routes/memory.ts: error TS2769: No overload matches this call.
+src/routes/messages.ts: error TS2339: Property 'message' does not exist on type '{ clientId: number; lastMessage: string; context?: string | undefined; }'.
+src/routes/messages.ts: error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+src/routes/messages.ts: error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+src/routes/messages.ts: error TS7006: Parameter 'req' implicitly has an 'any' type.
+src/routes/messages.ts: error TS7006: Parameter 'res' implicitly has an 'any' type.
+src/routes/pipeline.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/portal.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { client_id: number; org_id: number; expires_at: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/portal.ts: error TS2488: Type '{ rows: { name: string; }[]; }' must have a '[Symbol.iterator]()' method that returns an iterator.
+src/routes/quotes.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/quotes.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/quotes.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/quotes.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/quotes.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/support.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/support.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/support.ts: error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+src/routes/tax.ts: error TS2322: Type 'SQL<unknown> | undefined' is not assignable to type 'SQL<unknown>'.
+src/routes/tax.ts: error TS2322: Type 'SQL<unknown> | undefined' is not assignable to type 'SQL<unknown>'.
+src/routes/tax.ts: error TS2345: Argument of type '{ req: Request<ParamsDictionary, any, any, QueryString.ParsedQs, Record<string, any>>; action: string; resource: string; resourceId: string; result: "success"; }' is not assignable to parameter of type 'LogAuditParams'.
+src/routes/tax.ts: error TS2345: Argument of type '{ req: Request<ParamsDictionary, any, any, QueryString.ParsedQs, Record<string, any>>; action: string; resource: string; resourceId: string; result: "success"; }' is not assignable to parameter of type 'LogAuditParams'.
+src/routes/tax.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { verifactu_hash: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/routes/tax.ts: error TS7030: Not all code paths return a value.
+src/routes/tax.ts: error TS7030: Not all code paths return a value.
+src/routes/tax.ts: error TS7030: Not all code paths return a value.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/telegram.ts: error TS2339: Property 'content' does not exist on type '{ id: number; orgId: number; agentSlug: string; memoryKey: string; memoryVal: string; title: string | null; category: string | null; tags: string | null; source: string | null; createdAt: Date; updatedAt: Date; }'.
+src/routes/telegram.ts: error TS2459: Module '"../intents/intentEngine"' declares 'Intent' locally, but it is not exported.
+src/routes/telegram.ts: error TS2769: No overload matches this call.
+src/routes/time.ts: error TS7030: Not all code paths return a value.
+src/routes/time.ts: error TS7030: Not all code paths return a value.
+src/routes/time.ts: error TS7030: Not all code paths return a value.
+src/routes/time.ts: error TS7030: Not all code paths return a value.
+src/routes/time.ts: error TS7030: Not all code paths return a value.
+src/routes/time.ts: error TS7030: Not all code paths return a value.
+src/routes/time.ts: error TS7030: Not all code paths return a value.
+src/routes/whatsapp.ts: error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/routes/whatsapp.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/whatsapp.ts: error TS2322: Type 'string' is not assignable to type 'Record<string, unknown>'.
+src/routes/whatsapp.ts: error TS2459: Module '"../intents/intentEngine"' declares 'Intent' locally, but it is not exported.
+src/services/accounting.ts: error TS2322: Type 'number | null | undefined' is not assignable to type 'number | undefined'.
+src/skills/clientSkills.ts: error TS2322: Type 'SQL<unknown> | undefined' is not assignable to type 'SQL<unknown>'.
+src/skills/clientSkills.ts: error TS2322: Type 'SQL<unknown> | undefined' is not assignable to type 'SQL<unknown>'.
+src/skills/clientSkills.ts: error TS2322: Type 'SQL<unknown> | undefined' is not assignable to type 'SQL<unknown>'.
+src/skills/clientSkills.ts: error TS2769: No overload matches this call.
+src/skills/index.ts: error TS2322: Type '{ id: string; name: string; description: string; params: SkillParam[]; }[]' is not assignable to type 'SkillDefinition[]'.
+src/utils/backupEngine.ts: error TS2552: Cannot find name 'BackupJobRow'. Did you mean 'BackupRow'?
+src/utils/backupEngine.ts: error TS2552: Cannot find name 'BackupJobRow'. Did you mean 'BackupRow'?
+src/utils/recurringInvoiceScheduler.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: RecurringRow[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/recurringInvoiceScheduler.ts: error TS2488: Type '{ rows: { cnt: number; }[]; }' must have a '[Symbol.iterator]()' method that returns an iterator.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { clerk_id: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { cnt: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { cnt: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; clerk_user_id: string; email: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; plan: string; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/startupMigrations.ts: error TS2352: Conversion of type 'QueryResult<Record<string, unknown>>' to type '{ rows: { id: number; }[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
