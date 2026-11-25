@@ -195,7 +195,8 @@ export const COMMERCE_MIGRATION_SQL: string[] = [
      ('suspend_after_failed_attempts','3'),
      ('suspend_on_full_refund','true'),
      ('suspend_on_chargeback','true'),
-     ('auto_reactivate_on_payment','true')
+     ('auto_reactivate_on_payment','true'),
+     ('auto_activate_when_paid_and_authorized','true')
    ON CONFLICT (key) DO NOTHING`,
 ];
 

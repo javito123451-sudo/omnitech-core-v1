@@ -9,6 +9,7 @@ import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { HANDLERS } from "./handlers";
 import { dbRows } from "./settings";
+import { autoActivateEligible } from "./autoActivate";
 
 export const MAX_ATTEMPTS = 5;
 export const backoffSeconds = (attempts: number) => Math.min(60 * 2 ** (attempts - 1), 6 * 3600);
@@ -43,7 +44,11 @@ export async function processEvent(eventId: number): Promise<string> {
       }
       await handler(tx, ev.payload);
       await tx.execute(sql`UPDATE commerce_webhook_events SET status='processed', processed_at=NOW(), last_error=NULL, next_retry_at=NULL, attempts=attempts+1 WHERE id=${eventId}::int`);
-      return "processed";
+      return ev.topic === "orders/paid" ? "processed:paid" : "processed";
+    }).then(async (st) => {
+      // Fuera de la transacción del evento: la activación automática tiene la suya propia y envía email.
+      if (st === "processed:paid") await autoActivateEligible().catch((e) => logger.error({ e }, "[Commerce] auto-activación falló"));
+      return st === "processed:paid" ? "processed" : st;
     });
   } catch (err) {
     const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);

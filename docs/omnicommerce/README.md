@@ -2,11 +2,11 @@
 
 Puente entre Shopify (canal comercial) y Omnitech-Core (motor SaaS). **Una compra nunca activa una licencia.**
 
-## Flujo (captar → autorizar → contratar → activar)
+## Flujo (captar → autorizar → contratar → activar automáticamente)
 1. **Captación**: el formulario de la tienda envía `POST /api/commerce-public/requests` (sin auth; honeypot, 5/hora/IP, consentimiento RGPD obligatorio, no enumera emails). Crea `commerce_capture_requests` en `new`. No crea cuenta, pedido ni licencia.
 2. **Autorización manual** (SUPER_ADMIN, Control Center → Captación): fija plan, módulos a incorporar y vigencia (1–90 días, por defecto 14). Marca al cliente con la etiqueta `autorizado` en Shopify si hay credenciales (solo comodidad de la tienda).
 3. **Contratación**: el cliente autorizado compra en Shopify. Webhook → `POST /api/commerce/webhooks/shopify` (HMAC `X-Shopify-Hmac-Sha256`, `SHOPIFY_API_SECRET`; falla cerrado). Evento único por `X-Shopify-Webhook-Id`, una transacción por evento, reintentos con backoff (1m·2ⁿ, máx. 6 h; 5 intentos → `dead`). `orders/paid` crea `activation_requests` y la **enlaza a la autorización vigente** del mismo email y plan; si no existe queda marcada «sin autorización».
-4. **Activación manual** (SUPER_ADMIN, pestaña Activaciones): exige pedido `paid` **y** autorización previa del mismo plan; crea/vincula empresa → `license_plans` → `module_configs` (módulos autorizados) → propietario/invitación `owner` → auditoría → email de bienvenida (fuera de la transacción). La captación pasa a `converted`.
+4. **Activación** — **automática** cuando el pedido está `paid` y hay autorización vigente del mismo plan (ajuste `auto_activate_when_paid_and_authorized`, por defecto activo, editable por SUPER_ADMIN en Integraciones; actor registrado = quien autorizó, `details.automatic=true`). Se dispara tras `orders/paid`, al autorizar una captación con compra ya pagada, y en el tick de 5 min. **No** se activa sola si: pedido sin pagar, solicitud en `info_requested`, líneas de pedido sin producto del catálogo, plan distinto o sin autorización; si falla (p. ej. sin nombre de empresa) queda pendiente, se audita una vez y la activa un administrador a mano (pestaña Activaciones). La activación manual sigue disponible y exige lo mismo (pedido `paid` **y** autorización previa); crea/vincula empresa → `license_plans` → `module_configs` (módulos autorizados) → propietario/invitación `owner` → auditoría → email de bienvenida (fuera de la transacción). La captación pasa a `converted`.
 Una autorización ya comprada no caduca; una no comprada caduca (`expired`) por el tick de 5 min.
 **Barrera real = servidor**: aunque alguien compre sin autorización (URL directa), no se puede activar y queda señalado en el dashboard («Compras SIN autorización») para reembolsar. Para bloquearlo en el propio checkout haría falta una Shopify Function de validación de carrito (no incluida).
 
@@ -15,7 +15,7 @@ Pedido: `received · pending_payment · paid · partially_refunded · refunded �
 Suscripción: `pending · active · past_due · paused · suspended · cancelled · expired`.
 
 ## Políticas configurables (`commerce_settings`)
-`grace_days=7`, `suspend_after_failed_attempts=3`, `suspend_on_full_refund=true`, `suspend_on_chargeback=true`, `auto_reactivate_on_payment=true`. Un pago solo reactiva suspensiones **por impago** (`payment_*`); reembolso/contracargo requieren decisión del administrador.
+`grace_days=7`, `suspend_after_failed_attempts=3`, `suspend_on_full_refund=true`, `suspend_on_chargeback=true`, `auto_reactivate_on_payment=true`, `auto_activate_when_paid_and_authorized=true`. Un pago solo reactiva suspensiones **por impago** (`payment_*`); reembolso/contracargo requieren decisión del administrador.
 Suspender/cancelar = `license_plans.is_active=false`. **Nunca** se borra una empresa (FK `ON DELETE RESTRICT`).
 
 ## Tablas (migración aditiva e idempotente `commerce/migration.ts`)

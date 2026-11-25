@@ -10,6 +10,9 @@ vi.mock("@/lib/authFetch", () => ({
   authFetch: async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
     const j = (b: unknown) => ({ ok: true, json: async () => b });
+    if (url.includes("/settings") && init?.method === "PATCH") return j({ ok: true });
+    if (url.includes("/integrations")) return j({ shopify: { apiSecretConfigured: true, shopDomainConfigured: true, adminTokenConfigured: false }, email: { resendConfigured: false }, webhookEvents: {},
+      policy: { graceDays: 7, suspendAfterFailedAttempts: 3, suspendOnFullRefund: true, suspendOnChargeback: true, autoReactivateOnPayment: true, autoActivateWhenPaidAndAuthorized: true } });
     if (url.includes("/dashboard")) return j({ pending_activations: 2, info_requested: 0, paid_orders: 5, pending_payment_orders: 1, active_subscriptions: 3, incident_subscriptions: 1, revenue_30d_cents: 44700, webhook_failures: 0, new_captures: 4, authorized_waiting_purchase: 1, unauthorized_purchases: 1 });
     if (url.includes("/activation-requests/") && init?.method === "POST") return j({ ok: true, welcomeEmailSent: true });
     if (url.includes("/capture-requests/") && init?.method === "POST") return j({ ok: true });
@@ -60,6 +63,13 @@ describe("OmniCommerce Control", () => {
     fireEvent.click(screen.getByText("Cancelar")); fireEvent.click(screen.getByTitle("Autorizar contratación"));
     fireEvent.click(await screen.findByText("Confirmar"));
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/capture-requests/7/authorize") && c.init?.method === "POST")).toBe(true));
+  });
+
+  it("ajuste de activación automática: SUPER_ADMIN lo cambia vía API; STAFF lo ve bloqueado", async () => {
+    wrap(); fireEvent.click(screen.getByText("Integraciones"));
+    const box = (await screen.findByLabelText(/Activar automáticamente/)) as HTMLInputElement;
+    expect(box.checked).toBe(true); fireEvent.click(box);
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/settings") && c.init?.method === "PATCH" && String(c.init.body).includes("auto_activate_when_paid_and_authorized"))).toBe(true));
   });
 
   it("STAFF (solo lectura): sin botones de acción y con aviso", async () => {

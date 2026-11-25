@@ -26,6 +26,8 @@ export interface ApproveInput {
   existingOrgId?: number;
   seats?: number;
   baseUrl?: string;
+  /** true cuando la activa el sistema (pago confirmado + autorización vigente); el actor es quien autorizó. */
+  automatic?: boolean;
 }
 
 const slugify = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "empresa";
@@ -122,7 +124,7 @@ export async function approveActivation(requestId: number, actor: Actor, input: 
     }
     if (ar.customer_id) await tx.execute(sql`UPDATE commerce_customers SET org_id=${orgId}::int WHERE id=${ar.customer_id}::int`);
     await auditActivation(tx, { activationRequestId: ar.id, subscriptionId: ar.subscription_id, actor: actor.clerkId, action: "activation_approved", from: ar.status, to: "approved",
-      details: { orgId, licenseId: lic.id, plan, modules: ar.requested_modules, linkedExisting: !!input.existingOrgId } });
+      details: { orgId, licenseId: lic.id, plan, modules: ar.requested_modules, linkedExisting: !!input.existingOrgId, automatic: input.automatic === true } });
     return { orgId, orgName, licenseId: lic.id, plan, invitation, customerEmail: ownerEmail || ar.email };
   });
 

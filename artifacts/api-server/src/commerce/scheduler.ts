@@ -2,10 +2,12 @@ import { logger } from "../lib/logger";
 import { retryDueEvents } from "./ingest";
 import { sweepGracePeriods } from "./lifecycle";
 import { expireAuthorizations } from "./capture";
+import { autoActivateEligible } from "./autoActivate";
 
 export async function runCommerceTick(): Promise<{ retried: number; suspended: number; expired: number }> {
   const retried = await retryDueEvents();
   const suspended = await sweepGracePeriods();
+  await autoActivateEligible(); // red de seguridad: reintenta activaciones automáticas pendientes
   const expired = await expireAuthorizations(); // autorizaciones sin compra a tiempo (las ya compradas no caducan)
   return { retried, suspended, expired };
 }

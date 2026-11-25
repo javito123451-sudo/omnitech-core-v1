@@ -12,6 +12,8 @@ import { dbRows, getPolicy } from "../commerce/settings";
 import { logAudit } from "../utils/auditLogger";
 import { authorizeCapture, rejectCapture, requestCaptureInfo, CaptureError } from "../commerce/capture";
 import { tagCustomerAuthorized } from "../commerce/shopifyAdmin";
+import { onCaptureAuthorized } from "../commerce/autoActivate";
+import { validateSetting, EDITABLE_SETTINGS } from "../commerce/settings";
 
 export const commerceControlRouter: IRouter = Router();
 commerceControlRouter.use(requireSuperAdmin);
@@ -60,7 +62,8 @@ commerceControlRouter.post("/capture-requests/:id/authorize", async (req, res) =
     const r = await authorizeCapture(reqId(req), { clerkId: req.clerkUserId! }, { plan: String(b.plan ?? ""), modules: Array.isArray(b.modules) ? b.modules : [], validDays: b.validDays });
     const tag = await tagCustomerAuthorized(r.email); // comodidad de la tienda; no es la barrera de seguridad
     await db.execute(sql`UPDATE commerce_capture_requests SET shopify_tag_result=${tag}::text WHERE id=${r.id}::int`);
-    res.json({ ok: true, ...r, shopifyTag: tag });
+    const auto = await onCaptureAuthorized(r.id).catch(() => ({ linked: 0, activated: 0 })); // si ya había compra pagada, se activa ahora
+    res.json({ ok: true, ...r, shopifyTag: tag, linkedPurchases: auto.linked, autoActivated: auto.activated });
   } catch (e) { handle(res, e); }
 });
 commerceControlRouter.post("/capture-requests/:id/reject", async (req, res) => {
@@ -152,6 +155,16 @@ commerceControlRouter.get("/integrations", async (_req, res) => {
     webhookEvents: Object.fromEntries(events.map((e) => [e.status, Number(e.n)])),
     policy: await getPolicy(),
   });
+});
+
+commerceControlRouter.patch("/settings", async (req, res) => {
+  if (!onlySuper(req, res)) return;
+  const key = String(req.body?.key ?? "");
+  const value = EDITABLE_SETTINGS[key] ? validateSetting(key, req.body?.value) : null;
+  if (value === null) { res.status(400).json({ error: "invalid_setting" }); return; }
+  await db.execute(sql`INSERT INTO commerce_settings (key, value) VALUES (${key}::text, ${value}::text) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`);
+  await logAudit({ actorClerkId: req.clerkUserId!, action: "commerce_setting_changed", resource: "commerce_setting", resourceId: key, details: { value }, severity: "warning", req });
+  res.json({ ok: true, policy: await getPolicy() });
 });
 
 commerceControlRouter.get("/audit", async (req, res) => {

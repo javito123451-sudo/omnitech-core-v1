@@ -26,6 +26,7 @@ import { commerceWebhookRouter } from "../../routes/commerceWebhook";
 import { commerceControlRouter } from "../../routes/commerceControl";
 import { commerceCaptureRouter } from "../../routes/commerceCapture";
 import { expireAuthorizations } from "../capture";
+import { autoActivateEligible } from "../autoActivate";
 import { sweepGracePeriods } from "../lifecycle";
 import { processEvent, retryDueEvents, MAX_ATTEMPTS } from "../ingest";
 
@@ -42,6 +43,7 @@ describe.skipIf(!hasRealDb)("OmniCommerce Bridge — escenarios", () => {
   beforeAll(async () => {
     process.env["SHOPIFY_API_SECRET"] = SECRET;
     await runCommerceMigration(); await seedCatalog();
+    await db.execute(sql`INSERT INTO commerce_settings (key,value) VALUES ('auto_activate_when_paid_and_authorized','false') ON CONFLICT (key) DO UPDATE SET value='false'`); // los escenarios 1-15 prueban la activación MANUAL
     await db.execute(sql`INSERT INTO users (clerk_id, email, name) VALUES (${ADMIN}, 'admin-test@example.com', 'Admin') ON CONFLICT (clerk_id) DO NOTHING`);
     const app = express();
     app.use(express.json({ verify: (r, _s, buf) => { (r as any).rawBody = buf; } }));
@@ -386,5 +388,96 @@ describe.skipIf(!hasRealDb)("OmniCommerce Bridge — escenarios", () => {
     const send = () => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ website: "x" }) }).then((r) => r.status);
     expect([await send(), await send(), await send()]).toEqual([200, 200, 429]);
     await new Promise<void>((r) => srv.close(() => r())); process.env["COMMERCE_CAPTURE_MAX_PER_HOUR"] = "100000";
+  });
+
+  // ── Activación automática: pagado + autorizado ⇒ activa (ajuste configurable) ──
+  const setAuto = (v: boolean) => db.execute(sql`UPDATE commerce_settings SET value=${String(v)} WHERE key='auto_activate_when_paid_and_authorized'`);
+  const orgOf = async (m: ReturnType<typeof mk>) => (await rows(sql`SELECT * FROM organizations WHERE name=${m.company}`));
+
+  it("A1. pagado + autorizado ⇒ se activa solo: empresa, licencia, módulos, email, auditoría automática", async () => {
+    await setAuto(true);
+    try {
+      const m = mk(); emailMock.sendInvitationEmail.mockClear();
+      await authorize(m, "starter", ["omni_tax"]);
+      await post("subscription_contracts/create", m.contract()); await post("orders/paid", m.order("paid"));
+      expect((await act(m)).status).toBe("approved");
+      const org = await orgOf(m); expect(org).toHaveLength(1); expect(org[0].plan).toBe("starter");
+      const s = await sub(m); expect(s.status).toBe("active"); expect(await license(s.license_id)).toBe(true);
+      expect((await rows(sql`SELECT module_slug FROM module_configs WHERE org_id=${org[0].id} AND is_enabled`)).map((x: any) => x.module_slug)).toEqual(["omni_tax"]);
+      expect((await capRow(m)).status).toBe("converted");
+      expect(emailMock.sendInvitationEmail.mock.calls.filter((c: any[]) => c[0]?.to === m.email)).toHaveLength(1); // un solo correo a este cliente
+      const acts = (await rows(sql`SELECT action, actor, details FROM activation_audit_logs WHERE activation_request_id=${(await act(m)).id} ORDER BY id`));
+      expect(acts.map((a: any) => a.action)).toEqual(expect.arrayContaining(["activation_requested", "activation_approved", "auto_activated"]));
+      expect(acts.find((a: any) => a.action === "activation_approved").details.automatic).toBe(true);
+    } finally { await setAuto(false); }
+  });
+
+  it("A2. ya estaba pagado (sin autorización) y se autoriza después ⇒ se activa al autorizar", async () => {
+    await setAuto(true);
+    try {
+      const m = mk(); await paidFlow(m, false);
+      expect((await act(m)).status).toBe("pending"); expect(await orgOf(m)).toHaveLength(0);
+      await capture(m); const c = await capRow(m);
+      const r = await call("POST", `/capture-requests/${c.id}/authorize`, { plan: "starter" });
+      expect(r.json.linkedPurchases).toBe(1); expect(r.json.autoActivated).toBe(1);
+      expect((await act(m)).status).toBe("approved"); expect(await orgOf(m)).toHaveLength(1);
+    } finally { await setAuto(false); }
+  });
+
+  it("A3. ajuste desactivado ⇒ queda pendiente; al activar el ajuste el tick lo activa", async () => {
+    const m = mk(); await paidFlow(m); // setting false
+    expect((await act(m)).status).toBe("pending"); expect(await orgOf(m)).toHaveLength(0);
+    await setAuto(true); try { expect((await autoActivateEligible()).activated).toBeGreaterThanOrEqual(1); } finally { await setAuto(false); }
+    expect((await act(m)).status).toBe("approved");
+  });
+
+  it("A4. NO se activa sola: sin autorización, plan distinto, pedido sin pagar, info solicitada o producto sin catálogo", async () => {
+    await setAuto(true);
+    try {
+      const a = mk(); await paidFlow(a, false); await autoActivateEligible(); expect((await act(a)).status).toBe("pending");           // sin autorización
+      const b = mk(); await authorize(b, "starter"); await post("orders/paid", b.order("paid", { line_items: [{ id: 1, sku: "plan_professional", title: "Pro" }] }));
+      expect((await act(b)).status).toBe("pending");                                                                                   // plan distinto
+      const c = mk(); await authorize(c); await post("orders/create", c.order("pending"));
+      expect(await act(c)).toBeUndefined();                                                                                            // sin pagar: ni solicitud
+      const d = mk(); await setAuto(false); await paidFlow(d);
+      await db.execute(sql`UPDATE activation_requests SET status='info_requested' WHERE id=${(await act(d)).id}`);
+      await setAuto(true); await autoActivateEligible(); expect((await act(d)).status).toBe("info_requested");                        // info solicitada
+      const e = mk(); await authorize(e); await post("orders/paid", e.order("paid", { line_items: [{ id: 1, sku: "plan_starter" }, { id: 2, sku: "RARO", title: "?" }] }));
+      expect((await act(e)).status).toBe("pending");                                                                                   // línea sin catálogo
+      expect((await orgOf(a)).length + (await orgOf(b)).length + (await orgOf(c)).length + (await orgOf(d)).length + (await orgOf(e)).length).toBe(0);
+    } finally { await setAuto(false); }
+  });
+
+  it("A5. concurrencia: dos activaciones automáticas + una manual a la vez ⇒ una sola empresa", async () => {
+    const m = mk(); await paidFlow(m); const ar = await act(m); await setAuto(true);
+    try {
+      await Promise.allSettled([autoActivateEligible(), autoActivateEligible(), call("POST", `/activation-requests/${ar.id}/approve`, { companyName: m.company })]);
+      expect(await orgOf(m)).toHaveLength(1);
+      expect((await rows(sql`SELECT COUNT(*)::int c FROM license_plans WHERE notes=${"Activación comercial #" + ar.id}`))[0].c).toBe(1);
+    } finally { await setAuto(false); }
+  });
+
+  it("A6. si no puede activarse (p. ej. sin nombre de empresa) queda pendiente para el administrador y se avisa UNA vez", async () => {
+    await setAuto(true);
+    try {
+      const m = mk(); await authorize(m, "starter");
+      await db.execute(sql`UPDATE commerce_capture_requests SET company=NULL WHERE lower(email)=${m.email}`);
+      await post("orders/paid", m.order("paid", { billing_address: {}, customer: { id: Number(m.customerId), email: m.email } }));
+      await autoActivateEligible();
+      const ar = await act(m); expect(ar.status).toBe("pending");
+      expect((await rows(sql`SELECT COUNT(*)::int c FROM activation_audit_logs WHERE activation_request_id=${ar.id} AND action='auto_activation_failed'`))[0].c).toBe(1);
+      const r = await call("POST", `/activation-requests/${ar.id}/approve`, { companyName: m.company }); // el admin lo resuelve a mano
+      expect(r.status).toBe(200);
+    } finally { await setAuto(false); }
+  });
+
+  it("A7. ajuste editable solo por SUPER_ADMIN y con validación", async () => {
+    expect((await call("PATCH", "/settings", { key: "auto_activate_when_paid_and_authorized", value: true }, "STAFF_OMNITECH")).status).toBe(403);
+    expect((await call("PATCH", "/settings", { key: "auto_activate_when_paid_and_authorized", value: "si" })).status).toBe(400);
+    expect((await call("PATCH", "/settings", { key: "clave_inventada", value: true })).status).toBe(400);
+    expect((await call("PATCH", "/settings", { key: "grace_days", value: 400 })).status).toBe(400);
+    const r = await call("PATCH", "/settings", { key: "auto_activate_when_paid_and_authorized", value: true });
+    expect(r.status).toBe(200); expect(r.json.policy.autoActivateWhenPaidAndAuthorized).toBe(true);
+    await setAuto(false);
   });
 });

@@ -191,7 +191,7 @@ function Captures({ canAct }: { canAct: boolean }) {
   const open = (kind: "authorize" | "reject" | "info", row: Row) => { setSel({ kind, row }); setPlan(row.plan_interest ?? "starter"); setMods(row.modules_interest ?? []); setText(""); };
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-400">Primero se capta; el cliente no puede contratar hasta que lo autorizas aquí. Después de pagar, lo activas en la pestaña Activaciones.</p>
+      <p className="text-xs text-slate-400">Primero se capta; el cliente no puede contratar hasta que lo autorizas aquí. Si está pagado, la activación es automática (ajuste en Integraciones); si no se pudo activar sola, aparece en Activaciones para hacerlo a mano.</p>
       <div className="flex gap-2 flex-wrap">
         {[["new", "Nuevas"], ["info_requested", "Info solicitada"], ["authorized", "Autorizadas"], ["converted", "Activadas"], ["rejected", "Rechazadas"], ["expired", "Caducadas"], ["", "Todas"]].map(([v, l]) => (
           <button key={v} onClick={() => setStatus(v)} className={`px-3 py-1 rounded-lg text-xs border ${status === v ? "bg-violet-600 border-violet-500 text-white" : "border-white/10 text-slate-300"}`}>{l}</button>))}
@@ -252,8 +252,17 @@ function Products({ canAct }: { canAct: boolean }) {
   ]} />;
 }
 
-function Integrations() {
+function Integrations({ canAct }: { canAct: boolean }) {
   const { data, isLoading } = useList("/integrations");
+  const qc = useQueryClient(); const { toast } = useToast();
+  const setting = useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: boolean }) => {
+      const r = await authFetch(`${API}/settings`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, value }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Error");
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["commerce"] }),
+    onError: (e: Error) => toast({ title: "No se pudo cambiar el ajuste", description: e.message, variant: "destructive" }),
+  });
   if (isLoading || !data) return <Loader2 className="w-5 h-5 animate-spin text-slate-400" />;
   const ok = (b: boolean) => <span className={b ? "text-emerald-400" : "text-red-400"}>{b ? "Configurado" : "Falta"}</span>;
   return (
@@ -270,6 +279,10 @@ function Integrations() {
         {!Object.keys(data.webhookEvents).length && <div className="text-slate-500">Aún no se ha recibido ningún evento</div>}
       </div>
       <div className="rounded-xl border border-white/10 p-4">
+        <div className="text-slate-400 mb-1">Activación</div>
+        <label className="flex items-center gap-2 mb-3"><input type="checkbox" checked={data.policy.autoActivateWhenPaidAndAuthorized} disabled={!canAct || setting.isPending}
+          onChange={(e) => setting.mutate({ key: "auto_activate_when_paid_and_authorized", value: e.target.checked })} />
+          Activar automáticamente cuando el pedido esté pagado y la contratación autorizada</label>
         <div className="text-slate-400 mb-1">Política de suspensión / reactivación</div>
         <div>Periodo de gracia: {data.policy.graceDays} días · Suspender tras {data.policy.suspendAfterFailedAttempts} impagos</div>
         <div>Reembolso total suspende: {data.policy.suspendOnFullRefund ? "sí" : "no"} · Contracargo suspende: {data.policy.suspendOnChargeback ? "sí" : "no"} · Reactivar al pagar: {data.policy.autoReactivateOnPayment ? "sí" : "no"}</div>
@@ -290,7 +303,7 @@ export default function CommercePage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-3 mb-1"><ShoppingBag className="w-6 h-6 text-violet-400" /><h1 className="text-xl font-bold text-white">OmniCommerce Control</h1></div>
-      <p className="text-sm text-slate-400 mb-4">Pedidos de Shopify, solicitudes de activación y suscripciones. Primero se capta y un administrador autoriza; solo entonces el cliente puede contratar, y la licencia se activa a mano tras el pago.
+      <p className="text-sm text-slate-400 mb-4">Pedidos de Shopify, solicitudes de activación y suscripciones. Primero se capta y un administrador autoriza; solo entonces el cliente puede contratar, y la licencia se activa automáticamente cuando el pedido está pagado (o a mano desde Activaciones).
         {" "}<Link href="/control-center/licenses" className="text-violet-400 underline">Ver licencias</Link></p>
       {!isSuperAdmin && <p className="text-xs text-amber-400 mb-3">Modo solo lectura: aprobar, rechazar y editar promociones requiere SUPER_ADMIN.</p>}
       <div className="flex gap-1 flex-wrap mb-5 border-b border-white/10 pb-2">
@@ -304,7 +317,7 @@ export default function CommercePage() {
       {tab === "subscriptions" && <Table rows={subs.data ?? []} cols={[["Cliente", (r) => r.customer_email ?? "—"], ["Plan", (r) => r.plan ?? "—"], ["Estado", (r) => <Badge v={r.status} />], ["Fallos", (r) => r.failed_attempts], ["Gracia hasta", (r) => fmt(r.grace_until)], ["Próx. periodo", (r) => fmt(r.current_period_end)], ["Motivo", (r) => r.suspend_reason ?? "—"], ["Workspace", (r) => r.org_id ?? "—"]]} />}
       {tab === "billing" && <Table rows={billing.data ?? []} cols={[["Fecha", (r) => fmt(r.occurred_at)], ["Evento", (r) => r.event_type], ["Importe", (r) => eur(r.amount_cents)], ["Referencia", (r) => r.shopify_ref]]} />}
       {tab === "products" && <Products canAct={isSuperAdmin} />}
-      {tab === "integrations" && <Integrations />}
+      {tab === "integrations" && <Integrations canAct={isSuperAdmin} />}
       {tab === "audit" && <Table rows={audit.data ?? []} cols={[["Fecha", (r) => fmt(r.created_at)], ["Actor", (r) => r.actor], ["Acción", (r) => r.action], ["De → a", (r) => `${r.from_status ?? "—"} → ${r.to_status ?? "—"}`], ["Solicitud", (r) => r.activation_request_id ?? "—"], ["Suscripción", (r) => r.subscription_id ?? "—"]]} />}
     </div>
   );
