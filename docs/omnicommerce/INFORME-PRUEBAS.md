@@ -25,4 +25,7 @@ Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec v
 2. Mis pruebas usaban referencias fijas y fallaban en la 2.ª ejecución: la idempotencia funcionaba correctamente; referencias ahora únicas por ejecución.
 
 ## NO probado (requiere accesos reales)
-Entrega real de webhooks de Shopify, suscripciones/Selling Plans reales, Resend con dominio verificado, frontend de Control Center (pendiente), tema Shopify (pendiente), carga/concurrencia, Neon/Render.
+Entrega real de webhooks de Shopify, suscripciones/Selling Plans reales, Resend con dominio verificado, tema Shopify (pendiente), carga/concurrencia, Neon/Render.
+
+## Frontend (OmniCommerce Control)
+`src/pages/control-center/commerce.tsx` (ruta `/control-center/commerce`, menú Plataforma → OmniCommerce, guard `SuperAdminRoute`). Build de producción OK, `tsc` sin errores, 4 pruebas de renderizado (dashboard, aprobar con pago confirmado/deshabilitado sin pago, rechazo con motivo obligatorio, modo solo lectura). No verificado en navegador real con Clerk.

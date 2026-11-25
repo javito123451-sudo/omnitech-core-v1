@@ -30,3 +30,6 @@ HMAC en tiempo constante · dominio de tienda validado · idempotencia por webho
 
 ## Variables de entorno
 `SHOPIFY_API_SECRET` (obligatoria para recibir), `SHOPIFY_SHOP_DOMAIN`, `SHOPIFY_ADMIN_TOKEN` (futuro: sincronización saliente), `RESEND_API_KEY`, `EMAIL_FROM`, `PUBLIC_APP_URL`.
+
+## Frontend
+Pantalla `/control-center/commerce` (pestañas: Dashboard, Solicitudes/Activaciones, Pedidos, Clientes, Suscripciones, Facturación, Productos, Integraciones, Auditoría). Licencias: enlace a `/control-center/licenses` existente. Acciones solo SUPER_ADMIN.
