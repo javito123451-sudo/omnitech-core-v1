@@ -1250,6 +1250,22 @@ export async function runStartupMigrations(): Promise<void> {
     `);
     logger.info("[Migration] ✅ FIX-BB: org_invitations.cancelled_at ensured");
 
+    // ── FIX-BC: Omni Review Bot (omni_review) — módulo de activación explícita ──
+    //    Siembra una fila DESACTIVADA por workspace. ON CONFLICT DO NOTHING: nunca
+    //    pisa una activación hecha por un administrador. updated_by='system-fix-bc'
+    //    (distinto de 'system-fix-ab') para que FIX-AB/AF no la reescriban por plan.
+    //    Las tablas review_* las crea la migración Drizzle 0018 (no se crean aquí).
+    {
+      const result = await db.execute(sql`
+        INSERT INTO module_configs (org_id, module_slug, is_enabled, updated_by, updated_at)
+        SELECT o.id, 'omni_review', false, 'system-fix-bc', NOW()
+        FROM organizations o
+        ON CONFLICT (org_id, module_slug) DO NOTHING
+      `);
+      const inserted = (result as { rowCount?: number }).rowCount ?? 0;
+      logger.info(`[Migration] ✅ FIX-BC: omni_review sembrado (desactivado) en ${inserted} workspace(s)`);
+    }
+
     logger.info("[Migration] ✅ All startup migrations complete");
   } catch (err) {
     logger.error({ err }, "[Migration] ❌ Startup migration failed — continuing anyway");

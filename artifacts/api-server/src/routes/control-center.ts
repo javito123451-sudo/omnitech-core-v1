@@ -861,6 +861,7 @@ export async function getModulesData() {
     { slug: "a_medida",         name: "A Medida",               description: "Panel de solicitudes del formulario público de montaje y mudanzas", alwaysOn: false },
     { slug: "omni_fleet",       name: "Omni Fleet",             description: "Flota, conductores, rutas y estado de entregas", alwaysOn: false },
     { slug: "omni_taller",      name: "Omni Taller",            description: "Órdenes de reparación para talleres: vehículo, fase y seguimiento", alwaysOn: false },
+    { slug: "omni_review",      name: "Omni Review Bot",        description: "Captación legítima de reseñas y gestión de reputación online (WhatsApp, email, Google)", alwaysOn: false },
   ];
   const configs = await db.select().from(moduleConfigsTable);
   const orgs    = await db.select({ id: organizationsTable.id, name: organizationsTable.name, status: organizationsTable.status }).from(organizationsTable);

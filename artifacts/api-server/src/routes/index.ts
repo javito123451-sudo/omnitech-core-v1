@@ -52,6 +52,7 @@ import { avaCoreRouter } from "./ava-core";
 import { agentsRouter } from "./agents";
 import { tasksRouter } from "./tasks";
 import { internalCronRouter } from "./internalCron";
+import { reviewRouter } from "../review/routes";
 
 const router: IRouter = Router();
 
@@ -171,6 +172,8 @@ router.use("/fleet",          requireModule("omni_fleet"),     fleetRouter);
 router.use("/taller",         requireModule("omni_taller"),    tallerRouter);
 router.use("/tasks",          requireModule("crm"),            tasksRouter);
 router.use("/agents",         requireModule("omni_agent_factory"), agentsRouter);
+// Omni Review Bot — su propio guard fail-closed (review/access.ts) y permisos review.*.
+router.use("/review",         reviewRouter);
 
 // ── Ava Context Engine — lightweight context sync, no module gate ─────────
 router.use("/ace", aceRouter);

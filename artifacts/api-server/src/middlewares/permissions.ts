@@ -89,6 +89,13 @@ export type Permission =
   // independiente de OmniLeads, ver routes/aMedidaLeads.ts)
   | "a_medida.read"
   | "a_medida.write"
+  // Omni Review Bot (captación de reseñas y reputación online). Namespace propio:
+  // read = ver panel/campañas/reseñas; write = crear/lanzar campañas, importar
+  // contactos, aprobar respuestas; admin = configuración, conexiones, bajas masivas
+  // y política de aprobación de IA.
+  | "review.read"
+  | "review.write"
+  | "review.admin"
   // Omni Fleet (flota, conductores, rutas y estado de entregas)
   | "fleet.read"
   | "fleet.write"
@@ -140,6 +147,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "omniseller.read", "omniseller.write",
     "a_medida.read", "a_medida.write",
+    "review.read", "review.write", "review.admin",
     "fleet.read", "fleet.write",
     "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read", "executive.read", "diagnostics.read",
@@ -163,6 +171,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "omniseller.read", "omniseller.write",
     "a_medida.read", "a_medida.write",
+    "review.read", "review.write", "review.admin",
     "fleet.read", "fleet.write",
     "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read", "executive.read", "diagnostics.read",
@@ -187,6 +196,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write", "leads.delete",
     "omniseller.read", "omniseller.write",
     "a_medida.read", "a_medida.write",
+    "review.read", "review.write",
     "fleet.read", "fleet.write",
     "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read", "executive.read",
@@ -209,6 +219,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write",
     "omniseller.read", "omniseller.write",
     "a_medida.read", "a_medida.write",
+    "review.read",
     "fleet.read", "fleet.write",
     "taller.read", "taller.write", "agents.read", "agents.execute",
     "analytics.read",
@@ -229,6 +240,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read", "leads.write",
     "omniseller.read", "omniseller.write",
     "a_medida.read", "a_medida.write",
+    "review.read",
     "analytics.read",
     "settings.read",
     "portal.read",
@@ -248,6 +260,7 @@ const PERMISSIONS_BY_ROLE: Record<string, Permission[]> = {
     "leads.read",
     "omniseller.read",
     "a_medida.read",
+    "review.read",
     "fleet.read",
     "taller.read",
     "agents.read",

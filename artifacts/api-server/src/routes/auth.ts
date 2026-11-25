@@ -123,8 +123,14 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       "omni_accounting", "omni_import_ai", "whatsapp", "omni_tax",
       "omni_marketing", "omni_ads", "omni_leads", "omni_seller", "omni_diagnostics",
       "omni_security", "omni_docs", "quotes", "portal_cliente",
-      "knowledge_base", "a_medida", "omni_fleet", "omni_taller",
+      "knowledge_base", "a_medida", "omni_fleet", "omni_taller", "omni_review",
     ] as const;
+
+    // Módulos de activación EXPLÍCITA: ningún plan los concede por defecto (ni
+    // siquiera los que usan ALL_MODULE_SLUGS). Solo se activan con una fila en
+    // module_configs (Control Center → Módulos). Omni Review envía mensajes a
+    // clientes finales: nunca debe aparecer activo por heredar un plan.
+    const OPT_IN_MODULES: readonly string[] = ["omni_review"];
 
     // Each plan defines which slugs are ALLOWED. DB configs can only RESTRICT
     // within-plan modules; they cannot GRANT access beyond the plan limit.
@@ -146,6 +152,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
 
     const plan = primaryMembership?.orgPlan ?? "starter";
     const allowedSet = new Set<string>(PLAN_MODULES[plan] ?? ALL_MODULE_SLUGS);
+    for (const slug of OPT_IN_MODULES) allowedSet.delete(slug);
 
     // 1. Initialize ALL known modules from plan (fail-closed: false unless plan allows)
     const modules: Record<string, boolean> = {};
