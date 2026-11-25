@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 
+vi.hoisted(() => { process.env["COMMERCE_CAPTURE_MAX_PER_HOUR"] = "100000"; });
 const emailMock = vi.hoisted(() => ({ sendInvitationEmail: vi.fn(async () => ({ ok: true })), sendEmail: vi.fn(async () => ({ ok: true })) }));
 vi.mock("../../lib/email", () => emailMock);
 vi.mock("../../middlewares/superAdmin", () => ({
@@ -23,6 +24,8 @@ import { seedCatalog } from "../catalog";
 import { signShopifyBody } from "../hmac";
 import { commerceWebhookRouter } from "../../routes/commerceWebhook";
 import { commerceControlRouter } from "../../routes/commerceControl";
+import { commerceCaptureRouter } from "../../routes/commerceCapture";
+import { expireAuthorizations } from "../capture";
 import { sweepGracePeriods } from "../lifecycle";
 import { processEvent, retryDueEvents, MAX_ATTEMPTS } from "../ingest";
 
@@ -44,6 +47,7 @@ describe.skipIf(!hasRealDb)("OmniCommerce Bridge — escenarios", () => {
     app.use(express.json({ verify: (r, _s, buf) => { (r as any).rawBody = buf; } }));
     app.use("/api/commerce", commerceWebhookRouter);
     app.use("/api/commerce-control", commerceControlRouter);
+    app.use("/api/commerce-public", commerceCaptureRouter);
     await new Promise<void>((ok) => { server = app.listen(0, () => ok()); });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
   });
@@ -78,7 +82,15 @@ describe.skipIf(!hasRealDb)("OmniCommerce Bridge — escenarios", () => {
   };
   const sub = async (m: ReturnType<typeof mk>) => (await rows(sql`SELECT * FROM commerce_subscriptions WHERE shopify_contract_id = ${String(m.contract().id)}`))[0];
   const act = async (m: ReturnType<typeof mk>) => (await rows(sql`SELECT ar.* FROM activation_requests ar JOIN commerce_orders o ON o.id=ar.order_id WHERE o.shopify_order_id=${m.orderId}`))[0];
-  const paidFlow = async (m: ReturnType<typeof mk>) => {
+  const capture = (m: ReturnType<typeof mk>, extra: object = {}) => fetch(`${base}/commerce-public/requests`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: m.email, name: "Ana Pérez", company: m.company, consentPrivacy: true, planInterest: "starter", ...extra }) }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) as any }));
+  const capRow = async (m: ReturnType<typeof mk>) => (await rows(sql`SELECT * FROM commerce_capture_requests WHERE lower(email)=${m.email}`))[0];
+  const authorize = async (m: ReturnType<typeof mk>, plan = "starter", modules: string[] = []) => {
+    await capture(m); const c = await capRow(m);
+    return call("POST", `/capture-requests/${c.id}/authorize`, { plan, modules });
+  };
+  const paidFlow = async (m: ReturnType<typeof mk>, authorized = true) => {
+    if (authorized) await authorize(m);
     await post("orders/create", m.order("paid")); await post("subscription_contracts/create", m.contract()); await post("orders/paid", m.order("paid"));
   };
 
@@ -292,5 +304,87 @@ describe.skipIf(!hasRealDb)("OmniCommerce Bridge — escenarios", () => {
     const c = (await rows(sql`SELECT email, first_name, redacted_at FROM commerce_customers WHERE shopify_customer_id=${m.customerId}`))[0];
     expect(c.email).toBeNull(); expect(c.redacted_at).not.toBeNull();
     expect((await rows(sql`SELECT COUNT(*)::int c FROM commerce_orders WHERE shopify_order_id=${m.orderId}`))[0].c).toBe(1);
+  });
+
+  // ── Captación y autorización previa: primero se capta, luego se autoriza, solo entonces se contrata y activa ──
+  it("C1. captación pública: consentimiento obligatorio, honeypot, email válido, duplicados sin enumerar", async () => {
+    const m = mk();
+    expect((await capture(m, { consentPrivacy: false })).status).toBe(400);
+    expect((await capture(m, { email: "no-es-email" })).status).toBe(400);
+    expect(await capRow(m)).toBeUndefined();
+    expect((await capture(m, { website: "http://spam" })).status).toBe(200);
+    expect(await capRow(m)).toBeUndefined();
+    expect((await capture(m)).status).toBe(200); expect((await capture(m)).status).toBe(200);
+    expect((await rows(sql`SELECT COUNT(*)::int c FROM commerce_capture_requests WHERE lower(email)=${m.email}`))[0].c).toBe(1);
+    const c = await capRow(m); expect(c.status).toBe("new"); expect(c.consent_privacy_at).not.toBeNull();
+    // captar NO crea cuenta, pedido ni licencia
+    expect((await rows(sql`SELECT COUNT(*)::int c FROM commerce_orders WHERE email=${m.email}`))[0].c).toBe(0);
+  });
+
+  it("C2. autorizar: solo SUPER_ADMIN, plan válido, caducidad configurable, auditado", async () => {
+    const m = mk(); await capture(m); const c = await capRow(m);
+    expect((await call("POST", `/capture-requests/${c.id}/authorize`, { plan: "starter" }, "STAFF_OMNITECH")).status).toBe(403);
+    expect((await call("POST", `/capture-requests/${c.id}/authorize`, { plan: "business" })).status).toBe(400);
+    expect((await call("POST", `/capture-requests/${c.id}/authorize`, { plan: "starter", modules: ["no_existe"] })).status).toBe(400);
+    const r = await call("POST", `/capture-requests/${c.id}/authorize`, { plan: "starter", modules: ["omni_tax"], validDays: 10 });
+    expect(r.status).toBe(200); expect(r.json.shopifyTag).toMatch(/^skipped/); // sin credenciales de Shopify
+    const after = await capRow(m); expect(after.status).toBe("authorized"); expect(after.authorized_modules).toEqual(["omni_tax"]);
+    expect((await rows(sql`SELECT action FROM activation_audit_logs WHERE capture_request_id=${c.id} ORDER BY id`)).map((a: any) => a.action)).toEqual(["capture_received", "capture_authorized"]);
+  });
+
+  it("C3. compra SIN autorización previa: queda marcada, no se puede activar y no crea nada", async () => {
+    const m = mk(); await paidFlow(m, false); const ar = await act(m);
+    expect(ar.capture_request_id).toBeNull();
+    const list = await call("GET", "/activation-requests?status=pending&limit=200");
+    expect(list.json.find((x: any) => x.id === ar.id).authorized).toBe(false);
+    expect((await call("GET", "/dashboard")).json.unauthorized_purchases).toBeGreaterThan(0);
+    const r = await call("POST", `/activation-requests/${ar.id}/approve`, { companyName: m.company });
+    expect(r.status).toBe(409); expect(r.json.error).toBe("not_authorized");
+    expect((await rows(sql`SELECT COUNT(*)::int c FROM organizations WHERE name=${m.company}`))[0].c).toBe(0);
+  });
+
+  it("C4. autorizado para un plan pero compra otro → no se puede activar", async () => {
+    const m = mk(); await authorize(m, "starter");
+    await post("orders/paid", m.order("paid", { line_items: [{ id: 1, sku: "plan_professional", title: "Pro" }] }));
+    const ar = await act(m); expect(ar.requested_plan).toBe("professional"); expect(ar.capture_request_id).toBeNull();
+    expect((await call("POST", `/activation-requests/${ar.id}/approve`, { companyName: m.company })).json.error).toBe("not_authorized");
+  });
+
+  it("C5. autorización caducada antes de comprar no vale; la ya comprada NO caduca; activación convierte la captación", async () => {
+    const a = mk(); await authorize(a);
+    await db.execute(sql`UPDATE commerce_capture_requests SET authorized_until = NOW() - interval '1 day' WHERE lower(email)=${a.email}`);
+    await post("orders/paid", a.order("paid"));
+    expect((await act(a)).capture_request_id).toBeNull();
+    await expireAuthorizations(); expect((await capRow(a)).status).toBe("expired");
+
+    const b = mk(); await paidFlow(b);                       // autorizado y comprado a tiempo
+    await db.execute(sql`UPDATE commerce_capture_requests SET authorized_until = NOW() - interval '1 day' WHERE lower(email)=${b.email}`);
+    await expireAuthorizations(); expect((await capRow(b)).status).toBe("authorized"); // ya comprado: no caduca
+    const r = await call("POST", `/activation-requests/${(await act(b)).id}/approve`, { companyName: b.company });
+    expect(r.status).toBe(200); expect((await capRow(b)).status).toBe("converted");
+  });
+
+  it("C6. módulos autorizados se incorporan al activar; rechazar/pedir info exigen motivo", async () => {
+    const m = mk(); await authorize(m, "starter", ["omni_tax", "omni_import_ai"]); await paidFlow(m, false);
+    const ar = await act(m); expect(ar.requested_modules).toEqual(expect.arrayContaining(["omni_tax", "omni_import_ai"]));
+    const r = await call("POST", `/activation-requests/${ar.id}/approve`, { companyName: m.company });
+    const mods = await rows(sql`SELECT module_slug FROM module_configs WHERE org_id=${r.json.orgId} AND is_enabled`);
+    expect(mods.map((x: any) => x.module_slug).sort()).toEqual(["omni_import_ai", "omni_tax"]);
+    const n = mk(); await capture(n); const c = await capRow(n);
+    expect((await call("POST", `/capture-requests/${c.id}/reject`, {})).status).toBe(400);
+    expect((await call("POST", `/capture-requests/${c.id}/request-info`, { message: "¿Cuántos usuarios?" })).json.status).toBe("info_requested");
+    expect((await call("POST", `/capture-requests/${c.id}/reject`, { reason: "Fuera de perfil" })).json.status).toBe("rejected");
+    expect((await call("POST", `/capture-requests/${c.id}/authorize`, { plan: "starter" })).status).toBe(409); // rechazada: no se puede autorizar
+  });
+
+  it("C7. límite antispam de la captación pública por IP", async () => {
+    vi.resetModules(); process.env["COMMERCE_CAPTURE_MAX_PER_HOUR"] = "2";
+    const { commerceCaptureRouter: limited } = await import("../../routes/commerceCapture");
+    const a = express(); a.use(express.json()); a.use("/p", limited);
+    const srv: Server = await new Promise((ok) => { const s2 = a.listen(0, () => ok(s2)); });
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/p/requests`;
+    const send = () => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ website: "x" }) }).then((r) => r.status);
+    expect([await send(), await send(), await send()]).toEqual([200, 200, 429]);
+    await new Promise<void>((r) => srv.close(() => r())); process.env["COMMERCE_CAPTURE_MAX_PER_HOUR"] = "100000";
   });
 });

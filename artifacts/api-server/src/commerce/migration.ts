@@ -154,6 +154,36 @@ export const COMMERCE_MIGRATION_SQL: string[] = [
   `DROP TRIGGER IF EXISTS activation_audit_logs_no_change ON activation_audit_logs`,
   `CREATE TRIGGER activation_audit_logs_no_change BEFORE UPDATE OR DELETE ON activation_audit_logs
    FOR EACH ROW EXECUTE FUNCTION activation_audit_logs_immutable()`,
+  // ── Captación y autorización previa: primero se capta, un administrador autoriza, y solo entonces se puede contratar ──
+  `CREATE TABLE IF NOT EXISTS commerce_capture_requests (
+    id                 SERIAL PRIMARY KEY,
+    email              TEXT NOT NULL,
+    name               TEXT NOT NULL,
+    company            TEXT,
+    phone              TEXT,
+    plan_interest      TEXT,
+    modules_interest   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    message            TEXT,
+    source             TEXT NOT NULL DEFAULT 'shopify_store',
+    consent_privacy_at TIMESTAMPTZ NOT NULL,
+    consent_marketing  BOOLEAN NOT NULL DEFAULT FALSE,
+    status             TEXT NOT NULL DEFAULT 'new'
+      CHECK (status IN ('new','info_requested','authorized','rejected','converted','expired')),
+    authorized_plan    TEXT,
+    authorized_modules JSONB NOT NULL DEFAULT '[]'::jsonb,
+    authorized_until   TIMESTAMPTZ,
+    decided_by         TEXT,
+    decided_at         TIMESTAMPTZ,
+    decision_note      TEXT,
+    shopify_tag_result TEXT,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT capture_authorized_complete CHECK (status <> 'authorized' OR (authorized_plan IS NOT NULL AND authorized_until IS NOT NULL))
+  )`,
+  // Una sola solicitud viva por email (reenvíos del formulario no duplican)
+  `CREATE UNIQUE INDEX IF NOT EXISTS commerce_capture_open_email_idx ON commerce_capture_requests (lower(email)) WHERE status IN ('new','info_requested','authorized')`,
+  `ALTER TABLE activation_requests ADD COLUMN IF NOT EXISTS capture_request_id INTEGER REFERENCES commerce_capture_requests(id) ON DELETE RESTRICT`,
+  `ALTER TABLE activation_audit_logs ADD COLUMN IF NOT EXISTS capture_request_id INTEGER REFERENCES commerce_capture_requests(id) ON DELETE RESTRICT`,
   `CREATE TABLE IF NOT EXISTS commerce_settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
@@ -171,7 +201,7 @@ export const COMMERCE_MIGRATION_SQL: string[] = [
 
 /** Reversión manual. NO se ejecuta automáticamente. Las tablas nuevas no contienen datos de empresa. */
 export const ROLLBACK_SQL = `
-DROP TABLE IF EXISTS activation_audit_logs, billing_history, activation_requests,
+DROP TABLE IF EXISTS commerce_capture_requests, activation_audit_logs, billing_history, activation_requests,
   commerce_webhook_events, commerce_subscriptions, commerce_orders, commerce_customers,
   commerce_products, commerce_settings CASCADE;
 DROP FUNCTION IF EXISTS activation_audit_logs_immutable();

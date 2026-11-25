@@ -76,7 +76,7 @@ app.use(
     // reads cookies/session, so it's safe to reflect any origin here without
     // touching the authenticated-app allowlist below or its ALLOWED_ORIGINS
     // env var, which the CRM frontend(s) already depend on.
-    if (req.path.startsWith("/api/leads-public")) {
+    if (req.path.startsWith("/api/leads-public") || req.path.startsWith("/api/commerce-public")) {
       return callback(null, { origin: true, credentials: false });
     }
     callback(null, {

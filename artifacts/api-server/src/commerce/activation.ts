@@ -15,7 +15,7 @@ import { PLAN_PRODUCTS } from "./catalog";
 import { dbRows } from "./settings";
 
 export class ActivationError extends Error {
-  constructor(public code: "not_found" | "invalid_state" | "payment_not_confirmed" | "invalid_input" | "approver_unknown", message: string) { super(message); }
+  constructor(public code: "not_found" | "invalid_state" | "payment_not_confirmed" | "not_authorized" | "invalid_input" | "approver_unknown", message: string) { super(message); }
 }
 
 export interface Actor { clerkId: string; email?: string }
@@ -32,13 +32,13 @@ const slugify = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]
 
 interface ReqRow {
   id: number; status: string; order_id: number; customer_id: number | null; subscription_id: number | null;
-  requested_plan: string | null; requested_modules: string[]; order_status: string;
+  requested_plan: string | null; requested_modules: string[]; order_status: string; capture_request_id: number | null;
   email: string | null; company: string | null; first_name: string | null; last_name: string | null; tax_id: string | null; phone: string | null;
 }
 
 async function loadLocked(tx: any, id: number): Promise<ReqRow> {
   const r = dbRows<ReqRow>(await tx.execute(sql`
-    SELECT ar.id, ar.status, ar.order_id, ar.customer_id, ar.subscription_id, ar.requested_plan, ar.requested_modules,
+    SELECT ar.id, ar.status, ar.order_id, ar.customer_id, ar.subscription_id, ar.requested_plan, ar.requested_modules, ar.capture_request_id,
            o.order_status, COALESCE(c.email, o.email) AS email, c.company, c.first_name, c.last_name, c.tax_id, c.phone
       FROM activation_requests ar
       JOIN commerce_orders o ON o.id = ar.order_id
@@ -55,6 +55,11 @@ export async function approveActivation(requestId: number, actor: Actor, input: 
     const ar = await loadLocked(tx, requestId);
     if (!["pending", "info_requested"].includes(ar.status)) throw new ActivationError("invalid_state", `La solicitud está en estado '${ar.status}'`);
     if (ar.order_status !== "paid") throw new ActivationError("payment_not_confirmed", "El pago del pedido no está confirmado");
+    // Autorización previa obligatoria: vigente y del mismo plan contratado. Sin ella NO se activa nunca.
+    const cap = ar.capture_request_id ? dbRows<{ id: number; status: string; authorized_plan: string | null; authorized_until: string | null }>(await tx.execute(sql`
+      SELECT id, status, authorized_plan, authorized_until FROM commerce_capture_requests WHERE id=${ar.capture_request_id}::int FOR UPDATE`))[0] : null;
+    if (!cap || cap.status !== "authorized" || cap.authorized_plan !== ar.requested_plan)
+      throw new ActivationError("not_authorized", "No hay una autorización previa vigente para este plan: la compra no se puede activar");
     const plan = ar.requested_plan;
     if (!plan || !PLAN_PRODUCTS.some((p) => p.plan === plan)) throw new ActivationError("invalid_input", "La solicitud no tiene un plan válido del catálogo");
 
@@ -109,6 +114,7 @@ export async function approveActivation(requestId: number, actor: Actor, input: 
     }
 
     // 5. Estado comercial
+    await tx.execute(sql`UPDATE commerce_capture_requests SET status='converted', updated_at=NOW() WHERE id=${cap.id}::int`);
     await tx.execute(sql`UPDATE activation_requests SET status='approved', decided_by=${actor.clerkId}::text, decided_at=NOW(), org_id=${orgId}::int, license_id=${lic.id}::int, updated_at=NOW() WHERE id=${ar.id}::int`);
     if (ar.subscription_id) {
       await tx.execute(sql`UPDATE commerce_subscriptions SET org_id=${orgId}::int, license_id=${lic.id}::int, plan=${plan}::text,

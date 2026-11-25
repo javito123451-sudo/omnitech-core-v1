@@ -12,11 +12,11 @@ export type Executor = typeof db | Tx;
 
 export async function auditActivation(
   ex: Executor,
-  e: { activationRequestId?: number | null; subscriptionId?: number | null; actor: string; action: string; from?: string | null; to?: string | null; details?: Record<string, unknown> },
+  e: { activationRequestId?: number | null; captureRequestId?: number | null; subscriptionId?: number | null; actor: string; action: string; from?: string | null; to?: string | null; details?: Record<string, unknown> },
 ): Promise<void> {
   await ex.execute(sql`
-    INSERT INTO activation_audit_logs (activation_request_id, subscription_id, actor, action, from_status, to_status, details)
-    VALUES (${e.activationRequestId ?? null}::int, ${e.subscriptionId ?? null}::int, ${e.actor}::text, ${e.action}::text,
+    INSERT INTO activation_audit_logs (activation_request_id, capture_request_id, subscription_id, actor, action, from_status, to_status, details)
+    VALUES (${e.activationRequestId ?? null}::int, ${e.captureRequestId ?? null}::int, ${e.subscriptionId ?? null}::int, ${e.actor}::text, ${e.action}::text,
             ${e.from ?? null}::text, ${e.to ?? null}::text, ${JSON.stringify(e.details ?? {})}::jsonb)`);
 }
 

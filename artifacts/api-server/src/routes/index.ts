@@ -54,6 +54,7 @@ import { tasksRouter } from "./tasks";
 import { internalCronRouter } from "./internalCron";
 import { commerceWebhookRouter } from "./commerceWebhook";
 import { commerceControlRouter } from "./commerceControl";
+import { commerceCaptureRouter } from "./commerceCapture";
 
 const router: IRouter = Router();
 
@@ -64,6 +65,7 @@ router.use("/auth", authRouter);
 // ── OmniCommerce: webhook público de Shopify (HMAC propio) y panel admin (requireSuperAdmin propio) ──
 router.use("/commerce", commerceWebhookRouter);
 router.use("/commerce-control", commerceControlRouter);
+router.use("/commerce-public", commerceCaptureRouter);
 
 // ── Client portal — public GET endpoints (no Clerk auth on reads) ─────────────
 // POST /portal/token uses its own requireAuth internally

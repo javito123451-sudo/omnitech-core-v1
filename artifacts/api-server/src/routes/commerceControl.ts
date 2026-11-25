@@ -10,6 +10,8 @@ import { requireSuperAdmin } from "../middlewares/superAdmin";
 import { approveActivation, rejectActivation, requestMoreInfo, ActivationError } from "../commerce/activation";
 import { dbRows, getPolicy } from "../commerce/settings";
 import { logAudit } from "../utils/auditLogger";
+import { authorizeCapture, rejectCapture, requestCaptureInfo, CaptureError } from "../commerce/capture";
+import { tagCustomerAuthorized } from "../commerce/shopifyAdmin";
 
 export const commerceControlRouter: IRouter = Router();
 commerceControlRouter.use(requireSuperAdmin);
@@ -20,8 +22,9 @@ const onlySuper = (req: Request, res: Response): boolean => {
   return true;
 };
 const handle = (res: Response, err: unknown) => {
+  if (err instanceof CaptureError) { res.status(err.code === "not_found" ? 404 : err.code === "invalid_state" ? 409 : 400).json({ error: err.code, message: err.message }); return; }
   if (err instanceof ActivationError) {
-    const status = err.code === "not_found" ? 404 : err.code === "invalid_state" || err.code === "payment_not_confirmed" ? 409 : 400;
+    const status = err.code === "not_found" ? 404 : err.code === "invalid_state" || err.code === "payment_not_confirmed" || err.code === "not_authorized" ? 409 : 400;
     res.status(status).json({ error: err.code, message: err.message });
   } else { res.status(500).json({ error: "internal_error" }); }
 };
@@ -37,8 +40,36 @@ commerceControlRouter.get("/dashboard", async (_req, res) => {
       (SELECT COUNT(*) FROM commerce_subscriptions WHERE status='active')      AS active_subscriptions,
       (SELECT COUNT(*) FROM commerce_subscriptions WHERE status IN ('past_due','suspended')) AS incident_subscriptions,
       (SELECT COALESCE(SUM(amount_cents),0) FROM billing_history WHERE event_type='payment_succeeded' AND occurred_at > NOW() - interval '30 days') AS revenue_30d_cents,
-      (SELECT COUNT(*) FROM commerce_webhook_events WHERE status IN ('failed','dead')) AS webhook_failures`))[0];
+      (SELECT COUNT(*) FROM commerce_webhook_events WHERE status IN ('failed','dead')) AS webhook_failures,
+      (SELECT COUNT(*) FROM commerce_capture_requests WHERE status='new')       AS new_captures,
+      (SELECT COUNT(*) FROM commerce_capture_requests WHERE status='authorized') AS authorized_waiting_purchase,
+      (SELECT COUNT(*) FROM activation_requests WHERE status IN ('pending','info_requested') AND capture_request_id IS NULL) AS unauthorized_purchases`))[0];
   res.json(Object.fromEntries(Object.entries(r ?? {}).map(([k, v]) => [k, Number(v)])));
+});
+
+commerceControlRouter.get("/capture-requests", async (req, res) => {
+  const { limit, offset } = page(req);
+  const status = (req.query["status"] as string) || null;
+  res.json(dbRows(await db.execute(sql`SELECT * FROM commerce_capture_requests WHERE (${status}::text IS NULL OR status=${status}::text) ORDER BY id DESC LIMIT ${limit}::int OFFSET ${offset}::int`)));
+});
+
+commerceControlRouter.post("/capture-requests/:id/authorize", async (req, res) => {
+  if (!onlySuper(req, res)) return;
+  const b = (req.body ?? {}) as { plan?: string; modules?: string[]; validDays?: number };
+  try {
+    const r = await authorizeCapture(reqId(req), { clerkId: req.clerkUserId! }, { plan: String(b.plan ?? ""), modules: Array.isArray(b.modules) ? b.modules : [], validDays: b.validDays });
+    const tag = await tagCustomerAuthorized(r.email); // comodidad de la tienda; no es la barrera de seguridad
+    await db.execute(sql`UPDATE commerce_capture_requests SET shopify_tag_result=${tag}::text WHERE id=${r.id}::int`);
+    res.json({ ok: true, ...r, shopifyTag: tag });
+  } catch (e) { handle(res, e); }
+});
+commerceControlRouter.post("/capture-requests/:id/reject", async (req, res) => {
+  if (!onlySuper(req, res)) return;
+  try { res.json({ ok: true, ...(await rejectCapture(reqId(req), { clerkId: req.clerkUserId! }, String(req.body?.reason ?? ""))) }); } catch (e) { handle(res, e); }
+});
+commerceControlRouter.post("/capture-requests/:id/request-info", async (req, res) => {
+  if (!onlySuper(req, res)) return;
+  try { res.json({ ok: true, ...(await requestCaptureInfo(reqId(req), { clerkId: req.clerkUserId! }, String(req.body?.message ?? ""))) }); } catch (e) { handle(res, e); }
 });
 
 commerceControlRouter.get("/orders", async (req, res) => {
@@ -66,7 +97,7 @@ commerceControlRouter.get("/activation-requests", async (req, res) => {
   const { limit, offset } = page(req);
   const status = (req.query["status"] as string) || null;
   res.json(dbRows(await db.execute(sql`
-    SELECT ar.*, o.order_number, o.order_status, o.total_cents, c.email AS customer_email, c.company
+    SELECT ar.*, (ar.capture_request_id IS NOT NULL) AS authorized, o.order_number, o.order_status, o.total_cents, c.email AS customer_email, c.company
       FROM activation_requests ar JOIN commerce_orders o ON o.id=ar.order_id LEFT JOIN commerce_customers c ON c.id=ar.customer_id
      WHERE (${status}::text IS NULL OR ar.status=${status}::text) ORDER BY ar.id DESC LIMIT ${limit}::int OFFSET ${offset}::int`)));
 });

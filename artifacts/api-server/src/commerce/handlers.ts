@@ -5,6 +5,7 @@
  */
 import { sql } from "drizzle-orm";
 import { dbRows, getPolicy } from "./settings";
+import { findValidAuthorization } from "./capture";
 import { auditActivation, cancelSubscription, recordPaymentFailure, recordPaymentSuccess, suspendSubscription, type Tx } from "./lifecycle";
 
 const ACTOR = "system:shopify-webhook";
@@ -95,14 +96,16 @@ async function ensureActivationRequest(tx: Tx, orderId: number, p: P): Promise<v
     if (prod.plan) plan = prod.plan;
     for (const m of prod.module_slugs ?? []) modules.add(m);
   }
-  const cust = dbRows<{ customer_id: number | null }>(await tx.execute(sql`SELECT customer_id FROM commerce_orders WHERE id=${orderId}::int`))[0];
+  const cust = dbRows<{ customer_id: number | null; email: string | null }>(await tx.execute(sql`
+    SELECT o.customer_id, COALESCE(c.email, o.email) AS email FROM commerce_orders o LEFT JOIN commerce_customers c ON c.id=o.customer_id WHERE o.id=${orderId}::int`))[0];
+  const auth = await findValidAuthorization(tx, cust?.email ?? null, plan);
   const sub = dbRows<{ id: number }>(await tx.execute(sql`SELECT id FROM commerce_subscriptions WHERE origin_order_id=${orderId}::int LIMIT 1`))[0];
   const ins = dbRows<{ id: number }>(await tx.execute(sql`
-    INSERT INTO activation_requests (order_id, customer_id, subscription_id, status, requested_plan, requested_modules, unmapped_items)
+    INSERT INTO activation_requests (order_id, customer_id, subscription_id, status, requested_plan, requested_modules, unmapped_items, capture_request_id)
     VALUES (${orderId}::int, ${cust?.customer_id ?? null}::int, ${sub?.id ?? null}::int, 'pending', ${plan}::text,
-            ${JSON.stringify([...modules])}::jsonb, ${JSON.stringify(unmapped)}::jsonb)
+            ${JSON.stringify([...new Set([...modules, ...(auth?.modules ?? [])])])}::jsonb, ${JSON.stringify(unmapped)}::jsonb, ${auth?.id ?? null}::int)
     ON CONFLICT (order_id) DO NOTHING RETURNING id`));
-  if (ins[0]) await auditActivation(tx, { activationRequestId: ins[0].id, actor: ACTOR, action: "activation_requested", to: "pending", details: { orderId, plan, modules: [...modules], unmapped } });
+  if (ins[0]) await auditActivation(tx, { activationRequestId: ins[0].id, actor: ACTOR, action: "activation_requested", to: "pending", details: { orderId, plan, modules: [...modules], unmapped, captureRequestId: auth?.id ?? null, authorized: !!auth } });
 }
 
 async function subscriptionsOfOrder(tx: Tx, orderId: number): Promise<number[]> {

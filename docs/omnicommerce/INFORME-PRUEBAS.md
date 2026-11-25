@@ -1,7 +1,7 @@
 # Informe de pruebas — OmniCommerce Bridge (2026-11-25)
 
 Entorno: PostgreSQL 16 local desechable con las migraciones Drizzle del proyecto (0000–0017) + migración comercial. Webhooks firmados con HMAC de **prueba**. Sin Shopify real, sin cobros, email simulado.
-Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec vitest run src/commerce` → **21/21 correctos**, repetido 3 veces seguidas sobre la misma BD (idempotencia de migración y de pruebas). Suite existente sin BD real: 332 correctos, 0 fallos. `tsc`: sin errores nuevos (base previa de 185).
+Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec vitest run src/commerce` → **28/28 correctos**, repetido 3 veces seguidas sobre la misma BD (idempotencia de migración y de pruebas). Suite existente sin BD real: 332 correctos, 0 fallos. `tsc`: sin errores nuevos (base previa de 185).
 
 | # | Escenario | Resultado |
 |---|---|---|
@@ -20,6 +20,17 @@ Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec v
 | 15 | Reenvío del mismo webhook-id → `duplicate`, sin efectos dobles | ✅ |
 | + | Evento desordenado antiguo, fallo→reintento→`dead`, producto no mapeado, precios de módulos por grupo (25/35/45 €) sin pisar ediciones, precios del catálogo, promo conmutable, auditoría inmutable, RGPD redact | ✅ |
 
+### Captación y autorización previa (añadido tras la decisión «primero se capta, luego se activa»)
+| # | Escenario | Resultado |
+|---|---|---|
+| C1 | Captación pública: consentimiento obligatorio, honeypot, email válido, duplicados sin enumerar; no crea cuenta/pedido | ✅ |
+| C2 | Autorizar: solo SUPER_ADMIN, plan/módulos válidos, vigencia, auditado | ✅ |
+| C3 | Compra SIN autorización: marcada, activación 409 `not_authorized`, no crea empresa | ✅ |
+| C4 | Autorizado para un plan, compra otro → bloqueada | ✅ |
+| C5 | Autorización caducada antes de comprar no vale; la ya comprada no caduca; activar convierte la captación | ✅ |
+| C6 | Módulos autorizados se incorporan al activar; rechazar/pedir info exigen motivo; rechazada no se autoriza | ✅ |
+| C7 | Límite antispam por IP (3.ª petición → 429) | ✅ |
+
 ## Errores encontrados y corregidos durante las pruebas
 1. La restricción `sellable` dejaba vender módulos "a presupuesto" sin precio → endurecida (`NOT sellable OR list_price_cents IS NOT NULL`).
 2. Mis pruebas usaban referencias fijas y fallaban en la 2.ª ejecución: la idempotencia funcionaba correctamente; referencias ahora únicas por ejecución.
@@ -28,4 +39,4 @@ Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec v
 Entrega real de webhooks de Shopify, suscripciones/Selling Plans reales, Resend con dominio verificado, tema Shopify (pendiente), carga/concurrencia, Neon/Render.
 
 ## Frontend (OmniCommerce Control)
-`src/pages/control-center/commerce.tsx` (ruta `/control-center/commerce`, menú Plataforma → OmniCommerce, guard `SuperAdminRoute`). Build de producción OK, `tsc` sin errores, 4 pruebas de renderizado (dashboard, aprobar con pago confirmado/deshabilitado sin pago, rechazo con motivo obligatorio, modo solo lectura). No verificado en navegador real con Clerk.
+`src/pages/control-center/commerce.tsx` (ruta `/control-center/commerce`, menú Plataforma → OmniCommerce, guard `SuperAdminRoute`). Build de producción OK, `tsc` sin errores, 5 pruebas de renderizado (dashboard, aprobar con pago confirmado/deshabilitado sin pago, rechazo con motivo obligatorio, modo solo lectura). No verificado en navegador real con Clerk.
