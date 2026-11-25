@@ -3,8 +3,10 @@
  * (25-nov-2026): Starter 149 € (promo lanzamiento 99 €, desactivada por defecto),
  * Professional 249 €, Enterprise 1.000 € · mensual · sin IVA.
  *
- * Los módulos individuales NO tienen precio definido: se siembran con precio NULL,
- * billing_mode 'quote' y sellable=false. No se inventan precios.
+ * Módulos (complementos mensuales, sin IVA; decisión del propietario 25-nov-2026). NO se venden
+ * sueltos en la tienda (sellable=false): el administrador los incorpora según necesidades.
+ *   - sin IA relevante : 25 €     - IA ligera (gpt-4o-mini) : 35 €     - IA pesada (gpt-4o) : 45 €
+ * `crm` va incluido en todos los planes: sin precio de complemento.
  * Los slugs coinciden con los del Control Center (control-center.ts CATALOG).
  */
 import { db } from "@workspace/db";
@@ -16,24 +18,27 @@ export const PLAN_PRODUCTS = [
   { code: "plan_enterprise",   plan: "enterprise",   name: "Omnitech-Core Enterprise",   list: 100000, promo: null },
 ] as const;
 
-export const MODULE_PRODUCTS: ReadonlyArray<{ slug: string; name: string; description: string }> = [
-  { slug: "crm", name: "Omni CRM", description: "Gestión de clientes y relaciones" },
-  { slug: "ai_agents", name: "AI Agents", description: "Agentes de IA personalizados" },
-  { slug: "omni_agent_factory", name: "Omni Agent Factory", description: "Crea, versiona y publica agentes de IA" },
-  { slug: "analytics", name: "Analytics", description: "Análisis avanzado de datos" },
-  { slug: "whatsapp", name: "WhatsApp Business", description: "Mensajería y automatizaciones" },
-  { slug: "integrations", name: "Integraciones", description: "Conectores y webhooks externos" },
-  { slug: "omni_import_ai", name: "Omni Import AI", description: "Importación inteligente de datos" },
-  { slug: "omni_docs", name: "Omni Docs", description: "Gestión documental" },
-  { slug: "omni_security", name: "Omni Security Core", description: "Seguridad y auditoría avanzada" },
-  { slug: "omni_marketing", name: "Omni Marketing Hub", description: "Campañas y automatización de marketing" },
-  { slug: "automations", name: "Automations", description: "Flujos de trabajo automatizados" },
-  { slug: "omni_accounting", name: "Omni Accounting", description: "Facturación, pagos y contabilidad" },
-  { slug: "omni_diagnostics", name: "Omni Diagnostics", description: "Diagnóstico y salud del sistema" },
-  { slug: "omni_tax", name: "OmniTax", description: "Motor fiscal, calendario y simuladores" },
-  { slug: "omni_ads", name: "OmniAds", description: "Centro de publicidad con IA" },
-  { slug: "omni_leads", name: "OmniLeads AI", description: "Captación y gestión de leads con IA" },
-  { slug: "omni_seller", name: "OmniSeller", description: "Orquestación de campañas de prospección B2B" },
+export const MODULE_PRICE_CENTS = { none: 2500, light: 3500, heavy: 4500 } as const;
+export type ModuleAiTier = keyof typeof MODULE_PRICE_CENTS;
+
+export const MODULE_PRODUCTS: ReadonlyArray<{ slug: string; name: string; description: string; tier: ModuleAiTier | "included" }> = [
+  { slug: "crm", name: "Omni CRM", description: "Gestión de clientes y relaciones", tier: "included" },
+  { slug: "ai_agents", name: "AI Agents", description: "Agentes de IA personalizados", tier: "light" },
+  { slug: "omni_agent_factory", name: "Omni Agent Factory", description: "Crea, versiona y publica agentes de IA", tier: "light" },
+  { slug: "analytics", name: "Analytics", description: "Análisis avanzado de datos", tier: "light" },
+  { slug: "whatsapp", name: "WhatsApp Business", description: "Mensajería y automatizaciones", tier: "light" },
+  { slug: "integrations", name: "Integraciones", description: "Conectores y webhooks externos", tier: "none" },
+  { slug: "omni_import_ai", name: "Omni Import AI", description: "Importación inteligente de datos", tier: "heavy" },
+  { slug: "omni_docs", name: "Omni Docs", description: "Gestión documental", tier: "none" },
+  { slug: "omni_security", name: "Omni Security Core", description: "Seguridad y auditoría avanzada", tier: "none" },
+  { slug: "omni_marketing", name: "Omni Marketing Hub", description: "Campañas y automatización de marketing", tier: "light" },
+  { slug: "automations", name: "Automations", description: "Flujos de trabajo automatizados", tier: "light" },
+  { slug: "omni_accounting", name: "Omni Accounting", description: "Facturación, pagos y contabilidad", tier: "none" },
+  { slug: "omni_diagnostics", name: "Omni Diagnostics", description: "Diagnóstico y salud del sistema", tier: "none" },
+  { slug: "omni_tax", name: "OmniTax", description: "Motor fiscal, calendario y simuladores", tier: "none" },
+  { slug: "omni_ads", name: "OmniAds", description: "Centro de publicidad con IA", tier: "heavy" },
+  { slug: "omni_leads", name: "OmniLeads AI", description: "Captación y gestión de leads con IA", tier: "heavy" },
+  { slug: "omni_seller", name: "OmniSeller", description: "Orquestación de campañas de prospección B2B", tier: "heavy" },
 ];
 
 /** Idempotente: no pisa precios ni promo editados después por el administrador. */
@@ -45,9 +50,13 @@ export async function seedCatalog(): Promise<void> {
       ON CONFLICT (code) DO NOTHING`);
   }
   for (const m of MODULE_PRODUCTS) {
+    const price = m.tier === "included" ? null : MODULE_PRICE_CENTS[m.tier];
+    // Solo rellena el precio si aún no hay uno: nunca pisa un precio editado por el administrador.
     await db.execute(sql`
-      INSERT INTO commerce_products (code, kind, name, description, module_slugs, billing_mode, sellable)
-      VALUES (${"module_" + m.slug}, 'module', ${m.name}, ${m.description}, ${JSON.stringify([m.slug])}::jsonb, 'quote', FALSE)
-      ON CONFLICT (code) DO NOTHING`);
+      INSERT INTO commerce_products (code, kind, name, description, module_slugs, billing_mode, list_price_cents, sellable)
+      VALUES (${"module_" + m.slug}, 'module', ${m.name}, ${m.description}, ${JSON.stringify([m.slug])}::jsonb,
+              ${price === null ? "quote" : "subscription_monthly"}, ${price}::int, FALSE)
+      ON CONFLICT (code) DO UPDATE SET list_price_cents = EXCLUDED.list_price_cents, billing_mode = EXCLUDED.billing_mode, updated_at = NOW()
+       WHERE commerce_products.list_price_cents IS NULL AND EXCLUDED.list_price_cents IS NOT NULL`);
   }
 }

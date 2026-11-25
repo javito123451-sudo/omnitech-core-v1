@@ -253,12 +253,23 @@ describe.skipIf(!hasRealDb)("OmniCommerce Bridge — escenarios", () => {
     expect(await retryDueEvents()).toBe(0);
   });
 
-  it("extra: producto no mapeado no rompe y queda señalado; módulos sin precio no son vendibles", async () => {
-    const m = mk(); const o = m.order("paid", { line_items: [{ id: 1, sku: "DESCONOCIDO", title: "Algo" }] });
-    await post("orders/paid", o);
+  it("extra: producto no mapeado no rompe y queda señalado", async () => {
+    const m = mk(); await post("orders/paid", m.order("paid", { line_items: [{ id: 1, sku: "DESCONOCIDO", title: "Algo" }] }));
     expect((await act(m)).unmapped_items).toHaveLength(1);
+  });
+
+  it("extra: módulos con precio por grupo (25/35/45 €), no vendibles sueltos; crm incluido; no pisa precios editados", async () => {
+    const price = async (slug: string) => (await rows(sql`SELECT list_price_cents p, sellable, billing_mode FROM commerce_products WHERE code=${"module_" + slug}`))[0];
+    expect((await price("omni_tax")).p).toBe(2500); expect((await price("omni_security")).p).toBe(2500);
+    expect((await price("omni_marketing")).p).toBe(3500); expect((await price("whatsapp")).p).toBe(3500);
+    expect((await price("omni_import_ai")).p).toBe(4500); expect((await price("omni_leads")).p).toBe(4500);
+    expect((await price("crm")).p).toBeNull();
     expect((await rows(sql`SELECT COUNT(*)::int c FROM commerce_products WHERE kind='module' AND sellable`))[0].c).toBe(0);
-    await expect(db.execute(sql`UPDATE commerce_products SET sellable=TRUE WHERE code='module_omni_tax'`)).rejects.toThrow();
+    await db.execute(sql`UPDATE commerce_products SET list_price_cents=3000 WHERE code='module_omni_tax'`);
+    await seedCatalog(); expect((await price("omni_tax")).p).toBe(3000); // editado: se respeta
+    await db.execute(sql`UPDATE commerce_products SET list_price_cents=2500 WHERE code='module_omni_tax'`);
+    await db.execute(sql`UPDATE commerce_products SET list_price_cents=NULL WHERE code='module_omni_docs'`);
+    await seedCatalog(); expect((await price("omni_docs")).p).toBe(2500); // sin precio: se rellena
   });
 
   it("extra: precios del catálogo = los confirmados; promo Starter desactivada y conmutable", async () => {

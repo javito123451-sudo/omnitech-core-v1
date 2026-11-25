@@ -1,7 +1,7 @@
 # Informe de pruebas — OmniCommerce Bridge (2026-11-25)
 
 Entorno: PostgreSQL 16 local desechable con las migraciones Drizzle del proyecto (0000–0017) + migración comercial. Webhooks firmados con HMAC de **prueba**. Sin Shopify real, sin cobros, email simulado.
-Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec vitest run src/commerce` → **20/20 correctos**, repetido 3 veces seguidas sobre la misma BD (idempotencia de migración y de pruebas). Suite existente sin BD real: 332 correctos, 0 fallos. `tsc`: sin errores nuevos (base previa de 185).
+Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec vitest run src/commerce` → **21/21 correctos**, repetido 3 veces seguidas sobre la misma BD (idempotencia de migración y de pruebas). Suite existente sin BD real: 332 correctos, 0 fallos. `tsc`: sin errores nuevos (base previa de 185).
 
 | # | Escenario | Resultado |
 |---|---|---|
@@ -18,7 +18,7 @@ Comando: `DATABASE_URL=postgres://… pnpm --filter @workspace/api-server exec v
 | 13 | Reactivación tras pago; contracargo NO se reactiva solo | ✅ |
 | 14 | HMAC inválido/ausente 401, sin secreto 503, sin rol 401, rol ajeno/STAFF 403, pago no confirmado 409, estado no inyectable por cuerpo | ✅ |
 | 15 | Reenvío del mismo webhook-id → `duplicate`, sin efectos dobles | ✅ |
-| + | Evento desordenado antiguo, fallo→reintento→`dead`, producto no mapeado, módulo sin precio no vendible, precios del catálogo, promo conmutable, auditoría inmutable, RGPD redact | ✅ |
+| + | Evento desordenado antiguo, fallo→reintento→`dead`, producto no mapeado, precios de módulos por grupo (25/35/45 €) sin pisar ediciones, precios del catálogo, promo conmutable, auditoría inmutable, RGPD redact | ✅ |
 
 ## Errores encontrados y corregidos durante las pruebas
 1. La restricción `sellable` dejaba vender módulos "a presupuesto" sin precio → endurecida (`NOT sellable OR list_price_cents IS NOT NULL`).

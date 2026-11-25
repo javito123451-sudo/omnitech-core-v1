@@ -23,7 +23,7 @@ Suspender/cancelar = `license_plans.is_active=false`. **Nunca** se borra una emp
 
 ## Precios del catálogo (confirmados por el propietario, 25-nov-2026; mensual, sin IVA)
 Starter 149 € (promo lanzamiento 99 €, `promo_active=false` por defecto) · Professional 249 € · Enterprise 1.000 €.
-Módulos individuales: sembrados con precio **NULL** y `sellable=false` (CHECK en BD impide venderlos sin precio).
+Módulos (complementos mensuales, sin IVA, **no se venden sueltos**: los incorpora el administrador según necesidades; `sellable=false`): sin IA relevante **25 €** (OmniTax, Accounting, Security Core, Docs, Diagnostics, Integraciones) · IA ligera **35 €** (Marketing Hub, WhatsApp, Automations, Agent Factory, AI Agents, Analytics) · IA pesada **45 €** (Import AI, OmniLeads, OmniAds, OmniSeller). CRM va incluido en todos los planes (sin precio). Basado en el AI Center real (8 llamadas/mes, solo gpt-4o-mini, 0,004 $): el precio es por valor, no por coste de IA; revisar a los 60–90 días. Editar un precio en BD no lo pisa el arranque.
 
 ## Seguridad / RGPD
 HMAC en tiempo constante · dominio de tienda validado · idempotencia por webhook-id y por referencia de negocio · el navegador solo pide acciones; el servidor valida rol, estado y pago · secretos solo en entorno (`/integrations` devuelve booleanos) · `customers/redact` anonimiza PII sin borrar pedidos · consentimiento de marketing registrado.
