@@ -21,6 +21,7 @@ import { runAutopilotTick } from "../utils/autopilotScheduler";
 import { runDailyBackupJob } from "../utils/backupEngine";
 import { runFollowupTick } from "../outreach/followup/followupEngine";
 import { logger } from "../lib/logger";
+import { runCommerceTick } from "../commerce/scheduler";
 
 export const internalCronRouter: IRouter = Router();
 
@@ -86,6 +87,16 @@ internalCronRouter.post("/omniseller-followup", async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     logger.error({ err }, "[InternalCron] omniseller-followup falló");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// OmniCommerce: reintentos de webhooks fallidos + suspensión por periodo de gracia vencido.
+internalCronRouter.post("/commerce", async (req, res) => {
+  if (!requireCronSecret(req, res)) return;
+  try { res.json({ ok: true, ...(await runCommerceTick()) }); }
+  catch (err) {
+    logger.error({ err }, "[InternalCron] commerce falló");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

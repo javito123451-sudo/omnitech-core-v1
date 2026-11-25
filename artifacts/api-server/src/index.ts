@@ -3,6 +3,9 @@ import { logger } from "./lib/logger";
 import { scheduleAutoBackups } from "./utils/backupEngine";
 import { autoSetupTelegramWebhooks } from "./routes/telegram";
 import { runStartupMigrations } from "./utils/startupMigrations";
+import { runCommerceMigration } from "./commerce/migration";
+import { seedCatalog } from "./commerce/catalog";
+import { startCommerceScheduler } from "./commerce/scheduler";
 import { startAutopilotScheduler } from "./utils/autopilotScheduler";
 import { startFollowupScheduler } from "./outreach/followup/followupEngine";
 import { startRecurringInvoiceScheduler } from "./utils/recurringInvoiceScheduler";
@@ -33,6 +36,11 @@ app.listen(port, (err) => {
   runStartupMigrations()
     .catch(() => {})
     .finally(() => {
+      // OmniCommerce: tablas aditivas + catálogo (idempotente) y reintentos/periodos de gracia
+      runCommerceMigration()
+        .then(() => seedCatalog())
+        .then(() => { if (process.env["NODE_ENV"] !== "test") startCommerceScheduler(); })
+        .catch((err) => logger.error({ err }, "[Commerce] migración falló"));
       // Recurring invoice scheduler needs recurring_invoices table (created in FIX-H)
       startRecurringInvoiceScheduler();
       // AIE starts after migrations so event handlers can safely query DB tables
