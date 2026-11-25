@@ -88,6 +88,7 @@ Son los **únicos** puntos donde se toca algo ya operativo; todos aditivos:
 | 7 | `routes/whatsapp.ts` (webhook público) | pasar los **estados** (sent/delivered/read/failed) al módulo cuando el `wamid` corresponda a un `review_messages`; sin efecto en el resto |
 | 8 | `outreach/webhooks/resend…` | ídem para eventos de email (entregado/rebote/queja) |
 | 9 | `omniflow`: `MainLayout.tsx`, `App.tsx`, `ModuleGuard.tsx` | entrada de menú, rutas y nombre del módulo |
+| 10 | `ava-core/tools/crmTools.ts` y `ava-core/actions/` | registrar las herramientas de solo lectura de reseñas y la acción `approve_review_reply` en Ava (ver §9). Sin tocar el motor `engine.ts` |
 
 **Despliegue**: `lib/db/drizzle/0018` y el FIX-BC se ejecutarán en producción solo cuando se fusione la PR y se despliegue. Eso lo decides tú; hasta entonces solo corren en la rama Neon de pruebas.
 
@@ -124,3 +125,51 @@ Los tests de proveedores externos sin credenciales usarán dobles HTTP **etiquet
 7. Documentación (OpenAPI, guía de configuración, credenciales pendientes) e informe de cambios.
 
 Cada paso termina con typecheck frente a la línea base y tests antes de seguir.
+
+
+## 9. IA: Ava Omni sobre la infraestructura existente (sin proveedor nuevo)
+
+### 9.1 Auditoría de cómo está conectada la IA hoy
+
+- **Punto único de entrada: `callAI()`** en `ai-gateway/gateway.ts`. Lo usan Agent Factory (`agents/agentRunner.ts`) y Ava Core (`ava-core/engine.ts`). Ningún consumidor construye un proveedor propio.
+- **Flujo de `callAI`**: rechaza simulación → precios → ruta de proveedor (agente → workspace → plan → `AI_PROVIDER`) → caché opcional (clave con `orgId`) → **presupuesto USD del workspace** (`checkBudgetBlocked`, `ai_budgets`) → **reserva atómica de OmniCredits** (opt-in con `billing.ledger`) → llamada con timeout/reintento/fallback → Cost Engine → fila en **`ai_usage_logs`** (por org) → liquidación en el ledger.
+- **Proveedor**: OpenAI (`gpt-4o-mini` por defecto), credencial en la variable de entorno `OPENAI_API_KEY` del servicio desplegado. Claude y Gemini existen como adaptadores pero figuran `implemented: false`. El módulo **no leerá ni guardará ninguna clave**: solo llama a `callAI`.
+- **Ava**: `ava-core` ya ofrece el patrón *herramientas de solo lectura → `present_findings` → `propose_action` → token de confirmación de un solo uso → ejecutar con permisos revalidados*; las herramientas reciben `orgId` solo del contexto verificado por el backend, nunca de los argumentos del modelo. Agent Factory añade propuestas persistentes (`ai_agent_proposals`, token con hash SHA-256, consumo atómico).
+- Nota de la memoria del repo: el chat de Ava (`POST /api/chat`) es determinista sin LLM; solo Ava Core y los agentes usan el gateway. Omni Review usará el gateway solo en las tareas que de verdad necesitan un modelo.
+
+### 9.2 Cómo se integra Omni Review
+
+| Requisito | Implementación |
+|---|---|
+| Una sola infraestructura de IA | Todo pasa por `callAI` (`mode:"live"`, `orgId` del workspace, `functionName:"review_*"`, `usageKind:"ai_analysis"` / `"ai_content_generation"`). Cero proveedores nuevos, cero claves nuevas, config global intacta |
+| Límites de consumo existentes | `callAI` ya aplica el presupuesto USD por workspace y, si se activa, créditos. Los errores `AiBudgetBlockedError`/`InsufficientCreditsError` se traducen a un estado "IA bloqueada por límite" en el panel, sin romper el resto del módulo |
+| Consumo por empresa | `ai_usage_logs` ya registra cada llamada con `org_id`; el panel de uso del módulo lo lee filtrando por `function_name LIKE 'review_%'` |
+| Aislamiento entre workspaces | El contexto que se envía al modelo se construye siempre con `WHERE org_id = :orgId` desde el backend; las herramientas de Ava reciben `orgId` del `AvaContext`. Nunca se mezclan reseñas de dos workspaces en un mismo prompt. Caché del gateway con clave por `orgId` |
+| Evitar llamadas innecesarias | (1) Reseñas **sin comentario**: sentimiento por reglas desde las estrellas, sin LLM. (2) Clasificación **por lotes** (varias reseñas por llamada, salida JSON). (3) Resultado **persistido** en `review_reviews` y marca `ai_analyzed_at`: nunca se reanaliza lo ya analizado salvo petición expresa. (4) Informes: se regeneran solo si hay reseñas nuevas desde el último. (5) Sugerencia de respuesta **bajo demanda** o solo para las que el administrador configure (por defecto: negativas y las marcadas para intervención). (6) `cache.ttlSeconds` para peticiones idénticas. (7) `maxTokens` acotado por tarea |
+| Permisos / seguridad | `requireModule("omni_review")` + `review.read/write/admin`; las herramientas de Ava comprueban además que el módulo esté activo para ese workspace antes de ejecutar |
+| Aprobación humana configurable | `review_settings.ai_approval` (jsonb): por acción `reply_publish`, `reply_edit_auto`, `alert_notify` ∈ `always_approve` (**por defecto**) / `approve_if_negative` / `auto`. Aun en `auto`, nunca se publica sin aprobación una respuesta a reseña ≤3★ o marcada "requiere intervención". Las propuestas se guardan en BD (`reply_status='draft'`), no en memoria |
+| Publicar en Google | Hasta tener Business Profile API aprobada, "publicar" no existe: el borrador se aprueba y se copia/abre en Google. No se declara publicación automática |
+
+### 9.3 Funciones de Ava (qué, con qué y cuándo llama al modelo)
+
+1. **Analizar reseñas recibidas** → lote tras cada sincronización con Google (cuando exista); 1 llamada por lote.
+2. **Sentimiento** → reglas por estrellas + modelo solo cuando hay texto; resultado persistido.
+3. **Quejas/problemas recurrentes** → agrupación por temas (`topics jsonb`) en el mismo lote; agregación posterior **sin modelo** (SQL).
+4. **Respuestas personalizadas** → bajo demanda o por política; borrador + revisión + aprobación.
+5. **Mejoras de reputación** → recomendaciones derivadas de temas agregados (1 llamada por informe).
+6. **Informes y resúmenes** → semanal/mensual; datos agregados por SQL, el modelo solo redacta el resumen.
+7. **Intervención humana** → reglas deterministas primero (≤2★, palabras clave de riesgo legal/sanitario/amenaza, datos personales en el texto) y el modelo solo como segunda opinión en dudosos; marca `needs_human=true` y notifica vía `notificationService`.
+
+Herramientas de solo lectura para Ava (contexto CRM): `review_summary`, `review_list_flagged`, `review_top_topics`; acción con confirmación: `approve_review_reply`. Todas devuelven datos del workspace del usuario, nada más.
+
+### 9.4 Prueba real de generación de texto
+
+- Este sandbox **no tiene ninguna credencial de IA** (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` y `GEMINI_API_KEY` sin definir), y no voy a extraerlas del servicio desplegado. Por eso **todavía no he podido hacer la prueba real**.
+- He añadido una prueba opt-in que usa exactamente la infraestructura existente (`callAI`, `orgId: null` = nivel plataforma, no gasta presupuesto de ningún workspace, ≤40 tokens): `src/ai-gateway/__tests__/gatewayLive.smoke.test.ts`. Se ejecuta donde ya esté configurado el proveedor:
+
+```
+AI_LIVE_SMOKE=1 DATABASE_URL=<rama omni-review-dev> OPENAI_API_KEY=<la ya existente> \
+  pnpm --filter @workspace/api-server exec vitest run src/ai-gateway/__tests__/gatewayLive.smoke.test.ts
+```
+
+Hasta que esa prueba pase, la IA del módulo consta como **"preparada técnicamente, no verificada"**.
